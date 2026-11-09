@@ -47,7 +47,8 @@ pub enum Msg {
         pub_id: u64,
         ready_value: u64,
     },
-    /// Result of `__bridge.tick` for patch `seq`.
+    /// Result of `__bridge.tick` for patch `seq`. The host sends its next patch only after
+    /// this reply; ui-host sends `seq` 0 once the page is ready for the first patch.
     Events {
         seq: u64,
         json: String,

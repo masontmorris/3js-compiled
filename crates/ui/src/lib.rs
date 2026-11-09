@@ -511,7 +511,6 @@ impl Ui {
             match rx.try_recv() {
                 Ok(Ok(link)) => {
                     self.connection = Connection::Running(Box::new(link));
-                    self.can_send = true;
                 }
                 Ok(Err(error)) => {
                     eprintln!("ui-host launch: {error:#}");

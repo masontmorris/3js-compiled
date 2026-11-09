@@ -309,6 +309,7 @@ fn main() {
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
     let mut newest_patch: Option<(u64, String)> = None;
+    let mut warmed = false;
 
     loop {
         let mut events = Vec::new();
@@ -384,9 +385,7 @@ fn main() {
             break;
         }
 
-        if webview.load_status() == LoadStatus::Complete
-            && let Some((seq, json)) = newest_patch.take()
-        {
+        if let Some((seq, json)) = newest_patch.take() {
             let received = Instant::now();
             stats.borrow_mut().patches_evaluated += 1;
             let send = send.clone();
@@ -416,6 +415,21 @@ fn main() {
         }
 
         if new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100) {
+            // The first paint of the loaded page takes 70 to 110 ms. It runs before the host
+            // sends any state, so the first patch is current when it arrives; the result is
+            // not shown.
+            if !warmed && webview.load_status() == LoadStatus::Complete {
+                new_frame.set(false);
+                last_paint = Instant::now();
+                webview.paint();
+                ctx.present_without_wait();
+                warmed = true;
+                send(&Msg::Events {
+                    seq: 0,
+                    json: "{}".into(),
+                });
+                continue;
+            }
             let done_completed = unsafe { done_fence.GetCompletedValue() };
             let free = slots
                 .iter()

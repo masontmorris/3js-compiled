@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 rows = list(csv.DictReader(Path(sys.argv[1]).open()))
+shown = next(row for row in rows if int(row['mark_r']) == 255)
 valid = []
 for row in rows:
     i, seq = int(row['index']), int(row['seq'])
@@ -14,6 +15,7 @@ for row in rows:
         valid.append(i + 1 - seq)
 assert len(valid) >= 1200, len(valid)
 if '--first' in sys.argv:
+    assert int(shown['seq']) > 0, ('first HUD frame has no state', shown['index'])
     assert valid[0] <= 5, ('first frame delay', valid[0])
 median = statistics.median(valid[:1200])
 assert median <= 5, ('median delay', median)
