@@ -99,6 +99,41 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_SHADER, payload);
   }
 
+  createTexture(handle, descriptor) {
+    const format = descriptor.format;
+    if (typeof format !== 'string' || !/^[a-z0-9-]+$/.test(format)) throw new TypeError('Invalid texture format');
+    const payload = new Uint8Array(32 + format.length);
+    const view = new DataView(payload.buffer);
+    const values = [u32(handle, 'handle', true), descriptor.width, descriptor.height, descriptor.layers, descriptor.mips, descriptor.samples, descriptor.usage, format.length];
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'texture field'), true));
+    for (let i = 0; i < format.length; i++) payload[32 + i] = format.charCodeAt(i);
+    this.append(Opcode.CREATE_TEXTURE, payload);
+  }
+
+  writeTexture(handle, descriptor, data) {
+    if (!(data instanceof Uint8Array)) throw new TypeError('Texture data must be a Uint8Array');
+    const payload = new Uint8Array(40 + data.length);
+    const view = new DataView(payload.buffer);
+    const values = [u32(handle, 'handle', true), descriptor.mip, descriptor.x, descriptor.y, descriptor.layer, descriptor.bytesPerRow, descriptor.rowsPerImage, descriptor.width, descriptor.height, descriptor.layers];
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'texture field'), true));
+    payload.set(data, 40);
+    this.append(Opcode.WRITE_TEXTURE, payload);
+  }
+
+  readTexture(request, handle, descriptor) {
+    const payload = new Uint8Array(32);
+    const view = new DataView(payload.buffer);
+    const values = [u32(request, 'request', true), u32(handle, 'handle', true), descriptor.mip, descriptor.x, descriptor.y, descriptor.layer, descriptor.width, descriptor.height];
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'texture field'), true));
+    this.append(Opcode.READ_TEXTURE, payload);
+  }
+
+  destroyTexture(handle) {
+    const payload = new Uint8Array(4);
+    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
+    this.append(Opcode.DESTROY_TEXTURE, payload);
+  }
+
   createBuffer(handle, size, usage) {
     const payload = new Uint8Array(16);
     const view = new DataView(payload.buffer);

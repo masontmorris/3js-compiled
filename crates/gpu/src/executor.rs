@@ -8,6 +8,17 @@ struct Buffer {
     usage: wgpu::BufferUsages,
 }
 
+struct Texture {
+    raw: wgpu::Texture,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    layers: u32,
+    mips: u32,
+    samples: u32,
+    usage: wgpu::TextureUsages,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Response {
     Readback {
@@ -26,6 +37,7 @@ pub struct Executor {
     queue: wgpu::Queue,
     buffers: HashMap<u32, Buffer>,
     shaders: HashMap<u32, Option<wgpu::ShaderModule>>,
+    textures: HashMap<u32, Texture>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -51,6 +63,7 @@ impl Executor {
             queue,
             buffers: HashMap::new(),
             shaders: HashMap::new(),
+            textures: HashMap::new(),
         }
     }
 
@@ -63,7 +76,8 @@ impl Executor {
                 Ok(None) => {}
                 Err(message) => responses.push(Response::Error {
                     command,
-                    request: (record.opcode == 27 && record.payload.len() >= 4)
+                    request: ((record.opcode == 27 || record.opcode == 28)
+                        && record.payload.len() >= 4)
                         .then(|| u32_at(record.payload, 0)),
                     message,
                 }),
@@ -83,6 +97,7 @@ impl Executor {
                 if handle == 0
                     || self.buffers.contains_key(&handle)
                     || self.shaders.contains_key(&handle)
+                    || self.textures.contains_key(&handle)
                 {
                     return Err("invalid or duplicate buffer handle".into());
                 }
@@ -193,6 +208,227 @@ impl Executor {
                     bytes: data,
                 }))
             }
+            4 => {
+                if payload.len() < 32 {
+                    return Err("truncated texture descriptor".into());
+                }
+                let handle = u32_at(payload, 0);
+                let width = u32_at(payload, 4);
+                let height = u32_at(payload, 8);
+                let layers = u32_at(payload, 12);
+                let mips = u32_at(payload, 16);
+                let samples = u32_at(payload, 20);
+                let usage = wgpu::TextureUsages::from_bits(u32_at(payload, 24))
+                    .ok_or("invalid texture usage")?;
+                let format_len = u32_at(payload, 28) as usize;
+                if 32usize.checked_add(format_len) != Some(payload.len()) {
+                    return Err("invalid texture format length".into());
+                }
+                if handle == 0
+                    || self.buffers.contains_key(&handle)
+                    || self.shaders.contains_key(&handle)
+                    || self.textures.contains_key(&handle)
+                {
+                    return Err("invalid or duplicate texture handle".into());
+                }
+                let format = match std::str::from_utf8(&payload[32..])
+                    .map_err(|_| "invalid texture format")?
+                {
+                    "rgba8unorm" => wgpu::TextureFormat::Rgba8Unorm,
+                    "rgba8unorm-srgb" => wgpu::TextureFormat::Rgba8UnormSrgb,
+                    "bgra8unorm" => wgpu::TextureFormat::Bgra8Unorm,
+                    "bgra8unorm-srgb" => wgpu::TextureFormat::Bgra8UnormSrgb,
+                    "rgba16float" => wgpu::TextureFormat::Rgba16Float,
+                    "depth24plus" => wgpu::TextureFormat::Depth24Plus,
+                    "depth24plus-stencil8" => wgpu::TextureFormat::Depth24PlusStencil8,
+                    "depth32float" => wgpu::TextureFormat::Depth32Float,
+                    _ => return Err("unsupported texture format".into()),
+                };
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let raw = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: None,
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: layers,
+                    },
+                    mip_level_count: mips,
+                    sample_count: samples,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage,
+                    view_formats: &[],
+                });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.textures.insert(
+                    handle,
+                    Texture {
+                        raw,
+                        format,
+                        width,
+                        height,
+                        layers,
+                        mips,
+                        samples,
+                        usage,
+                    },
+                );
+                Ok(None)
+            }
+            5 => {
+                if payload.len() < 40 {
+                    return Err("truncated texture write".into());
+                }
+                let texture = self
+                    .textures
+                    .get(&u32_at(payload, 0))
+                    .ok_or("unknown texture handle")?;
+                let mip_level = u32_at(payload, 4);
+                let origin = wgpu::Origin3d {
+                    x: u32_at(payload, 8),
+                    y: u32_at(payload, 12),
+                    z: u32_at(payload, 16),
+                };
+                let bytes_per_row = u32_at(payload, 20);
+                let rows_per_image = u32_at(payload, 24);
+                let extent = wgpu::Extent3d {
+                    width: u32_at(payload, 28),
+                    height: u32_at(payload, 32),
+                    depth_or_array_layers: u32_at(payload, 36),
+                };
+                if !texture.usage.contains(wgpu::TextureUsages::COPY_DST) {
+                    return Err("texture is not writable".into());
+                }
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture.raw,
+                        mip_level,
+                        origin,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &payload[40..],
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: Some(rows_per_image),
+                    },
+                    extent,
+                );
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                Ok(None)
+            }
+            6 => {
+                size(payload, 4)?;
+                let texture = self
+                    .textures
+                    .remove(&u32_at(payload, 0))
+                    .ok_or("unknown texture handle")?;
+                texture.raw.destroy();
+                Ok(None)
+            }
+            28 => {
+                size(payload, 32)?;
+                let request = u32_at(payload, 0);
+                let texture = self
+                    .textures
+                    .get(&u32_at(payload, 4))
+                    .ok_or("unknown texture handle")?;
+                let mip = u32_at(payload, 8);
+                let x = u32_at(payload, 12);
+                let y = u32_at(payload, 16);
+                let layer = u32_at(payload, 20);
+                let width = u32_at(payload, 24);
+                let height = u32_at(payload, 28);
+                if request == 0
+                    || mip >= texture.mips
+                    || layer >= texture.layers
+                    || width == 0
+                    || height == 0
+                    || texture.samples != 1
+                    || !texture.usage.contains(wgpu::TextureUsages::COPY_SRC)
+                {
+                    return Err("invalid texture readback".into());
+                }
+                let mip_width = texture.width.checked_shr(mip).unwrap_or(0).max(1);
+                let mip_height = texture.height.checked_shr(mip).unwrap_or(0).max(1);
+                if x.checked_add(width).is_none_or(|end| end > mip_width)
+                    || y.checked_add(height).is_none_or(|end| end > mip_height)
+                {
+                    return Err("texture readback exceeds bounds".into());
+                }
+                if !matches!(
+                    texture.format,
+                    wgpu::TextureFormat::Rgba8Unorm
+                        | wgpu::TextureFormat::Rgba8UnormSrgb
+                        | wgpu::TextureFormat::Bgra8Unorm
+                        | wgpu::TextureFormat::Bgra8UnormSrgb
+                ) {
+                    return Err("unsupported texture readback format".into());
+                }
+                let row_bytes = width.checked_mul(4).ok_or("texture row is too large")?;
+                let stride = row_bytes
+                    .checked_add(255)
+                    .ok_or("texture row is too large")?
+                    / 256
+                    * 256;
+                let len = u64::from(stride) * u64::from(height);
+                if len > self.device.limits().max_buffer_size {
+                    return Err("texture readback is too large".into());
+                }
+                let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    size: len,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                let mut encoder = self.device.create_command_encoder(&Default::default());
+                encoder.copy_texture_to_buffer(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture.raw,
+                        mip_level: mip,
+                        origin: wgpu::Origin3d { x, y, z: layer },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyBufferInfo {
+                        buffer: &staging,
+                        layout: wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(stride),
+                            rows_per_image: Some(height),
+                        },
+                    },
+                    wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                self.queue.submit([encoder.finish()]);
+                let slice = staging.slice(..);
+                let (tx, rx) = mpsc::channel();
+                slice.map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = tx.send(result);
+                });
+                self.device
+                    .poll(wgpu::PollType::wait_indefinitely())
+                    .map_err(|e| e.to_string())?;
+                rx.recv()
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                let data = slice.get_mapped_range().map_err(|e| e.to_string())?;
+                let mut bytes = Vec::with_capacity(row_bytes as usize * height as usize);
+                for row in data.chunks(stride as usize) {
+                    bytes.extend_from_slice(&row[..row_bytes as usize]);
+                }
+                drop(data);
+                staging.unmap();
+                Ok(Some(Response::Readback { request, bytes }))
+            }
             9 => {
                 if payload.len() < 12 {
                     return Err("truncated shader".into());
@@ -212,6 +448,7 @@ impl Executor {
                 if handle == 0
                     || self.buffers.contains_key(&handle)
                     || self.shaders.contains_key(&handle)
+                    || self.textures.contains_key(&handle)
                 {
                     return Err("invalid or duplicate shader handle".into());
                 }
