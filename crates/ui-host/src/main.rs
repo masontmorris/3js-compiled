@@ -82,7 +82,9 @@ impl WebViewDelegate for Delegate {
 
 /// One ring entry. `pub_id == 0` means never published.
 struct Slot {
-    texture: ID3D11Texture2D,
+    _texture: ID3D11Texture2D,
+    surface_texture: Option<surfman::SurfaceTexture>,
+    framebuffer: glow::NativeFramebuffer,
     _handle: HANDLE, // kept open for the process lifetime so the game can duplicate it
     pub_id: u64,
     used: bool,
@@ -272,17 +274,7 @@ fn main() {
         .expect("ID3D11DeviceContext4");
 
     let mut slots: Vec<Slot> = (0..ring)
-        .map(|_| {
-            let texture = create_shared_texture(&d3d11, size);
-            let handle = export_nt_handle(&texture);
-            Slot {
-                texture,
-                _handle: handle,
-                pub_id: 0,
-                used: false,
-                last_use: 0,
-            }
-        })
+        .map(|_| create_slot(&d3d11, &frame_ctx, size))
         .collect();
     send(&Msg::Slots {
         handles: slots.iter().map(|s| s._handle.0 as u64).collect(),
@@ -371,18 +363,9 @@ fn main() {
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
                     size = PhysicalSize::new(width, height);
                     webview.resize(size);
+                    destroy_slots(&frame_ctx, &mut slots);
                     slots = (0..ring)
-                        .map(|_| {
-                            let texture = create_shared_texture(&d3d11, size);
-                            let handle = export_nt_handle(&texture);
-                            Slot {
-                                texture,
-                                _handle: handle,
-                                pub_id: 0,
-                                used: false,
-                                last_use: 0,
-                            }
-                        })
+                        .map(|_| create_slot(&d3d11, &frame_ctx, size))
                         .collect();
                     picked = 0;
                     send(&Msg::Slots {
@@ -454,7 +437,7 @@ fn main() {
             webview.paint();
             let t1 = Instant::now();
             ready_value += 1;
-            export_into(&frame_ctx, &slots[index].texture, size);
+            export_into(&frame_ctx, slots[index].framebuffer, size);
             // SAFETY: the fence and context belong to ANGLE's D3D11 device; same thread as GL.
             unsafe {
                 immediate
@@ -487,6 +470,7 @@ fn main() {
     }
 
     report_stats(&stats.borrow());
+    destroy_slots(&frame_ctx, &mut slots);
 }
 
 fn report_stats(s: &Stats) {
@@ -584,28 +568,19 @@ fn export_nt_handle(texture: &ID3D11Texture2D) -> HANDLE {
     }
 }
 
-/// Copy Servo's just-painted back buffer into `target` through a transient EGL pbuffer.
-/// No `glFinish`: the caller orders the copy with a D3D11 fence signal on the same context.
-/// Adapted from grafting's surfman_gl/windows_dx12_shared.rs (MPL-2.0).
-fn export_into(
+fn create_slot(
+    d3d11: &ID3D11Device,
     frame_ctx: &grafting::surfman_gl::SurfmanFrameContext,
-    target: &ID3D11Texture2D,
     size: PhysicalSize<u32>,
-) {
+) -> Slot {
+    let texture = create_shared_texture(d3d11, size);
+    let handle = export_nt_handle(&texture);
     let device = frame_ctx.device.borrow();
     let mut context = frame_ctx.context.borrow_mut();
     device.make_context_current(&context).expect("make current");
-    let source_fbo = device
-        .context_surface_info(&context)
-        .ok()
-        .flatten()
-        .and_then(|info| info.framebuffer_object)
-        .map(|fb| fb.0.get())
-        .unwrap_or(0);
-    let gl = &frame_ctx.glow_gl;
-    // SAFETY: the texture outlives the transient pbuffer; ComPtr takes its own reference.
+    // SAFETY: Slot holds the texture until its surface texture is destroyed.
     let surface_texture = unsafe {
-        let raw = target.clone().into_raw();
+        let raw = texture.clone().into_raw();
         let comptr = wio::com::ComPtr::from_raw(raw as *mut _);
         device
             .create_surface_texture_from_texture(
@@ -618,7 +593,8 @@ fn export_into(
     let gl_texture = device
         .surface_texture_object(&surface_texture)
         .expect("pbuffer GL texture");
-    unsafe {
+    let gl = &frame_ctx.glow_gl;
+    let framebuffer = unsafe {
         let draw = gl.create_framebuffer().expect("fbo");
         gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(draw));
         gl.framebuffer_texture_2d(
@@ -628,6 +604,54 @@ fn export_into(
             Some(gl_texture),
             0,
         );
+        gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+        draw
+    };
+    Slot {
+        _texture: texture,
+        surface_texture: Some(surface_texture),
+        framebuffer,
+        _handle: handle,
+        pub_id: 0,
+        used: false,
+        last_use: 0,
+    }
+}
+
+fn destroy_slots(frame_ctx: &grafting::surfman_gl::SurfmanFrameContext, slots: &mut [Slot]) {
+    let device = frame_ctx.device.borrow();
+    let mut context = frame_ctx.context.borrow_mut();
+    device.make_context_current(&context).expect("make current");
+    for slot in slots {
+        unsafe { frame_ctx.glow_gl.delete_framebuffer(slot.framebuffer) };
+        let mut surface = device
+            .destroy_surface_texture(&mut context, slot.surface_texture.take().unwrap())
+            .map_err(|(e, _)| e)
+            .expect("destroy pbuffer texture");
+        device
+            .destroy_surface(&mut context, &mut surface)
+            .expect("destroy pbuffer");
+    }
+}
+
+fn export_into(
+    frame_ctx: &grafting::surfman_gl::SurfmanFrameContext,
+    target: glow::NativeFramebuffer,
+    size: PhysicalSize<u32>,
+) {
+    let device = frame_ctx.device.borrow();
+    let context = frame_ctx.context.borrow();
+    device.make_context_current(&context).expect("make current");
+    let source_fbo = device
+        .context_surface_info(&context)
+        .ok()
+        .flatten()
+        .and_then(|info| info.framebuffer_object)
+        .map(|fb| fb.0.get())
+        .unwrap_or(0);
+    let gl = &frame_ctx.glow_gl;
+    unsafe {
+        gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(target));
         gl.bind_framebuffer(
             glow::READ_FRAMEBUFFER,
             std::num::NonZeroU32::new(source_fbo).map(glow::NativeFramebuffer),
@@ -647,15 +671,7 @@ fn export_into(
         );
         gl.flush();
         gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
-        gl.delete_framebuffer(draw);
     }
-    let mut surface = device
-        .destroy_surface_texture(&mut context, surface_texture)
-        .map_err(|(e, _)| e)
-        .expect("destroy pbuffer texture");
-    device
-        .destroy_surface(&mut context, &mut surface)
-        .expect("destroy pbuffer");
 }
 
 #[cfg(test)]
