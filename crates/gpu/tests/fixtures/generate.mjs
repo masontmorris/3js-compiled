@@ -92,3 +92,16 @@ encoder.beginRenderPass({ colorAttachments: [{ view: colorView, loadOp: 'clear',
 clearDevice.queue.submit([encoder.finish()]);
 clearDevice.commands.readTexture(100, colorTexture.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 });
 writeFileSync(new URL('./clear-pass.bin', import.meta.url), clearDevice.takeFrame());
+
+const msaaDevice = new RecordingDevice();
+const msaa = msaaDevice.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 16, sampleCount: 4 });
+const resolved = msaaDevice.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 17 });
+const depth = msaaDevice.createTexture({ size: [2, 2], format: 'depth24plus', usage: 16, sampleCount: 4 });
+const msaaEncoder = msaaDevice.createCommandEncoder();
+msaaEncoder.beginRenderPass({
+  colorAttachments: [{ view: msaa.createView(), resolveTarget: resolved.createView(), loadOp: 'clear', storeOp: 'discard', clearValue: [0, 1, 0, 1] }],
+  depthStencilAttachment: { view: depth.createView(), depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 1 },
+}).end();
+msaaDevice.queue.submit([msaaEncoder.finish()]);
+msaaDevice.commands.readTexture(100, resolved.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 });
+writeFileSync(new URL('./msaa-pass.bin', import.meta.url), msaaDevice.takeFrame());

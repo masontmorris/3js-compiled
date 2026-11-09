@@ -102,7 +102,7 @@ class RecordingCommandEncoder {
 
   beginRenderPass(descriptor) {
     if (this.finished || this.activePass) throw new Error('Command encoder is not available');
-    if (descriptor.depthStencilAttachment || descriptor.occlusionQuerySet || descriptor.timestampWrites) throw new Error('Render pass option is not implemented');
+    if (descriptor.occlusionQuerySet || descriptor.timestampWrites) throw new Error('Render pass option is not implemented');
     const viewHandle = view => {
       if (!(view?.texture instanceof RecordingTexture) || !this.device.textures.has(view.texture) || view.texture.destroyed) throw new Error('Invalid render attachment');
       return view.handle;
@@ -121,7 +121,28 @@ class RecordingCommandEncoder {
         clear: Array.isArray(clear) ? clear : [clear.r, clear.g, clear.b, clear.a],
       };
     });
-    this.commands.beginRenderPass(colors);
+    const attachment = descriptor.depthStencilAttachment;
+    let depth = null;
+    if (attachment) {
+      const operation = (value, map) => {
+        const result = map[value];
+        if (result === undefined) throw new Error('Invalid depth or stencil operation');
+        return result;
+      };
+      const hasDepth = attachment.depthLoadOp !== undefined || attachment.depthStoreOp !== undefined;
+      const hasStencil = attachment.stencilLoadOp !== undefined || attachment.stencilStoreOp !== undefined;
+      if ((hasDepth && attachment.depthReadOnly) || (hasStencil && attachment.stencilReadOnly)) throw new Error('Read-only attachment has write operations');
+      depth = {
+        view: viewHandle(attachment.view), flags: Number(hasDepth) | (Number(hasStencil) << 1),
+        depthLoad: hasDepth ? operation(attachment.depthLoadOp, { load: 0, clear: 1 }) : 0,
+        depthStore: hasDepth ? operation(attachment.depthStoreOp, { discard: 0, store: 1 }) : 0,
+        depthClear: attachment.depthClearValue ?? 1,
+        stencilLoad: hasStencil ? operation(attachment.stencilLoadOp, { load: 0, clear: 1 }) : 0,
+        stencilStore: hasStencil ? operation(attachment.stencilStoreOp, { discard: 0, store: 1 }) : 0,
+        stencilClear: attachment.stencilClearValue ?? 0,
+      };
+    }
+    this.commands.beginRenderPass(colors, depth);
     const pass = {
       end: () => {
         if (this.activePass !== pass) throw new Error('Render pass has ended');

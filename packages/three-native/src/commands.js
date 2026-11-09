@@ -163,8 +163,8 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_PIPELINE_LAYOUT, payload);
   }
 
-  beginRenderPass(colors) {
-    const payload = new Uint8Array(4 + colors.length * 52);
+  beginRenderPass(colors, depth) {
+    const payload = new Uint8Array(4 + colors.length * 52 + 32);
     const view = new DataView(payload.buffer);
     view.setUint32(0, u32(colors.length, 'color attachment count'), true);
     colors.forEach((color, index) => {
@@ -181,6 +181,18 @@ export class CommandEncoder {
         view.setFloat64(offset + 20 + i * 8, component, true);
       });
     });
+    if (depth !== null) {
+      const offset = 4 + colors.length * 52;
+      view.setUint32(offset, u32(depth.view, 'depth view', true), true);
+      view.setUint32(offset + 4, u32(depth.flags, 'depth flags'), true);
+      view.setUint32(offset + 8, u32(depth.depthLoad, 'depth load'), true);
+      view.setUint32(offset + 12, u32(depth.depthStore, 'depth store'), true);
+      if (!Number.isFinite(depth.depthClear)) throw new RangeError('Invalid depth clear value');
+      view.setFloat32(offset + 16, depth.depthClear, true);
+      view.setUint32(offset + 20, u32(depth.stencilLoad, 'stencil load'), true);
+      view.setUint32(offset + 24, u32(depth.stencilStore, 'stencil store'), true);
+      view.setUint32(offset + 28, u32(depth.stencilClear, 'stencil clear'), true);
+    }
     this.append(Opcode.BEGIN_RENDER_PASS, payload);
   }
 

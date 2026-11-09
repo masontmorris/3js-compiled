@@ -237,3 +237,26 @@ test('render passes record attachments at submission and reject resubmission', (
   assert.equal(new DataView(records[0].payload.buffer).getFloat64(24, true), 1);
   assert.throws(() => device.queue.submit([buffer]), /Invalid command buffer/);
 });
+
+test('render pass records depth and multisample resolve attachments', () => {
+  const device = new RecordingDevice();
+  const color = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 16, sampleCount: 4 });
+  const target = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 16 });
+  const depth = device.createTexture({ size: [2, 2], format: 'depth24plus', usage: 16, sampleCount: 4 });
+  const colorView = color.createView();
+  const targetView = target.createView();
+  const depthView = depth.createView();
+  const encoder = device.createCommandEncoder();
+  encoder.beginRenderPass({
+    colorAttachments: [{ view: colorView, resolveTarget: targetView, loadOp: 'clear', storeOp: 'discard' }],
+    depthStencilAttachment: { view: depthView, depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 0.5 },
+  }).end();
+  device.queue.submit([encoder.finish()]);
+  const record = decodeCommands(device.takeFrame()).find(item => item.opcode === Opcode.BEGIN_RENDER_PASS);
+  const view = new DataView(record.payload.buffer);
+  assert.equal(view.getUint32(4, true), 3);
+  assert.equal(view.getUint32(12, true), targetView.handle);
+  assert.equal(view.getUint32(56, true), depthView.handle);
+  assert.equal(view.getUint32(60, true), 1);
+  assert.equal(view.getFloat32(72, true), 0.5);
+});

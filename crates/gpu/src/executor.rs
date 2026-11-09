@@ -787,14 +787,14 @@ impl Executor {
                 if self.render_pass.is_some() {
                     return Err("render pass already active".into());
                 }
-                if payload.len() < 4 || !(payload.len() - 4).is_multiple_of(52) {
+                if payload.len() < 36 || !(payload.len() - 36).is_multiple_of(52) {
                     return Err("invalid render pass length".into());
                 }
-                if u32_at(payload, 0) as usize != (payload.len() - 4) / 52 {
+                if u32_at(payload, 0) as usize != (payload.len() - 36) / 52 {
                     return Err("invalid color attachment count".into());
                 }
                 let mut colors = Vec::new();
-                for entry in payload[4..].as_chunks::<52>().0 {
+                for entry in payload[4..payload.len() - 32].as_chunks::<52>().0 {
                     let flags = u32_at(entry, 0);
                     if flags == 0 {
                         colors.push(None);
@@ -849,6 +849,61 @@ impl Executor {
                         ops: wgpu::Operations { load, store },
                     }));
                 }
+                let depth_entry = &payload[payload.len() - 32..];
+                let depth_view = u32_at(depth_entry, 0);
+                let depth = if depth_view == 0 {
+                    None
+                } else {
+                    let view = &self
+                        .views
+                        .get(&depth_view)
+                        .ok_or("unknown depth view handle")?
+                        .1;
+                    let flags = u32_at(depth_entry, 4);
+                    if flags > 3 {
+                        return Err("invalid depth attachment flags".into());
+                    }
+                    let depth_clear = f32::from_bits(u32_at(depth_entry, 16));
+                    if !depth_clear.is_finite() {
+                        return Err("invalid depth clear value".into());
+                    }
+                    let load = |value, clear| match value {
+                        0 => Ok(wgpu::LoadOp::Load),
+                        1 => Ok(wgpu::LoadOp::Clear(clear)),
+                        _ => Err("invalid attachment load operation"),
+                    };
+                    let store = |value| match value {
+                        0 => Ok(wgpu::StoreOp::Discard),
+                        1 => Ok(wgpu::StoreOp::Store),
+                        _ => Err("invalid attachment store operation"),
+                    };
+                    let depth_ops = if flags & 1 != 0 {
+                        Some(wgpu::Operations {
+                            load: load(u32_at(depth_entry, 8), depth_clear)?,
+                            store: store(u32_at(depth_entry, 12))?,
+                        })
+                    } else {
+                        None
+                    };
+                    let stencil_ops = if flags & 2 != 0 {
+                        let stencil_load = match u32_at(depth_entry, 20) {
+                            0 => wgpu::LoadOp::Load,
+                            1 => wgpu::LoadOp::Clear(u32_at(depth_entry, 28)),
+                            _ => return Err("invalid stencil load operation".into()),
+                        };
+                        Some(wgpu::Operations {
+                            load: stencil_load,
+                            store: store(u32_at(depth_entry, 24))?,
+                        })
+                    } else {
+                        None
+                    };
+                    Some(wgpu::RenderPassDepthStencilAttachment {
+                        view,
+                        depth_ops,
+                        stencil_ops,
+                    })
+                };
                 let encoder = self
                     .encoder
                     .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
@@ -857,7 +912,7 @@ impl Executor {
                     .begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
                         color_attachments: &colors,
-                        depth_stencil_attachment: None,
+                        depth_stencil_attachment: depth,
                         timestamp_writes: None,
                         occlusion_query_set: None,
                         multiview_mask: None,
