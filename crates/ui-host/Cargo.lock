@@ -7869,6 +7869,7 @@ dependencies = [
  "grafting-servo",
  "rustls",
  "servo",
+ "servo-base",
  "surfman",
  "threejsc-ipc",
  "url",

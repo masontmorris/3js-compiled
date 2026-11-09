@@ -19,11 +19,13 @@ use dpi::PhysicalSize;
 use euclid::{Scale, default::Size2D};
 use glow::HasContext;
 use proto::Msg;
+use servo::profile_traits::mem::MemoryReportResult;
 use servo::{
     DevicePoint, EventLoopWaker, InputEvent, InputEventId, InputEventResult, JSValue, LoadStatus,
     MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Preferences, ServoBuilder,
     WebView, WebViewBuilder, WebViewDelegate,
 };
+use servo_base::generic_channel::GenericCallback;
 use servo_wgpu_interop_adapter::ServoWgpuRenderingContext;
 use url::Url;
 use windows::{
@@ -443,6 +445,11 @@ fn main() {
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
     let pacer = Rc::new(RefCell::new(Pacer::default()));
+    let memory_report = std::env::var("THREEJSC_UI_MEMORY_REPORT")
+        .ok()
+        .and_then(|seconds| seconds.parse().ok())
+        .map(Duration::from_secs);
+    let mut last_memory_report = Instant::now();
     let mut warmed_at: Option<Instant> = None;
     let applied = Rc::new(Cell::new(false));
 
@@ -578,6 +585,26 @@ fn main() {
         if last_report.elapsed() >= Duration::from_secs(5) {
             report_stats(&mut stats.borrow_mut());
             last_report = Instant::now();
+        }
+        if memory_report.is_some_and(|period| last_memory_report.elapsed() >= period) {
+            last_memory_report = Instant::now();
+            let at = started.elapsed().as_secs();
+            let callback = GenericCallback::new(move |result: Result<MemoryReportResult, _>| {
+                for report in result
+                    .iter()
+                    .flat_map(|r| &r.results)
+                    .flat_map(|r| &r.reports)
+                {
+                    eprintln!(
+                        "ui-host servo memory {at} {} {}",
+                        report.path.join("/"),
+                        report.size
+                    );
+                }
+            });
+            if let Ok(callback) = callback {
+                servo.create_memory_report(callback);
+            }
         }
 
         let due = new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100);
