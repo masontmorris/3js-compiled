@@ -38,6 +38,7 @@ pub struct Executor {
     buffers: HashMap<u32, Buffer>,
     shaders: HashMap<u32, Option<wgpu::ShaderModule>>,
     textures: HashMap<u32, Texture>,
+    views: HashMap<u32, (u32, wgpu::TextureView)>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -64,6 +65,7 @@ impl Executor {
             buffers: HashMap::new(),
             shaders: HashMap::new(),
             textures: HashMap::new(),
+            views: HashMap::new(),
         }
     }
 
@@ -98,6 +100,7 @@ impl Executor {
                     || self.buffers.contains_key(&handle)
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
+                    || self.views.contains_key(&handle)
                 {
                     return Err("invalid or duplicate buffer handle".into());
                 }
@@ -228,6 +231,7 @@ impl Executor {
                     || self.buffers.contains_key(&handle)
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
+                    || self.views.contains_key(&handle)
                 {
                     return Err("invalid or duplicate texture handle".into());
                 }
@@ -329,6 +333,64 @@ impl Executor {
                     .remove(&u32_at(payload, 0))
                     .ok_or("unknown texture handle")?;
                 texture.raw.destroy();
+                self.views
+                    .retain(|_, (parent, _)| *parent != u32_at(payload, 0));
+                Ok(None)
+            }
+            7 => {
+                size(payload, 36)?;
+                let handle = u32_at(payload, 0);
+                let parent = u32_at(payload, 4);
+                if handle == 0
+                    || self.buffers.contains_key(&handle)
+                    || self.shaders.contains_key(&handle)
+                    || self.textures.contains_key(&handle)
+                    || self.views.contains_key(&handle)
+                {
+                    return Err("invalid or duplicate view handle".into());
+                }
+                let texture = self.textures.get(&parent).ok_or("unknown texture handle")?;
+                let dimension = match u32_at(payload, 24) {
+                    0 => None,
+                    1 => Some(wgpu::TextureViewDimension::D2),
+                    2 => Some(wgpu::TextureViewDimension::D2Array),
+                    3 => Some(wgpu::TextureViewDimension::Cube),
+                    4 => Some(wgpu::TextureViewDimension::CubeArray),
+                    _ => return Err("unsupported texture view dimension".into()),
+                };
+                let aspect = match u32_at(payload, 28) {
+                    0 => wgpu::TextureAspect::All,
+                    1 => wgpu::TextureAspect::DepthOnly,
+                    2 => wgpu::TextureAspect::StencilOnly,
+                    _ => return Err("unsupported texture view aspect".into()),
+                };
+                let usage_bits = u32_at(payload, 32);
+                let usage = if usage_bits == 0 {
+                    None
+                } else {
+                    Some(
+                        wgpu::TextureUsages::from_bits(usage_bits)
+                            .ok_or("invalid texture view usage")?,
+                    )
+                };
+                let mips = u32_at(payload, 12);
+                let layers = u32_at(payload, 20);
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let view = texture.raw.create_view(&wgpu::TextureViewDescriptor {
+                    label: None,
+                    format: None,
+                    dimension,
+                    usage,
+                    aspect,
+                    base_mip_level: u32_at(payload, 8),
+                    mip_level_count: (mips != 0).then_some(mips),
+                    base_array_layer: u32_at(payload, 16),
+                    array_layer_count: (layers != 0).then_some(layers),
+                });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.views.insert(handle, (parent, view));
                 Ok(None)
             }
             28 => {
@@ -449,6 +511,7 @@ impl Executor {
                     || self.buffers.contains_key(&handle)
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
+                    || self.views.contains_key(&handle)
                 {
                     return Err("invalid or duplicate shader handle".into());
                 }
@@ -472,9 +535,10 @@ impl Executor {
             }
             29 => {
                 size(payload, 4)?;
-                self.shaders
-                    .remove(&u32_at(payload, 0))
-                    .ok_or("unknown shader handle")?;
+                let handle = u32_at(payload, 0);
+                if self.shaders.remove(&handle).is_none() && self.views.remove(&handle).is_none() {
+                    return Err("unknown resource handle".into());
+                }
                 Ok(None)
             }
             26 => {

@@ -110,6 +110,14 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_TEXTURE, payload);
   }
 
+  createTextureView(handle, texture, descriptor) {
+    const payload = new Uint8Array(36);
+    const view = new DataView(payload.buffer);
+    const values = [u32(handle, 'handle', true), u32(texture, 'texture', true), descriptor.baseMip, descriptor.mips, descriptor.baseLayer, descriptor.layers, descriptor.dimension, descriptor.aspect, descriptor.usage];
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'view field'), true));
+    this.append(Opcode.CREATE_TEXTURE_VIEW, payload);
+  }
+
   writeTexture(handle, descriptor, data) {
     if (!(data instanceof Uint8Array)) throw new TypeError('Texture data must be a Uint8Array');
     const payload = new Uint8Array(40 + data.length);

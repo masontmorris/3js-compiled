@@ -54,6 +54,24 @@ class RecordingTexture {
     });
   }
 
+  createView(descriptor = {}) {
+    if (this.destroyed) throw new Error('Texture is destroyed');
+    if (descriptor.format && descriptor.format !== this.format) throw new Error('Texture view format changes are not implemented');
+    if (descriptor.swizzle && descriptor.swizzle !== 'rgba') throw new Error('Texture swizzles are not implemented');
+    const dimensions = { '2d': 1, '2d-array': 2, cube: 3, 'cube-array': 4 };
+    const aspects = { all: 0, 'depth-only': 1, 'stencil-only': 2 };
+    const dimension = descriptor.dimension === undefined ? 0 : dimensions[descriptor.dimension];
+    const aspect = aspects[descriptor.aspect ?? 'all'];
+    if (dimension === undefined || aspect === undefined) throw new Error('Unsupported texture view');
+    const handle = this.device.handles.allocate();
+    this.device.commands.createTextureView(handle, this.handle, {
+      baseMip: descriptor.baseMipLevel ?? 0, mips: descriptor.mipLevelCount ?? 0,
+      baseLayer: descriptor.baseArrayLayer ?? 0, layers: descriptor.arrayLayerCount ?? 0,
+      dimension, aspect, usage: descriptor.usage ?? 0,
+    });
+    return { handle, texture: this };
+  }
+
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;

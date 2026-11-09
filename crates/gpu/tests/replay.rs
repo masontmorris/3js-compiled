@@ -113,9 +113,14 @@ fn texture_upload_and_readback_preserve_rows() {
                 bytes: vec![4, 3, 2, 1, 8, 7, 6, 5],
             },
             Response::Error {
-                command: 6,
+                command: 7,
                 request: Some(12),
                 message: "unknown texture handle".into()
+            },
+            Response::Error {
+                command: 8,
+                request: None,
+                message: "unknown resource handle".into()
             },
         ]
     );

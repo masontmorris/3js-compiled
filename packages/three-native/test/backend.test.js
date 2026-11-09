@@ -83,3 +83,17 @@ test('texture uploads copy the specified source bytes and readbacks use a reques
   texture.destroy();
   assert.equal(decodeCommands(device.takeFrame())[0].opcode, Opcode.DESTROY_TEXTURE);
 });
+
+test('texture views retain their parent and record selected mip and layer ranges', () => {
+  const device = new RecordingDevice();
+  const texture = device.createTexture({ size: [4, 4, 2], format: 'rgba8unorm', usage: 4, mipLevelCount: 3 });
+  const view = texture.createView({ dimension: '2d-array', baseMipLevel: 1, mipLevelCount: 2, baseArrayLayer: 1, arrayLayerCount: 1 });
+  const records = decodeCommands(device.takeFrame());
+  const payload = new DataView(records[1].payload.buffer);
+  assert.equal(records[1].opcode, Opcode.CREATE_TEXTURE_VIEW);
+  assert.equal(payload.getUint32(0, true), view.handle);
+  assert.equal(payload.getUint32(4, true), texture.handle);
+  assert.deepEqual(Array.from({ length: 7 }, (_, index) => payload.getUint32(8 + index * 4, true)), [1, 2, 1, 1, 2, 0, 0]);
+  texture.destroy();
+  assert.throws(() => texture.createView());
+});
