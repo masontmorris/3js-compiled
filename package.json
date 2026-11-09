@@ -1,0 +1,6 @@
+{
+  "name": "3js-compiled",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": { "postinstall": "node tools/install/patch-three.mjs" }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@3js-compiled/three-native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.js" },
+  "dependencies": { "three": "0.187.0" }
+}

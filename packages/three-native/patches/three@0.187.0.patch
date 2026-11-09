@@ -1,0 +1,20 @@
+--- a/node_modules/three/build/three.webgpu.js
++++ b/node_modules/three/build/three.webgpu.js
+@@ -52133 +52133 @@
+-		const backend = new BackendClass( parameters );
++		const backend = parameters.backend ?? new BackendClass( parameters );
+--- a/node_modules/three/build/three.webgpu.nodes.js
++++ b/node_modules/three/build/three.webgpu.nodes.js
+@@ -93288 +93288 @@
+-		const backend = new BackendClass( parameters );
++		const backend = parameters.backend ?? new BackendClass( parameters );
+--- a/node_modules/three/src/renderers/webgpu/WebGPURenderer.js
++++ b/node_modules/three/src/renderers/webgpu/WebGPURenderer.js
+@@ -75 +75 @@
+-		const backend = new BackendClass( parameters );
++		const backend = parameters.backend ?? new BackendClass( parameters );
+--- a/node_modules/three/src/renderers/webgpu/WebGPURenderer.Nodes.js
++++ b/node_modules/three/src/renderers/webgpu/WebGPURenderer.Nodes.js
+@@ -43 +43 @@
+-		const backend = new BackendClass( parameters );
++		const backend = parameters.backend ?? new BackendClass( parameters );
