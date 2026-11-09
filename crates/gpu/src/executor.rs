@@ -29,8 +29,10 @@ pub enum Response {
         bytes: Vec<u8>,
     },
     Error {
+        frame: u32,
         command: usize,
         request: Option<u32>,
+        label: Option<String>,
         message: String,
     },
 }
@@ -47,6 +49,10 @@ pub struct Executor {
     bind_groups: HashMap<u32, wgpu::BindGroup>,
     pipeline_layouts: HashMap<u32, wgpu::PipelineLayout>,
     render_pipelines: HashMap<u32, Option<wgpu::RenderPipeline>>,
+    labels: HashMap<u32, String>,
+    frame: u32,
+    pipeline: Option<u32>,
+    pass_view: Option<u32>,
     encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
@@ -108,6 +114,10 @@ impl Executor {
             bind_groups: HashMap::new(),
             pipeline_layouts: HashMap::new(),
             render_pipelines: HashMap::new(),
+            labels: HashMap::new(),
+            frame: 0,
+            pipeline: None,
+            pass_view: None,
             encoder: None,
             render_pass: None,
             render_pass_scope: None,
@@ -131,22 +141,53 @@ impl Executor {
             || self.render_pipelines.contains_key(&handle)
     }
 
+    /// The handle whose label names the resource a command creates, uses, or draws with.
+    fn subject(&self, opcode: u16, payload: &[u8]) -> Option<u32> {
+        let at = |offset: usize| (payload.len() >= offset + 4).then(|| u32_at(payload, offset));
+        match opcode {
+            16 | 17 | 18 | 27 | 28 => at(4),
+            14 if at(0) == Some(0) => payload.len().checked_sub(32).and_then(at),
+            14 => at(8),
+            23 | 24 => self.pipeline,
+            25 | 26 => self.pass_view,
+            _ => at(0),
+        }
+    }
+
+    fn label(&self, handle: Option<u32>) -> Option<String> {
+        handle.and_then(|handle| self.labels.get(&handle).cloned())
+    }
+
+    fn set_label(&mut self, handle: u32, label: &str) {
+        if label.is_empty() {
+            self.labels.remove(&handle);
+        } else {
+            self.labels.insert(handle, label.to_owned());
+        }
+    }
+
     /// Replays one frame. `surface` is the texture that `ACQUIRE_SURFACE` binds for this frame only.
     pub fn replay(
         &mut self,
         frame: &[u8],
         surface: Option<&wgpu::Texture>,
     ) -> Result<Vec<Response>, crate::DecodeError> {
-        let records = decode(frame)?;
+        let stream = decode(frame)?;
+        let records = stream.records;
+        self.frame = stream.frame;
         self.surface = surface.cloned();
         self.surface_used = false;
         let mut responses = Vec::new();
         for (command, record) in records.iter().enumerate() {
+            let subject = self.subject(record.opcode, record.payload);
+            let before = self.label(subject);
             match self.execute(record.opcode, record.payload) {
                 Ok(Some(response)) => responses.push(response),
                 Ok(None) => {}
                 Err(message) => responses.push(Response::Error {
+                    frame: self.frame,
                     command,
+                    label: self.label(subject).or(before),
                     request: if (record.opcode == 27 || record.opcode == 28)
                         && record.payload.len() >= 4
                     {
@@ -173,8 +214,10 @@ impl Executor {
             self.render_pass_scope = None;
             self.encoder = None;
             responses.push(Response::Error {
+                frame: self.frame,
                 command: records.len(),
                 request: None,
+                label: None,
                 message: "incomplete command submission".into(),
             });
         }
@@ -182,6 +225,8 @@ impl Executor {
             self.textures.remove(&handle);
             self.views.retain(|_, (parent, _)| *parent != handle);
         }
+        self.pipeline = None;
+        self.pass_view = None;
         self.surface = None;
         Ok(responses)
     }
@@ -194,14 +239,22 @@ impl Executor {
     fn execute(&mut self, opcode: u16, payload: &[u8]) -> Result<Option<Response>, String> {
         match opcode {
             1 => {
-                size(payload, 16)?;
+                if payload.len() < 20 {
+                    return Err("truncated buffer descriptor".into());
+                }
                 let handle = u32_at(payload, 0);
                 let len = u64_at(payload, 4);
                 let usage = wgpu::BufferUsages::from_bits(u32_at(payload, 12))
                     .ok_or("invalid buffer usage")?;
+                if 20usize.checked_add(u32_at(payload, 16) as usize) != Some(payload.len()) {
+                    return Err("invalid buffer label length".into());
+                }
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate buffer handle".into());
                 }
+                let label =
+                    std::str::from_utf8(&payload[20..]).map_err(|_| "invalid buffer label")?;
+                self.set_label(handle, label);
                 if len == 0 || len > self.device.limits().max_buffer_size {
                     return Err("invalid buffer size".into());
                 }
@@ -217,7 +270,7 @@ impl Executor {
                     return Err("unsupported buffer usage".into());
                 }
                 let raw = self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: None,
+                    label: Some(label),
                     size: len,
                     usage,
                     mapped_at_creation: false,
@@ -259,6 +312,7 @@ impl Executor {
                     .remove(&u32_at(payload, 0))
                     .ok_or("unknown buffer handle")?;
                 buffer.raw.destroy();
+                self.labels.remove(&u32_at(payload, 0));
                 Ok(None)
             }
             27 => {
@@ -310,7 +364,7 @@ impl Executor {
                 }))
             }
             4 => {
-                if payload.len() < 32 {
+                if payload.len() < 36 {
                     return Err("truncated texture descriptor".into());
                 }
                 let handle = u32_at(payload, 0);
@@ -321,21 +375,26 @@ impl Executor {
                 let samples = u32_at(payload, 20);
                 let usage = wgpu::TextureUsages::from_bits(u32_at(payload, 24))
                     .ok_or("invalid texture usage")?;
-                let format_len = u32_at(payload, 28) as usize;
-                if 32usize.checked_add(format_len) != Some(payload.len()) {
-                    return Err("invalid texture format length".into());
+                let format_end = 36usize
+                    .checked_add(u32_at(payload, 28) as usize)
+                    .ok_or("invalid texture format length")?;
+                if format_end.checked_add(u32_at(payload, 32) as usize) != Some(payload.len()) {
+                    return Err("invalid texture format or label length".into());
                 }
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate texture handle".into());
                 }
-                let name =
-                    std::str::from_utf8(&payload[32..]).map_err(|_| "invalid texture format")?;
+                let label = std::str::from_utf8(&payload[format_end..])
+                    .map_err(|_| "invalid texture label")?;
+                self.set_label(handle, label);
+                let name = std::str::from_utf8(&payload[36..format_end])
+                    .map_err(|_| "invalid texture format")?;
                 let format: wgpu::TextureFormat =
                     serde_json::from_value(serde_json::Value::from(name))
                         .map_err(|_| format!("unsupported texture format {name}"))?;
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let raw = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: None,
+                    label: Some(label),
                     size: wgpu::Extent3d {
                         width,
                         height,
@@ -418,8 +477,15 @@ impl Executor {
                     .remove(&u32_at(payload, 0))
                     .ok_or("unknown texture handle")?;
                 texture.raw.destroy();
-                self.views
-                    .retain(|_, (parent, _)| *parent != u32_at(payload, 0));
+                let handle = u32_at(payload, 0);
+                let labels = &mut self.labels;
+                self.views.retain(|view, (parent, _)| {
+                    if *parent == handle {
+                        labels.remove(view);
+                    }
+                    *parent != handle
+                });
+                self.labels.remove(&handle);
                 Ok(None)
             }
             7 => {
@@ -455,9 +521,10 @@ impl Executor {
                 };
                 let mips = u32_at(payload, 12);
                 let layers = u32_at(payload, 20);
+                let label = self.labels.get(&parent).cloned();
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let view = texture.raw.create_view(&wgpu::TextureViewDescriptor {
-                    label: None,
+                    label: label.as_deref(),
                     format: None,
                     dimension,
                     usage,
@@ -471,6 +538,9 @@ impl Executor {
                     return Err(error.to_string());
                 }
                 self.views.insert(handle, (parent, view));
+                if let Some(label) = label {
+                    self.labels.insert(handle, label);
+                }
                 Ok(None)
             }
             28 => {
@@ -652,6 +722,7 @@ impl Executor {
                     .map_err(|_| "invalid shader label")?;
                 let code = std::str::from_utf8(&payload[label_end..code_end])
                     .map_err(|_| "invalid shader source")?;
+                self.set_label(handle, label);
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let shader = self
                     .device
@@ -857,6 +928,7 @@ impl Executor {
                 let request = u32_at(payload, 4);
                 let spec: crate::pipeline::Pipeline = serde_json::from_slice(&payload[8..])
                     .map_err(|error| format!("invalid render pipeline descriptor: {error}"))?;
+                self.set_label(handle, &spec.label);
                 let layout = match spec.layout {
                     0 => None,
                     handle => Some(
@@ -1040,6 +1112,8 @@ impl Executor {
                     .forget_lifetime();
                 self.render_pass_scope = Some(scope);
                 self.valid_pipeline = None;
+                self.pipeline = None;
+                self.pass_view = self.subject(14, payload);
                 self.render_pass = Some(pass);
                 Ok(None)
             }
@@ -1051,6 +1125,7 @@ impl Executor {
                     .ok_or("unknown render pipeline handle")?;
                 let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
                 self.valid_pipeline = Some(pipeline.is_some());
+                self.pipeline = Some(u32_at(payload, 0));
                 if let Some(pipeline) = pipeline {
                     pass.set_pipeline(pipeline);
                 }
@@ -1261,6 +1336,7 @@ impl Executor {
                 {
                     return Err("unknown resource handle".into());
                 }
+                self.labels.remove(&handle);
                 Ok(None)
             }
             26 => {

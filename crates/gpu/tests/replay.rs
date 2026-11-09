@@ -22,6 +22,16 @@ fn executor() -> Executor {
     Executor::new(device, queue)
 }
 
+fn error(command: usize, request: Option<u32>, message: &str) -> Response {
+    Response::Error {
+        frame: 0,
+        command,
+        request,
+        label: None,
+        message: message.into(),
+    }
+}
+
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_buffers_round_trip_on_vulkan() {
@@ -36,11 +46,7 @@ fn recorded_buffers_round_trip_on_vulkan() {
                 request: 2,
                 bytes: vec![0, 0, 0, 0, 11, 22, 33, 44, 0, 0, 0, 0, 0, 0, 0, 0]
             },
-            Response::Error {
-                command: 4,
-                request: Some(3),
-                message: "unknown buffer handle".into()
-            },
+            error(4, Some(3), "unknown buffer handle"),
         ]
     );
 }
@@ -92,18 +98,53 @@ fn texture_upload_and_readback_preserve_rows() {
                 request: 13,
                 bytes: vec![4, 3, 2, 1, 8, 7, 6, 5],
             },
-            Response::Error {
-                command: 7,
-                request: Some(12),
-                message: "unknown texture handle".into()
-            },
-            Response::Error {
-                command: 8,
-                request: None,
-                message: "unknown resource handle".into()
-            },
+            error(7, Some(12), "unknown texture handle"),
+            error(8, None, "unknown resource handle"),
         ]
     );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn errors_name_their_frame_and_resource_label() {
+    let mut executor = executor();
+    let frames: [&[u8]; 4] = [
+        include_bytes!("fixtures/labels-0.bin"),
+        include_bytes!("fixtures/labels-1.bin"),
+        include_bytes!("fixtures/labels-2.bin"),
+        include_bytes!("fixtures/labels-3.bin"),
+    ];
+    let errors: Vec<_> = frames
+        .iter()
+        .flat_map(|frame| executor.replay(frame, None).unwrap())
+        .map(|response| match response {
+            Response::Error {
+                frame,
+                command,
+                label,
+                message,
+                ..
+            } => (frame, command, label, message),
+            response => panic!("expected an error, got {response:?}"),
+        })
+        .collect();
+    let write = |frame| {
+        (
+            frame,
+            0,
+            Some("particles".to_string()),
+            "invalid buffer write".to_string(),
+        )
+    };
+    assert_eq!(errors.len(), 4, "{errors:?}");
+    assert_eq!(errors[0], write(1));
+    assert_eq!(errors[3], write(3));
+    assert_eq!(
+        (errors[1].0, errors[1].2.as_deref()),
+        (2, Some("shadow-map"))
+    );
+    assert_eq!(errors[2].0, 2);
+    assert!(errors[2].3.contains("'particles'"), "{}", errors[2].3);
 }
 
 #[test]
@@ -114,11 +155,7 @@ fn anisotropic_comparison_sampler_is_created_and_released() {
         executor
             .replay(include_bytes!("fixtures/samplers.bin"), None)
             .unwrap(),
-        vec![Response::Error {
-            command: 2,
-            request: None,
-            message: "unknown resource handle".into()
-        },]
+        vec![error(2, None, "unknown resource handle"),]
     );
 }
 
@@ -131,16 +168,8 @@ fn bind_group_layouts_validate_and_share_the_handle_namespace() {
             .replay(include_bytes!("fixtures/layouts.bin"), None)
             .unwrap(),
         vec![
-            Response::Error {
-                command: 1,
-                request: None,
-                message: "invalid or duplicate buffer handle".into()
-            },
-            Response::Error {
-                command: 3,
-                request: None,
-                message: "unknown resource handle".into()
-            },
+            error(1, None, "invalid or duplicate buffer handle"),
+            error(3, None, "unknown resource handle"),
         ]
     );
 }
@@ -168,11 +197,7 @@ fn pipeline_layout_keeps_its_bind_group_layout_and_handle() {
         executor
             .replay(include_bytes!("fixtures/pipeline-layouts.bin"), None)
             .unwrap(),
-        vec![Response::Error {
-            command: 3,
-            request: None,
-            message: "invalid or duplicate buffer handle".into(),
-        }]
+        vec![error(3, None, "invalid or duplicate buffer handle")]
     );
 }
 

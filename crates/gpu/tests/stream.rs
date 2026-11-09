@@ -4,7 +4,7 @@ use threejsc_gpu::{DecodeError, Record, decode};
 fn javascript_frame_decodes_in_order() {
     let frame = include_bytes!("fixtures/frame.bin");
     assert_eq!(
-        decode(frame).unwrap(),
+        decode(frame).unwrap().records,
         vec![
             Record {
                 opcode: 1,
@@ -29,9 +29,9 @@ fn damaged_or_truncated_frames_are_rejected() {
         assert!(decode(&frame[..length]).is_err());
     }
     let mut damaged = frame.to_vec();
-    damaged[16] = 255;
+    damaged[20] = 255;
     assert_eq!(decode(&damaged), Err(DecodeError::Opcode));
     damaged = frame.to_vec();
-    damaged[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+    damaged[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(decode(&damaged), Err(DecodeError::Truncated));
 }

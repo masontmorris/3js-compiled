@@ -196,25 +196,28 @@ fn main() -> Result<()> {
                     if drew {
                         clear = None;
                     }
-                    responses.into_iter().map(|response| match response {
-                        threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
-                        threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
-                        threejsc_gpu::Response::Error { command, request, message } => json!({"type": "error", "command": command, "request": request, "message": message}),
-                    }).collect::<Vec<_>>()
+                    let mut values = Vec::with_capacity(responses.len());
+                    for response in responses {
+                        values.push(match response {
+                            threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
+                            threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
+                            threejsc_gpu::Response::Error { frame, command, request, label, message } => {
+                                let request_text = request.map_or("none".into(), |request| request.to_string());
+                                log(&log_file, &format!("GPU error: frame {frame}, command {command}, label {}, request {request_text}: {message}", label.as_deref().unwrap_or("none")))?;
+                                json!({"type": "error", "frame": frame, "command": command, "request": request, "label": label, "message": message})
+                            }
+                        });
+                    }
+                    values
                 }
-                Err(error) => vec![json!({"type": "error", "message": error.to_string()})],
-            };
-            for response in &responses {
-                if response["type"] == "error" {
+                Err(error) => {
                     log(
                         &log_file,
-                        &format!(
-                            "GPU error: {}",
-                            response["message"].as_str().unwrap_or("unknown error")
-                        ),
+                        &format!("GPU stream rejected in host frame {frame}: {error}"),
                     )?;
+                    vec![json!({"type": "error", "message": error.to_string()})]
                 }
-            }
+            };
             if !responses.is_empty() {
                 game.event(&json!({"type": "gpu-response", "responses": responses}))?;
             }

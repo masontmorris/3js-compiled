@@ -1,12 +1,19 @@
 use std::{error::Error, fmt};
 
-const HEADER_LEN: usize = 16;
+const HEADER_LEN: usize = 20;
 const RECORD_LEN: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Record<'a> {
     pub opcode: u16,
     pub payload: &'a [u8],
+}
+
+/// A decoded stream. `frame` is the recorder's frame index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stream<'a> {
+    pub frame: u32,
+    pub records: Vec<Record<'a>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,14 +47,14 @@ fn u32_at(bytes: &[u8], offset: usize) -> u32 {
     ])
 }
 
-pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
+pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
     if bytes.len() < HEADER_LEN {
         return Err(DecodeError::Truncated);
     }
     if &bytes[..4] != b"3JSC" {
         return Err(DecodeError::Magic);
     }
-    if u16_at(bytes, 4) != 1 {
+    if u16_at(bytes, 4) != 2 {
         return Err(DecodeError::Version);
     }
     if u16_at(bytes, 6) != 0 {
@@ -56,7 +63,8 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
     if u32_at(bytes, 8) as usize != bytes.len() {
         return Err(DecodeError::Length);
     }
-    let count = u32_at(bytes, 12) as usize;
+    let frame = u32_at(bytes, 12);
+    let count = u32_at(bytes, 16) as usize;
     if count > (bytes.len() - HEADER_LEN) / RECORD_LEN {
         return Err(DecodeError::Truncated);
     }
@@ -83,7 +91,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
     if offset != bytes.len() {
         return Err(DecodeError::Length);
     }
-    Ok(records)
+    Ok(Stream { frame, records })
 }
 mod executor;
 mod pipeline;

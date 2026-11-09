@@ -16,7 +16,7 @@ class RecordingBuffer {
     this.destroyed = false;
     this.mapped = descriptor.mappedAtCreation ? new ArrayBuffer(descriptor.size) : null;
     const usage = descriptor.mappedAtCreation ? descriptor.usage | 8 : descriptor.usage;
-    device.commands.createBuffer(this.handle, descriptor.size, usage);
+    device.commands.createBuffer(this.handle, descriptor.size, usage, descriptor.label ?? '');
   }
 
   getMappedRange(offset = 0, size = this.size - offset) {
@@ -58,7 +58,7 @@ class RecordingTexture {
     if (surface) device.commands.words(Opcode.ACQUIRE_SURFACE, [this.handle, this.width, this.height]);
     else device.commands.createTexture(this.handle, {
       width: this.width, height: this.height, layers: this.depthOrArrayLayers,
-      mips: this.mipLevelCount, samples: this.sampleCount, usage: this.usage, format: this.format,
+      mips: this.mipLevelCount, samples: this.sampleCount, usage: this.usage, format: this.format, label: descriptor.label ?? '',
     });
   }
 
@@ -273,6 +273,7 @@ export class RecordingDevice {
     this.pipelineLayouts = new Set();
     this.renderPipelines = new Set();
     this.surface = null;
+    this.frame = 0;
     this.errorScopes = [];
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
@@ -612,7 +613,7 @@ export class RecordingDevice {
   takeFrame() {
     this.surface?.destroy();
     this.surface = null;
-    return this.commands.finish();
+    return this.commands.finish(this.frame++);
   }
 }
 

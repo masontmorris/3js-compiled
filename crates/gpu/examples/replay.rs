@@ -43,10 +43,13 @@ fn main() {
             .unwrap()
         {
             if let Response::Error {
-                command, message, ..
+                command,
+                label,
+                message,
+                ..
             } = response
             {
-                eprintln!("frame {index} command {command}: {message}");
+                eprintln!("frame {index} command {command} label {label:?}: {message}");
             }
         }
     }

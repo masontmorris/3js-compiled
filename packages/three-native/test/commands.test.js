@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CommandEncoder, decodeCommands, Handles, Opcode } from '../src/commands.js';
+import { CommandEncoder, decodeCommands, Handles, Opcode, streamFrame } from '../src/commands.js';
 
 test('each opcode survives one frame in order and owns its payload bytes', () => {
   const encoder = new CommandEncoder();
@@ -18,7 +18,7 @@ test('the decoder rejects corrupted and truncated streams', () => {
   encoder.append(Opcode.DRAW, new Uint8Array([1, 2, 3]));
   const valid = encoder.finish();
   for (let i = 0; i < valid.length; i++) assert.throws(() => decodeCommands(valid.subarray(0, i)));
-  for (const [offset, value] of [[0, 0], [4, 2], [6, 1], [16, 255], [18, 1], [20, 255]]) {
+  for (const [offset, value] of [[0, 0], [4, 1], [6, 1], [20, 255], [22, 1], [24, 255]]) {
     const corrupt = valid.slice();
     corrupt[offset] = value;
     assert.throws(() => decodeCommands(corrupt));
@@ -40,16 +40,19 @@ test('the installed renderer accepts an injected backend', async () => {
 
 test('buffer operations preserve their binary fields and reject invalid handles', () => {
   const encoder = new CommandEncoder();
-  encoder.createBuffer(7, 16, 12);
+  encoder.createBuffer(7, 16, 12, 'particles');
   encoder.writeBuffer(7, 4, new Uint8Array([1, 2, 3, 4]));
   encoder.readBuffer(8, 7, 4, 4);
   encoder.destroyBuffer(7);
-  const records = decodeCommands(encoder.finish());
+  const stream = encoder.finish(42);
+  assert.equal(streamFrame(stream), 42);
+  const records = decodeCommands(stream);
   assert.deepEqual(records.map(record => record.opcode), [1, 2, 27, 3]);
   const create = new DataView(records[0].payload.buffer);
   assert.equal(create.getUint32(0, true), 7);
   assert.equal(create.getBigUint64(4, true), 16n);
   assert.equal(create.getUint32(12, true), 12);
+  assert.equal(new TextDecoder().decode(records[0].payload.slice(20, 20 + create.getUint32(16, true))), 'particles');
   assert.deepEqual([...records[1].payload.slice(12)], [1, 2, 3, 4]);
   assert.throws(() => encoder.createBuffer(0, 16, 12));
   assert.throws(() => encoder.readBuffer(8, 7, -1, 4));

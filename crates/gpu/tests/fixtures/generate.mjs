@@ -199,3 +199,18 @@ surfaceDevice.commands.readTexture(100, surface.handle, { mip: 0, x: 0, y: 0, la
 writeFileSync(new URL('./surface.bin', import.meta.url), surfaceDevice.takeFrame());
 surfaceDevice.surfaceTexture(8, 8, { format: 'bgra8unorm', usage: 17 });
 writeFileSync(new URL('./surface-mismatch.bin', import.meta.url), surfaceDevice.takeFrame());
+
+const labelDevice = new RecordingDevice();
+const particles = labelDevice.createBuffer({ label: 'particles', size: 16, usage: 12 });
+const shadowMap = labelDevice.createTexture({ label: 'shadow-map', size: [4, 4], format: 'rgba8unorm', usage: 2 });
+writeFileSync(new URL('./labels-0.bin', import.meta.url), labelDevice.takeFrame());
+labelDevice.queue.writeBuffer(particles, 2, new Uint8Array(4));
+writeFileSync(new URL('./labels-1.bin', import.meta.url), labelDevice.takeFrame());
+const labelEncoder = labelDevice.createCommandEncoder();
+labelEncoder.beginRenderPass({ colorAttachments: [{ view: shadowMap.createView(), loadOp: 'clear', storeOp: 'store' }] }).end();
+labelDevice.queue.submit([labelEncoder.finish()]);
+const uniformLayout = labelDevice.createBindGroupLayout({ entries: [{ binding: 0, visibility: 1, buffer: {} }] });
+labelDevice.createBindGroup({ layout: uniformLayout, entries: [{ binding: 0, resource: { buffer: particles } }] });
+writeFileSync(new URL('./labels-2.bin', import.meta.url), labelDevice.takeFrame());
+labelDevice.queue.writeBuffer(particles, 2, new Uint8Array(4));
+writeFileSync(new URL('./labels-3.bin', import.meta.url), labelDevice.takeFrame());

@@ -33,8 +33,8 @@ export const Opcode = Object.freeze({
 });
 
 const MAGIC = 0x43534a33;
-const VERSION = 1;
-const HEADER_SIZE = 16;
+const VERSION = 2;
+const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
 
@@ -106,11 +106,13 @@ export class CommandEncoder {
   createTexture(handle, descriptor) {
     const format = descriptor.format;
     if (typeof format !== 'string' || !/^[a-z0-9-]+$/.test(format)) throw new TypeError('Invalid texture format');
-    const payload = new Uint8Array(32 + format.length);
+    const label = encodeUtf8(descriptor.label ?? '');
+    const payload = new Uint8Array(36 + format.length + label.length);
     const view = new DataView(payload.buffer);
-    const values = [u32(handle, 'handle', true), descriptor.width, descriptor.height, descriptor.layers, descriptor.mips, descriptor.samples, descriptor.usage, format.length];
+    const values = [u32(handle, 'handle', true), descriptor.width, descriptor.height, descriptor.layers, descriptor.mips, descriptor.samples, descriptor.usage, format.length, label.length];
     values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'texture field'), true));
-    for (let i = 0; i < format.length; i++) payload[32 + i] = format.charCodeAt(i);
+    for (let i = 0; i < format.length; i++) payload[36 + i] = format.charCodeAt(i);
+    payload.set(label, 36 + format.length);
     this.append(Opcode.CREATE_TEXTURE, payload);
   }
 
@@ -279,12 +281,15 @@ export class CommandEncoder {
     this.append(Opcode.DESTROY_TEXTURE, payload);
   }
 
-  createBuffer(handle, size, usage) {
-    const payload = new Uint8Array(16);
+  createBuffer(handle, size, usage, label = '') {
+    const name = encodeUtf8(label);
+    const payload = new Uint8Array(20 + name.length);
     const view = new DataView(payload.buffer);
     view.setUint32(0, u32(handle, 'handle', true), true);
     view.setBigUint64(4, u64(size, 'size'), true);
     view.setUint32(12, u32(usage, 'usage'), true);
+    view.setUint32(16, name.length, true);
+    payload.set(name, 20);
     this.append(Opcode.CREATE_BUFFER, payload);
   }
 
@@ -320,13 +325,14 @@ export class CommandEncoder {
     this.append(Opcode.DESTROY_BUFFER, payload);
   }
 
-  finish() {
+  finish(frame = 0) {
     const bytes = new Uint8Array(this.#size);
     const view = new DataView(bytes.buffer);
     view.setUint32(0, MAGIC, true);
     view.setUint16(4, VERSION, true);
     view.setUint32(8, this.#size, true);
-    view.setUint32(12, this.#records.length, true);
+    view.setUint32(12, u32(frame, 'frame'), true);
+    view.setUint32(16, this.#records.length, true);
     let offset = HEADER_SIZE;
     for (const { opcode, payload } of this.#records) {
       view.setUint16(offset, opcode, true);
@@ -340,6 +346,10 @@ export class CommandEncoder {
   }
 }
 
+export function streamFrame(bytes) {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(12, true);
+}
+
 export function decodeCommands(bytes) {
   if (!(bytes instanceof Uint8Array)) throw new TypeError('Command stream must be a Uint8Array');
   if (bytes.byteLength < HEADER_SIZE) throw new RangeError('Truncated command stream header');
@@ -348,7 +358,7 @@ export function decodeCommands(bytes) {
   if (view.getUint16(4, true) !== VERSION) throw new Error('Unsupported command stream version');
   if (view.getUint16(6, true) !== 0) throw new Error('Unsupported command stream flags');
   if (view.getUint32(8, true) !== bytes.byteLength) throw new RangeError('Invalid command stream length');
-  const count = view.getUint32(12, true);
+  const count = view.getUint32(16, true);
   const records = [];
   let offset = HEADER_SIZE;
   for (let i = 0; i < count; i++) {
