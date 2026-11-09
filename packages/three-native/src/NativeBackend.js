@@ -100,6 +100,7 @@ export class RecordingDevice {
     this.textures = new Set();
     this.shaders = new Set();
     this.samplers = new Set();
+    this.bindGroupLayouts = new Set();
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -202,6 +203,45 @@ export class RecordingDevice {
     return sampler;
   }
 
+  createBindGroupLayout(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    const select = (map, value, fallback) => {
+      const result = map[value ?? fallback];
+      if (result === undefined) throw new Error('Unsupported bind group layout option');
+      return result;
+    };
+    const entries = descriptor.entries.map(entry => {
+      if (entry.count !== undefined) throw new Error('Binding arrays are not implemented');
+      const kinds = ['buffer', 'sampler', 'texture'].filter(kind => entry[kind] !== undefined);
+      if (kinds.length !== 1) throw new Error('Unsupported bind group layout entry');
+      const kind = kinds[0];
+      const options = entry[kind];
+      const type = kind === 'buffer'
+        ? select({ uniform: 0, storage: 1, 'read-only-storage': 2 }, options.type, 'uniform')
+        : kind === 'sampler'
+          ? select({ filtering: 0, 'non-filtering': 1, comparison: 2 }, options.type, 'filtering')
+          : select({ float: 0, 'unfilterable-float': 1, depth: 2, sint: 3, uint: 4 }, options.sampleType, 'float');
+      const dimension = kind === 'texture'
+        ? select({ '1d': 0, '2d': 1, '2d-array': 2, cube: 3, 'cube-array': 4, '3d': 5 }, options.viewDimension, '2d')
+        : 0;
+      return {
+        binding: entry.binding, visibility: entry.visibility,
+        kind: { buffer: 1, sampler: 2, texture: 3 }[kind], type, dimension,
+        flags: Number(kind === 'buffer' ? (options.hasDynamicOffset ?? false) : (options.multisampled ?? false)),
+        minSize: kind === 'buffer' ? (options.minBindingSize ?? 0) : 0,
+      };
+    });
+    const layout = { handle: this.handles.allocate() };
+    this.commands.createBindGroupLayout(layout.handle, entries);
+    this.bindGroupLayouts.add(layout);
+    return layout;
+  }
+
+  releaseBindGroupLayout(layout) {
+    if (!this.bindGroupLayouts.delete(layout)) return;
+    this.commands.destroyResource(layout.handle);
+  }
+
   releaseSampler(sampler) {
     if (!this.samplers.delete(sampler)) return;
     this.commands.destroyResource(sampler.handle);
@@ -233,6 +273,7 @@ export class RecordingDevice {
     for (const buffer of this.buffers) buffer.destroy();
     for (const texture of this.textures) texture.destroy();
     for (const sampler of this.samplers) this.releaseSampler(sampler);
+    for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
@@ -284,6 +325,12 @@ export class NativeBackend extends WebGPUBackend {
     const { sampler, samplerKey: key } = this.get(binding);
     super.destroySampler(binding);
     if (sampler && !this.textureUtils._samplerCache.has(key)) this.recordingDevice.releaseSampler(sampler);
+  }
+
+  deleteBindGroupData(bindGroup) {
+    const layout = this.get(bindGroup).layout;
+    super.deleteBindGroupData(bindGroup);
+    if (layout && layout.usedTimes === 0) this.recordingDevice.releaseBindGroupLayout(layout.layoutGPU);
   }
 
   destroyProgram(program) {

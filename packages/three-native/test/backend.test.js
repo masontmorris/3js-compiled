@@ -127,3 +127,38 @@ test('shared samplers release only after the last binding', async () => {
   assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.CREATE_SAMPLER, Opcode.DESTROY_RESOURCE]);
   await renderer.dispose();
 });
+
+test('bind group layouts record binding types and release once', () => {
+  const device = new RecordingDevice();
+  const layout = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: 3, buffer: { type: 'uniform', minBindingSize: 16 } },
+    { binding: 1, visibility: 2, sampler: { type: 'comparison' } },
+    { binding: 2, visibility: 2, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
+  ] });
+  device.releaseBindGroupLayout(layout);
+  device.releaseBindGroupLayout(layout);
+  const records = decodeCommands(device.takeFrame());
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BIND_GROUP_LAYOUT, Opcode.DESTROY_RESOURCE]);
+  const view = new DataView(records[0].payload.buffer);
+  assert.equal(view.getUint32(0, true), layout.handle);
+  assert.equal(view.getUint32(4, true), 3);
+  assert.equal(view.getBigUint64(32, true), 16n);
+  assert.equal(view.getUint32(8 + 32 + 12, true), 2);
+  assert.equal(view.getUint32(8 + 64 + 16, true), 2);
+  assert.throws(() => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 1, storageTexture: {} }] }), /Unsupported/);
+});
+
+test('shared bind group layouts are released after the last binding group', async () => {
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const first = { bindings: [{ isUniformBuffer: true, visibility: 3 }] };
+  const second = { bindings: [{ isUniformBuffer: true, visibility: 3 }] };
+  assert.equal(backend.bindingUtils.createBindingsLayout(first), backend.bindingUtils.createBindingsLayout(second));
+  backend.deleteBindGroupData(first);
+  assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.CREATE_BIND_GROUP_LAYOUT]);
+  backend.deleteBindGroupData(second);
+  assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.DESTROY_RESOURCE]);
+  await renderer.dispose();
+});

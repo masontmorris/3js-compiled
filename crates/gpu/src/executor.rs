@@ -40,6 +40,7 @@ pub struct Executor {
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, (u32, wgpu::TextureView)>,
     samplers: HashMap<u32, wgpu::Sampler>,
+    bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -68,7 +69,18 @@ impl Executor {
             textures: HashMap::new(),
             views: HashMap::new(),
             samplers: HashMap::new(),
+            bind_group_layouts: HashMap::new(),
         }
+    }
+
+    fn handle_used(&self, handle: u32) -> bool {
+        handle == 0
+            || self.buffers.contains_key(&handle)
+            || self.shaders.contains_key(&handle)
+            || self.textures.contains_key(&handle)
+            || self.views.contains_key(&handle)
+            || self.samplers.contains_key(&handle)
+            || self.bind_group_layouts.contains_key(&handle)
     }
 
     pub fn replay(&mut self, frame: &[u8]) -> Result<Vec<Response>, crate::DecodeError> {
@@ -98,13 +110,7 @@ impl Executor {
                 let len = u64_at(payload, 4);
                 let usage = wgpu::BufferUsages::from_bits(u32_at(payload, 12))
                     .ok_or("invalid buffer usage")?;
-                if handle == 0
-                    || self.buffers.contains_key(&handle)
-                    || self.shaders.contains_key(&handle)
-                    || self.textures.contains_key(&handle)
-                    || self.views.contains_key(&handle)
-                    || self.samplers.contains_key(&handle)
-                {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate buffer handle".into());
                 }
                 if len == 0 || len > self.device.limits().max_buffer_size {
@@ -230,13 +236,7 @@ impl Executor {
                 if 32usize.checked_add(format_len) != Some(payload.len()) {
                     return Err("invalid texture format length".into());
                 }
-                if handle == 0
-                    || self.buffers.contains_key(&handle)
-                    || self.shaders.contains_key(&handle)
-                    || self.textures.contains_key(&handle)
-                    || self.views.contains_key(&handle)
-                    || self.samplers.contains_key(&handle)
-                {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate texture handle".into());
                 }
                 let format = match std::str::from_utf8(&payload[32..])
@@ -345,13 +345,7 @@ impl Executor {
                 size(payload, 36)?;
                 let handle = u32_at(payload, 0);
                 let parent = u32_at(payload, 4);
-                if handle == 0
-                    || self.buffers.contains_key(&handle)
-                    || self.shaders.contains_key(&handle)
-                    || self.textures.contains_key(&handle)
-                    || self.views.contains_key(&handle)
-                    || self.samplers.contains_key(&handle)
-                {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate view handle".into());
                 }
                 let texture = self.textures.get(&parent).ok_or("unknown texture handle")?;
@@ -499,13 +493,7 @@ impl Executor {
             8 => {
                 size(payload, 44)?;
                 let handle = u32_at(payload, 0);
-                if handle == 0
-                    || self.buffers.contains_key(&handle)
-                    || self.shaders.contains_key(&handle)
-                    || self.textures.contains_key(&handle)
-                    || self.views.contains_key(&handle)
-                    || self.samplers.contains_key(&handle)
-                {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate sampler handle".into());
                 }
                 let address = |value| match value {
@@ -575,13 +563,7 @@ impl Executor {
                 if code_end != payload.len() {
                     return Err("invalid shader length".into());
                 }
-                if handle == 0
-                    || self.buffers.contains_key(&handle)
-                    || self.shaders.contains_key(&handle)
-                    || self.textures.contains_key(&handle)
-                    || self.views.contains_key(&handle)
-                    || self.samplers.contains_key(&handle)
-                {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate shader handle".into());
                 }
                 let label = std::str::from_utf8(&payload[12..label_end])
@@ -602,12 +584,94 @@ impl Executor {
                 self.shaders.insert(handle, Some(shader));
                 Ok(None)
             }
+            10 => {
+                if payload.len() < 8 || !(payload.len() - 8).is_multiple_of(32) {
+                    return Err("invalid bind group layout length".into());
+                }
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate bind group layout handle".into());
+                }
+                if u32_at(payload, 4) as usize != (payload.len() - 8) / 32 {
+                    return Err("invalid bind group layout count".into());
+                }
+                let mut entries = Vec::new();
+                for entry in payload[8..].as_chunks::<32>().0 {
+                    let visibility = wgpu::ShaderStages::from_bits(u32_at(entry, 4))
+                        .ok_or("invalid shader visibility")?;
+                    let kind = u32_at(entry, 8);
+                    let option = u32_at(entry, 12);
+                    let dimension = u32_at(entry, 16);
+                    let flags = u32_at(entry, 20);
+                    let min_size = u64_at(entry, 24);
+                    let ty = match kind {
+                        1 if dimension == 0 && flags <= 1 => wgpu::BindingType::Buffer {
+                            ty: match option {
+                                0 => wgpu::BufferBindingType::Uniform,
+                                1 => wgpu::BufferBindingType::Storage { read_only: false },
+                                2 => wgpu::BufferBindingType::Storage { read_only: true },
+                                _ => return Err("invalid buffer binding type".into()),
+                            },
+                            has_dynamic_offset: flags != 0,
+                            min_binding_size: std::num::NonZeroU64::new(min_size),
+                        },
+                        2 if dimension == 0 && flags == 0 && min_size == 0 => {
+                            wgpu::BindingType::Sampler(match option {
+                                0 => wgpu::SamplerBindingType::Filtering,
+                                1 => wgpu::SamplerBindingType::NonFiltering,
+                                2 => wgpu::SamplerBindingType::Comparison,
+                                _ => return Err("invalid sampler binding type".into()),
+                            })
+                        }
+                        3 if flags <= 1 && min_size == 0 => wgpu::BindingType::Texture {
+                            sample_type: match option {
+                                0 => wgpu::TextureSampleType::Float { filterable: true },
+                                1 => wgpu::TextureSampleType::Float { filterable: false },
+                                2 => wgpu::TextureSampleType::Depth,
+                                3 => wgpu::TextureSampleType::Sint,
+                                4 => wgpu::TextureSampleType::Uint,
+                                _ => return Err("invalid texture sample type".into()),
+                            },
+                            view_dimension: match dimension {
+                                0 => wgpu::TextureViewDimension::D1,
+                                1 => wgpu::TextureViewDimension::D2,
+                                2 => wgpu::TextureViewDimension::D2Array,
+                                3 => wgpu::TextureViewDimension::Cube,
+                                4 => wgpu::TextureViewDimension::CubeArray,
+                                5 => wgpu::TextureViewDimension::D3,
+                                _ => return Err("invalid binding view dimension".into()),
+                            },
+                            multisampled: flags != 0,
+                        },
+                        _ => return Err("invalid bind group layout entry".into()),
+                    };
+                    entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: u32_at(entry, 0),
+                        visibility,
+                        ty,
+                        count: None,
+                    });
+                }
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let layout =
+                    self.device
+                        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                            label: None,
+                            entries: &entries,
+                        });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.bind_group_layouts.insert(handle, layout);
+                Ok(None)
+            }
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
                 if self.shaders.remove(&handle).is_none()
                     && self.views.remove(&handle).is_none()
                     && self.samplers.remove(&handle).is_none()
+                    && self.bind_group_layouts.remove(&handle).is_none()
                 {
                     return Err("unknown resource handle".into());
                 }

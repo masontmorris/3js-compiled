@@ -42,3 +42,14 @@ samplers.createSampler(20, { addressU: 1, addressV: 0, addressW: 2, mag: 1, min:
 samplers.destroyResource(20);
 samplers.destroyResource(20);
 writeFileSync(new URL('./samplers.bin', import.meta.url), samplers.finish());
+
+const layouts = new CommandEncoder();
+layouts.createBindGroupLayout(30, [
+  { binding: 0, visibility: 3, kind: 1, type: 0, dimension: 0, flags: 0, minSize: 16 },
+  { binding: 1, visibility: 2, kind: 2, type: 2, dimension: 0, flags: 0, minSize: 0 },
+  { binding: 2, visibility: 2, kind: 3, type: 2, dimension: 1, flags: 0, minSize: 0 },
+]);
+layouts.createBuffer(30, 16, 12);
+layouts.destroyResource(30);
+layouts.destroyResource(30);
+writeFileSync(new URL('./layouts.bin', import.meta.url), layouts.finish());
