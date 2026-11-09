@@ -5,3 +5,4 @@ dist/
 host.log
 frames.csv
 __pycache__/
+examples/scenes/scene-bundle.js

@@ -19,6 +19,7 @@ use threejsc_host::script::{PointerAction, Step};
 
 struct Options {
     entry: String,
+    scene: Option<String>,
     script: Option<PathBuf>,
     record: Option<PathBuf>,
     vsync: bool,
@@ -26,12 +27,14 @@ struct Options {
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
     let mut entry = None;
+    let mut scene = None;
     let mut script = None;
     let mut record = None;
     let mut vsync = true;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
+            "--scene" => scene = Some(args.next().context("--scene needs a name")?),
             "--script" => script = Some(args.next().context("--script needs a path")?.into()),
             "--record" => record = Some(args.next().context("--record needs a directory")?.into()),
             "--vsync" => {
@@ -47,6 +50,7 @@ fn options() -> Result<Options> {
     }
     Ok(Options {
         entry: entry.context("--entry is required")?,
+        scene,
         script,
         record,
         vsync,
@@ -91,7 +95,12 @@ fn main() -> Result<()> {
         .build()?;
     let (mut renderer, adapter) = pollster::block_on(Renderer::new(&window, options.vsync))?;
     log(&log_file, &adapter)?;
-    let mut game = Game::new(&options.entry, log_file.clone(), &runtime)?;
+    let mut game = Game::new(
+        &options.entry,
+        log_file.clone(),
+        &runtime,
+        options.scene.as_deref(),
+    )?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
