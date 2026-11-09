@@ -101,6 +101,7 @@ export class RecordingDevice {
     this.shaders = new Set();
     this.samplers = new Set();
     this.bindGroupLayouts = new Set();
+    this.bindGroups = new Set();
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -242,6 +243,30 @@ export class RecordingDevice {
     this.commands.destroyResource(layout.handle);
   }
 
+  createBindGroup(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    if (!this.bindGroupLayouts.has(descriptor.layout)) throw new Error('Invalid bind group layout');
+    const entries = descriptor.entries.map(({ binding, resource }) => {
+      if (resource.buffer instanceof RecordingBuffer && this.buffers.has(resource.buffer) && !resource.buffer.destroyed) {
+        return { binding, kind: 1, handle: resource.buffer.handle, offset: resource.offset ?? 0, size: resource.size ?? 0 };
+      }
+      if (this.samplers.has(resource)) return { binding, kind: 2, handle: resource.handle, offset: 0, size: 0 };
+      if (resource.texture instanceof RecordingTexture && this.textures.has(resource.texture) && !resource.texture.destroyed) {
+        return { binding, kind: 3, handle: resource.handle, offset: 0, size: 0 };
+      }
+      throw new Error('Invalid bind group resource');
+    });
+    const group = { handle: this.handles.allocate() };
+    this.commands.createBindGroup(group.handle, descriptor.layout.handle, entries);
+    this.bindGroups.add(group);
+    return group;
+  }
+
+  releaseBindGroup(group) {
+    if (!this.bindGroups.delete(group)) return;
+    this.commands.destroyResource(group.handle);
+  }
+
   releaseSampler(sampler) {
     if (!this.samplers.delete(sampler)) return;
     this.commands.destroyResource(sampler.handle);
@@ -273,6 +298,7 @@ export class RecordingDevice {
     for (const buffer of this.buffers) buffer.destroy();
     for (const texture of this.textures) texture.destroy();
     for (const sampler of this.samplers) this.releaseSampler(sampler);
+    for (const group of this.bindGroups) this.releaseBindGroup(group);
     for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
@@ -327,9 +353,20 @@ export class NativeBackend extends WebGPUBackend {
     if (sampler && !this.textureUtils._samplerCache.has(key)) this.recordingDevice.releaseSampler(sampler);
   }
 
+  updateBindings(bindGroup, bindings, cacheKey, version) {
+    const data = this.get(bindGroup);
+    const previous = new Set([data.group, ...Object.values(data.groups ?? {})]);
+    super.updateBindings(bindGroup, bindings, cacheKey, version);
+    const current = new Set([data.group, ...Object.values(data.groups ?? {})]);
+    for (const group of previous) if (!current.has(group)) this.recordingDevice.releaseBindGroup(group);
+  }
+
   deleteBindGroupData(bindGroup) {
-    const layout = this.get(bindGroup).layout;
+    const data = this.get(bindGroup);
+    const layout = data.layout;
+    const groups = new Set([data.group, ...Object.values(data.groups ?? {})]);
     super.deleteBindGroupData(bindGroup);
+    for (const group of groups) this.recordingDevice.releaseBindGroup(group);
     if (layout && layout.usedTimes === 0) this.recordingDevice.releaseBindGroupLayout(layout.layoutGPU);
   }
 

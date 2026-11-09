@@ -137,6 +137,23 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_BIND_GROUP_LAYOUT, payload);
   }
 
+  createBindGroup(handle, layout, entries) {
+    const payload = new Uint8Array(12 + entries.length * 28);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setUint32(4, u32(layout, 'layout', true), true);
+    view.setUint32(8, u32(entries.length, 'entry count'), true);
+    entries.forEach((entry, index) => {
+      const offset = 12 + index * 28;
+      view.setUint32(offset, u32(entry.binding, 'binding'), true);
+      view.setUint32(offset + 4, u32(entry.kind, 'binding kind'), true);
+      view.setUint32(offset + 8, u32(entry.handle, 'resource handle', true), true);
+      view.setBigUint64(offset + 12, u64(entry.offset, 'buffer offset'), true);
+      view.setBigUint64(offset + 20, u64(entry.size, 'buffer size'), true);
+    });
+    this.append(Opcode.CREATE_BIND_GROUP, payload);
+  }
+
   createTextureView(handle, texture, descriptor) {
     const payload = new Uint8Array(36);
     const view = new DataView(payload.buffer);

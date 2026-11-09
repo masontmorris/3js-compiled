@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { CommandEncoder, Opcode } from '../../../../packages/three-native/src/commands.js';
+import { RecordingDevice } from '../../../../packages/three-native/src/NativeBackend.js';
 
 const envelope = new CommandEncoder();
 envelope.append(Opcode.CREATE_BUFFER, new Uint8Array([0, 1, 2, 255]));
@@ -53,3 +54,24 @@ layouts.createBuffer(30, 16, 12);
 layouts.destroyResource(30);
 layouts.destroyResource(30);
 writeFileSync(new URL('./layouts.bin', import.meta.url), layouts.finish());
+
+const device = new RecordingDevice();
+const layout = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: 3, buffer: { minBindingSize: 16 } },
+  { binding: 1, visibility: 2, sampler: { type: 'comparison' } },
+  { binding: 2, visibility: 2, texture: { sampleType: 'depth' } },
+] });
+const buffer = device.createBuffer({ size: 16, usage: 76 });
+device.queue.writeBuffer(buffer, 0, new Uint8Array([1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+const sampler = device.createSampler({ compare: 'less' });
+const texture = device.createTexture({ size: [1, 1], format: 'depth24plus', usage: 20 });
+const view = texture.createView();
+const group = device.createBindGroup({ layout, entries: [
+  { binding: 0, resource: { buffer } },
+  { binding: 1, resource: sampler },
+  { binding: 2, resource: view },
+] });
+device.commands.readBuffer(100, buffer.handle, 0, 16);
+device.releaseBindGroup(group);
+device.releaseBindGroupLayout(layout);
+writeFileSync(new URL('./bindings.bin', import.meta.url), device.takeFrame());

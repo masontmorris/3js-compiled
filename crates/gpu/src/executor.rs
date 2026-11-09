@@ -41,6 +41,7 @@ pub struct Executor {
     views: HashMap<u32, (u32, wgpu::TextureView)>,
     samplers: HashMap<u32, wgpu::Sampler>,
     bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
+    bind_groups: HashMap<u32, wgpu::BindGroup>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -70,6 +71,7 @@ impl Executor {
             views: HashMap::new(),
             samplers: HashMap::new(),
             bind_group_layouts: HashMap::new(),
+            bind_groups: HashMap::new(),
         }
     }
 
@@ -81,6 +83,7 @@ impl Executor {
             || self.views.contains_key(&handle)
             || self.samplers.contains_key(&handle)
             || self.bind_group_layouts.contains_key(&handle)
+            || self.bind_groups.contains_key(&handle)
     }
 
     pub fn replay(&mut self, frame: &[u8]) -> Result<Vec<Response>, crate::DecodeError> {
@@ -665,12 +668,76 @@ impl Executor {
                 self.bind_group_layouts.insert(handle, layout);
                 Ok(None)
             }
+            11 => {
+                if payload.len() < 12 || !(payload.len() - 12).is_multiple_of(28) {
+                    return Err("invalid bind group length".into());
+                }
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate bind group handle".into());
+                }
+                let layout = self
+                    .bind_group_layouts
+                    .get(&u32_at(payload, 4))
+                    .ok_or("unknown bind group layout handle")?;
+                if u32_at(payload, 8) as usize != (payload.len() - 12) / 28 {
+                    return Err("invalid bind group count".into());
+                }
+                let mut entries = Vec::new();
+                for entry in payload[12..].as_chunks::<28>().0 {
+                    let resource_handle = u32_at(entry, 8);
+                    let offset = u64_at(entry, 12);
+                    let size = u64_at(entry, 20);
+                    let resource = match u32_at(entry, 4) {
+                        1 => {
+                            let buffer = self
+                                .buffers
+                                .get(&resource_handle)
+                                .ok_or("unknown buffer handle")?;
+                            wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &buffer.raw,
+                                offset,
+                                size: std::num::NonZeroU64::new(size),
+                            })
+                        }
+                        2 if offset == 0 && size == 0 => wgpu::BindingResource::Sampler(
+                            self.samplers
+                                .get(&resource_handle)
+                                .ok_or("unknown sampler handle")?,
+                        ),
+                        3 if offset == 0 && size == 0 => wgpu::BindingResource::TextureView(
+                            &self
+                                .views
+                                .get(&resource_handle)
+                                .ok_or("unknown texture view handle")?
+                                .1,
+                        ),
+                        _ => return Err("invalid bind group resource".into()),
+                    };
+                    entries.push(wgpu::BindGroupEntry {
+                        binding: u32_at(entry, 0),
+                        resource,
+                    });
+                }
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout,
+                    entries: &entries,
+                });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.bind_groups.insert(handle, group);
+                Ok(None)
+            }
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
                 if self.shaders.remove(&handle).is_none()
                     && self.views.remove(&handle).is_none()
                     && self.samplers.remove(&handle).is_none()
+                    && self.bind_groups.remove(&handle).is_none()
                     && self.bind_group_layouts.remove(&handle).is_none()
                 {
                     return Err("unknown resource handle".into());

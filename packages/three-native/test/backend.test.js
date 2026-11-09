@@ -162,3 +162,45 @@ test('shared bind group layouts are released after the last binding group', asyn
   assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.DESTROY_RESOURCE]);
   await renderer.dispose();
 });
+
+test('bind groups retain typed buffer, sampler, and texture view handles', () => {
+  const device = new RecordingDevice();
+  const layout = device.createBindGroupLayout({ entries: [] });
+  const buffer = device.createBuffer({ size: 32, usage: 64 });
+  const sampler = device.createSampler();
+  const texture = device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: 4 });
+  const view = texture.createView();
+  const group = device.createBindGroup({ layout, entries: [
+    { binding: 0, resource: { buffer, offset: 16, size: 16 } },
+    { binding: 1, resource: sampler },
+    { binding: 2, resource: view },
+  ] });
+  device.releaseBindGroup(group);
+  const records = decodeCommands(device.takeFrame());
+  const record = records.find(item => item.opcode === Opcode.CREATE_BIND_GROUP);
+  const bytes = new DataView(record.payload.buffer);
+  assert.equal(bytes.getUint32(0, true), group.handle);
+  assert.equal(bytes.getUint32(4, true), layout.handle);
+  assert.equal(bytes.getBigUint64(24, true), 16n);
+  assert.equal(bytes.getUint32(12 + 28 + 8, true), sampler.handle);
+  assert.equal(bytes.getUint32(12 + 56 + 8, true), view.handle);
+  assert.throws(() => device.createBindGroup({ layout, entries: [{ binding: 0, resource: {} }] }), /Invalid bind group resource/);
+});
+
+test('replacing and deleting cached bindings releases their groups', async () => {
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const binding = { isUniformBuffer: true, visibility: 3 };
+  backend.get(binding).buffer = backend.recordingDevice.createBuffer({ size: 16, usage: 64 });
+  const group = { name: 'test', bindings: [binding] };
+  backend.createBindings(group, [], 'key', 0);
+  backend.updateBindings(group, [], 'key', 1);
+  backend.deleteBindGroupData(group);
+  assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [
+    Opcode.CREATE_BUFFER, Opcode.CREATE_BIND_GROUP_LAYOUT, Opcode.CREATE_BIND_GROUP,
+    Opcode.CREATE_BIND_GROUP, Opcode.DESTROY_RESOURCE, Opcode.DESTROY_RESOURCE, Opcode.DESTROY_RESOURCE,
+  ]);
+  await renderer.dispose();
+});
