@@ -39,6 +39,9 @@ export class RecordingDevice {
     this.commands = new CommandEncoder();
     this.buffers = new Set();
     this.shaders = new Set();
+    this.pending = new Map();
+    this.onResponse = event => this.receiveResponses(event.responses);
+    globalThis.addEventListener?.('gpu-response', this.onResponse);
     this.destroyed = false;
     this.features = new Set(features.filter(feature => feature !== 'subgroups'));
     this.limits = limits;
@@ -72,6 +75,26 @@ export class RecordingDevice {
     return shader;
   }
 
+  readBuffer(buffer, offset, size) {
+    if (!(buffer instanceof RecordingBuffer) || buffer.device !== this || buffer.destroyed) throw new Error('Invalid buffer');
+    const request = this.handles.allocate();
+    this.commands.readBuffer(request, buffer.handle, offset, size);
+    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject }));
+  }
+
+  receiveResponses(responses) {
+    for (const response of responses) {
+      const pending = this.pending.get(response.request);
+      if (pending) {
+        this.pending.delete(response.request);
+        if (response.type === 'readback') pending.resolve(Uint8Array.from(response.bytes).buffer);
+        else pending.reject(new Error(response.message));
+      } else if (response.type === 'error' && response.request == null) {
+        this.onuncapturederror?.({ error: new Error(response.message) });
+      }
+    }
+  }
+
   releaseShader(shader) {
     if (!this.shaders.delete(shader)) return;
     this.commands.destroyResource(shader.handle);
@@ -89,6 +112,9 @@ export class RecordingDevice {
     for (const buffer of this.buffers) buffer.destroy();
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
+    globalThis.removeEventListener?.('gpu-response', this.onResponse);
+    for (const pending of this.pending.values()) pending.reject(new Error('Device is destroyed'));
+    this.pending.clear();
     this.resolveLost({ reason: 'destroyed', message: '' });
   }
 
@@ -107,6 +133,15 @@ export class NativeBackend extends WebGPUBackend {
 
   takeFrame() {
     return this.recordingDevice.takeFrame();
+  }
+
+  async getArrayBufferAsync(attribute, target = null, offset = 0, count = -1) {
+    if (target !== null && !(target instanceof ArrayBuffer)) throw new Error('ReadbackBuffer targets are not implemented');
+    const buffer = this.get(this.getBufferAttribute(attribute)).buffer;
+    const bytes = await this.recordingDevice.readBuffer(buffer, offset, count === -1 ? buffer.size - offset : count);
+    if (target === null) return bytes;
+    new Uint8Array(target).set(new Uint8Array(bytes));
+    return target;
   }
 
   destroyProgram(program) {

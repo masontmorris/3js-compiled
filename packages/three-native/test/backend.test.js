@@ -55,3 +55,16 @@ test('program disposal records shader release', async () => {
   assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.CREATE_SHADER, Opcode.DESTROY_RESOURCE]);
   await renderer.dispose();
 });
+
+test('readbacks resolve by request ID and errors reject separately', async () => {
+  const device = new RecordingDevice();
+  const buffer = device.createBuffer({ size: 4, usage: 12 });
+  const first = device.readBuffer(buffer, 0, 4);
+  const second = device.readBuffer(buffer, 0, 4);
+  const records = decodeCommands(device.takeFrame());
+  const request = record => new DataView(record.payload.buffer).getUint32(0, true);
+  device.receiveResponses([{ type: 'error', request: request(records[2]), message: 'read failed' }]);
+  device.receiveResponses([{ type: 'readback', request: request(records[1]), bytes: [1, 2, 3, 4] }]);
+  assert.deepEqual([...new Uint8Array(await first)], [1, 2, 3, 4]);
+  await assert.rejects(second, /read failed/);
+});
