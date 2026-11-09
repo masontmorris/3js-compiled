@@ -167,6 +167,17 @@ fn a_replaced_renderer_draws_its_scene() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn idle_frames_show_the_last_frame_the_game_drew() {
+    let run = run(
+        "idle",
+        &test_entry("idle.js"),
+        serde_json::json!([{"type": "wait", "frames": 6}]),
+    );
+    assert_near(&run, (640, 360), [0, 255, 0]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn responses_carry_the_frame_that_requested_them() {
     let run = run(
         "frames",
