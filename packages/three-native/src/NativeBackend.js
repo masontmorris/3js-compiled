@@ -38,6 +38,7 @@ export class RecordingDevice {
     this.handles = new Handles();
     this.commands = new CommandEncoder();
     this.buffers = new Set();
+    this.shaders = new Set();
     this.destroyed = false;
     this.features = new Set(features.filter(feature => feature !== 'subgroups'));
     this.limits = limits;
@@ -61,6 +62,21 @@ export class RecordingDevice {
     };
   }
 
+  createShaderModule(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    const handle = this.handles.allocate();
+    const code = descriptor.code.replace(/^[\t ]*enable[\t ]+subgroups[\t ]*;[\t ]*(?:\/\/[^\r\n]*)?(?=\r?$)/gm, '');
+    this.commands.createShader(handle, descriptor.label ?? '', code);
+    const shader = { handle, label: descriptor.label ?? '' };
+    this.shaders.add(shader);
+    return shader;
+  }
+
+  releaseShader(shader) {
+    if (!this.shaders.delete(shader)) return;
+    this.commands.destroyResource(shader.handle);
+  }
+
   createBuffer(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
     const buffer = new RecordingBuffer(this, descriptor);
@@ -71,6 +87,7 @@ export class RecordingDevice {
   destroy() {
     if (this.destroyed) return;
     for (const buffer of this.buffers) buffer.destroy();
+    for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
     this.resolveLost({ reason: 'destroyed', message: '' });
   }
@@ -90,5 +107,11 @@ export class NativeBackend extends WebGPUBackend {
 
   takeFrame() {
     return this.recordingDevice.takeFrame();
+  }
+
+  destroyProgram(program) {
+    const shader = this.get(program).module?.module;
+    if (shader) this.recordingDevice.releaseShader(shader);
+    super.destroyProgram(program);
   }
 }

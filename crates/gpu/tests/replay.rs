@@ -36,3 +36,44 @@ fn recorded_buffers_round_trip_on_vulkan() {
         ]
     );
 }
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn invalid_shader_reports_its_label_and_other_commands_continue() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        flags: wgpu::InstanceFlags::default(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::default(),
+        display: None,
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .expect("a software Vulkan adapter is required");
+    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut executor = Executor::new(device, queue);
+    let responses = executor
+        .replay(include_bytes!("fixtures/shaders.bin"))
+        .unwrap();
+    assert_eq!(responses.len(), 2);
+    match &responses[0] {
+        Response::Error {
+            command, message, ..
+        } => {
+            assert_eq!(*command, 0);
+            assert!(message.contains("broken-material"), "{message}");
+            assert!(message.contains(":2:"), "{message}");
+        }
+        response => panic!("expected shader error, got {response:?}"),
+    }
+    assert_eq!(
+        responses[1],
+        Response::Readback {
+            request: 7,
+            bytes: vec![8, 7, 6, 5]
+        }
+    );
+}

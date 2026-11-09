@@ -25,6 +25,7 @@ pub struct Executor {
     device: wgpu::Device,
     queue: wgpu::Queue,
     buffers: HashMap<u32, Buffer>,
+    shaders: HashMap<u32, Option<wgpu::ShaderModule>>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -49,6 +50,7 @@ impl Executor {
             device,
             queue,
             buffers: HashMap::new(),
+            shaders: HashMap::new(),
         }
     }
 
@@ -78,7 +80,10 @@ impl Executor {
                 let len = u64_at(payload, 4);
                 let usage = wgpu::BufferUsages::from_bits(u32_at(payload, 12))
                     .ok_or("invalid buffer usage")?;
-                if handle == 0 || self.buffers.contains_key(&handle) {
+                if handle == 0
+                    || self.buffers.contains_key(&handle)
+                    || self.shaders.contains_key(&handle)
+                {
                     return Err("invalid or duplicate buffer handle".into());
                 }
                 if len == 0 || len > self.device.limits().max_buffer_size {
@@ -187,6 +192,53 @@ impl Executor {
                     request,
                     bytes: data,
                 }))
+            }
+            9 => {
+                if payload.len() < 12 {
+                    return Err("truncated shader".into());
+                }
+                let handle = u32_at(payload, 0);
+                let label_len = u32_at(payload, 4) as usize;
+                let code_len = u32_at(payload, 8) as usize;
+                let label_end = 12usize
+                    .checked_add(label_len)
+                    .ok_or("invalid shader length")?;
+                let code_end = label_end
+                    .checked_add(code_len)
+                    .ok_or("invalid shader length")?;
+                if code_end != payload.len() {
+                    return Err("invalid shader length".into());
+                }
+                if handle == 0
+                    || self.buffers.contains_key(&handle)
+                    || self.shaders.contains_key(&handle)
+                {
+                    return Err("invalid or duplicate shader handle".into());
+                }
+                let label = std::str::from_utf8(&payload[12..label_end])
+                    .map_err(|_| "invalid shader label")?;
+                let code = std::str::from_utf8(&payload[label_end..code_end])
+                    .map_err(|_| "invalid shader source")?;
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let shader = self
+                    .device
+                    .create_shader_module(wgpu::ShaderModuleDescriptor {
+                        label: Some(label),
+                        source: wgpu::ShaderSource::Wgsl(code.into()),
+                    });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    self.shaders.insert(handle, None);
+                    return Err(format!("shader {label}: {error}"));
+                }
+                self.shaders.insert(handle, Some(shader));
+                Ok(None)
+            }
+            29 => {
+                size(payload, 4)?;
+                self.shaders
+                    .remove(&u32_at(payload, 0))
+                    .ok_or("unknown shader handle")?;
+                Ok(None)
             }
             26 => {
                 size(payload, 0)?;

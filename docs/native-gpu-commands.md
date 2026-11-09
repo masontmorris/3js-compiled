@@ -30,7 +30,7 @@ A shared descriptor format can drift between JavaScript and Rust. Round trips al
 
 ## Version 1 envelope
 
-The first 16 bytes are the ASCII magic `3JSC`, a little-endian `u16` version, a zero `u16` flags field, a `u32` total length, and a `u32` record count. Each record starts with a `u16` opcode, a zero `u16` flags field, and a `u32` payload length. The payload immediately follows with no padding. The opcode numbers are in `packages/three-native/src/commands.js`. Opcode-specific payload schemas are still to be specified and tested with the executor. The envelope alone is not a rendering protocol.
+The first 16 bytes are the ASCII magic `3JSC`, a little-endian `u16` version, a zero `u16` flags field, a `u32` total length, and a `u32` record count. Each record starts with a `u16` opcode, a zero `u16` flags field, and a `u32` payload length. The payload immediately follows with no padding. The opcode numbers are in `packages/three-native/src/commands.js`. Payload schemas for the remaining opcodes still need specification and replay tests. The envelope alone is not a rendering protocol.
 
 Buffer commands use the following version 1 payloads. Integers are little-endian, and `handle` and `request` are nonzero JavaScript-allocated `u32` values. `usage` uses WebGPU buffer usage bits. Buffer sizes and offsets use `u64`. A write carries the remaining payload bytes as data.
 
@@ -40,3 +40,5 @@ Buffer commands use the following version 1 payloads. Integers are little-endian
 | `WRITE_BUFFER` | handle `u32`, offset `u64`, bytes |
 | `DESTROY_BUFFER` | handle `u32` |
 | `READ_BUFFER` | request `u32`, handle `u32`, offset `u64`, size `u64` |
+
+Shader creation uses a `u32` handle, a `u32` UTF-8 label length, a `u32` UTF-8 source length, the label bytes, and the source bytes. `DESTROY_RESOURCE` currently releases a shader handle and takes that handle as a `u32`. Shader validation errors return the command index and diagnostic text in the response channel.

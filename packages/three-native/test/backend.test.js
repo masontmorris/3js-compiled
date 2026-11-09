@@ -30,3 +30,28 @@ test('mapped creation and typed-array writes record the selected bytes', () => {
   assert.throws(() => device.queue.writeBuffer(buffer, 0, new Uint8Array(4)));
   assert.deepEqual(decodeCommands(device.takeFrame()), []);
 });
+
+test('shader modules remove the subgroup directive and retain labels', () => {
+  const device = new RecordingDevice({ features: ['subgroups'] });
+  const shader = device.createShaderModule({ label: 'material-\u2603', code: 'enable subgroups;\n@fragment fn main() {}' });
+  const [record] = decodeCommands(device.takeFrame());
+  const view = new DataView(record.payload.buffer);
+  const labelLength = view.getUint32(4, true);
+  const decoder = new TextDecoder();
+  assert.equal(record.opcode, Opcode.CREATE_SHADER);
+  assert.equal(view.getUint32(0, true), shader.handle);
+  assert.equal(decoder.decode(record.payload.slice(12, 12 + labelLength)), 'material-\u2603');
+  assert.equal(decoder.decode(record.payload.slice(12 + labelLength)), '\n@fragment fn main() {}');
+});
+
+test('program disposal records shader release', async () => {
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const program = { stage: 'vertex', name: 'material', code: '@vertex fn main() {}' };
+  backend.createProgram(program);
+  backend.destroyProgram(program);
+  assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.CREATE_SHADER, Opcode.DESTROY_RESOURCE]);
+  await renderer.dispose();
+});

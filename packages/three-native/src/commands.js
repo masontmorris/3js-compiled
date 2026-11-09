@@ -73,6 +73,32 @@ export class CommandEncoder {
     this.#size = size;
   }
 
+  createShader(handle, label, code) {
+    const encode = value => {
+      const bytes = [];
+      for (const character of value) {
+        let point = character.codePointAt(0);
+        if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
+        if (point < 0x80) bytes.push(point);
+        else if (point < 0x800) bytes.push(0xc0 | (point >> 6), 0x80 | (point & 63));
+        else if (point < 0x10000) bytes.push(0xe0 | (point >> 12), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
+        else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 63), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
+      }
+      return new Uint8Array(bytes);
+    };
+    if (typeof label !== 'string' || typeof code !== 'string') throw new TypeError('Shader label and code must be strings');
+    const name = encode(label);
+    const source = encode(code);
+    const payload = new Uint8Array(12 + name.length + source.length);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setUint32(4, name.length, true);
+    view.setUint32(8, source.length, true);
+    payload.set(name, 12);
+    payload.set(source, 12 + name.length);
+    this.append(Opcode.CREATE_SHADER, payload);
+  }
+
   createBuffer(handle, size, usage) {
     const payload = new Uint8Array(16);
     const view = new DataView(payload.buffer);
@@ -100,6 +126,12 @@ export class CommandEncoder {
     view.setBigUint64(8, u64(offset, 'offset'), true);
     view.setBigUint64(16, u64(size, 'size'), true);
     this.append(Opcode.READ_BUFFER, payload);
+  }
+
+  destroyResource(handle) {
+    const payload = new Uint8Array(4);
+    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
+    this.append(Opcode.DESTROY_RESOURCE, payload);
   }
 
   destroyBuffer(handle) {

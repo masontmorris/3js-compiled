@@ -85,5 +85,5 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
     }
     Ok(records)
 }
-mod buffers;
-pub use buffers::{Executor, Response};
+mod executor;
+pub use executor::{Executor, Response};
