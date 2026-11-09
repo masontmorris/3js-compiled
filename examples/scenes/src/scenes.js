@@ -2,8 +2,8 @@ import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import tetrahedron from '../assets/tetrahedron.glb';
+import { names } from './names.js';
 
-export const names = ['basic-cube', 'materials', 'textures', 'standard-shadow', 'instancing', 'gltf', 'msaa', 'alpha', 'invalid-wgsl'];
 
 function setup() {
   const scene = new THREE.Scene();

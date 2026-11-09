@@ -338,3 +338,75 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
         "{missing:?}"
     );
 }
+
+fn assert_scene_matches_edge(scene: &str, frames: [&[u8]; 2], edge: &[u8]) {
+    let (device, queue) = device();
+    let surface = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width: 1280,
+            height: 720,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let mut executor = Executor::new(device, queue);
+    let mut responses = executor.replay(frames[0], Some(&surface)).unwrap();
+    responses.extend(executor.replay(frames[1], Some(&surface)).unwrap());
+    let errors: Vec<_> = responses
+        .iter()
+        .filter(|response| matches!(response, Response::Error { .. }))
+        .collect();
+    assert!(errors.is_empty(), "{scene}: {errors:?}");
+    let native = responses
+        .iter()
+        .find_map(|response| match response {
+            Response::Readback {
+                request: u32::MAX,
+                bytes,
+            } => Some(bytes),
+            _ => None,
+        })
+        .expect("surface readback");
+    let edge = image::load_from_memory(edge).unwrap().to_rgba8();
+    let total: u64 = native
+        .chunks(4)
+        .zip(edge.pixels())
+        .map(|(bgra, rgba)| {
+            (0..3)
+                .map(|c| u64::from(bgra[2 - c].abs_diff(rgba[c])))
+                .sum::<u64>()
+        })
+        .sum();
+    let mean = total as f64 / (1280.0 * 720.0 * 3.0 * 255.0);
+    assert!(
+        mean < 0.01,
+        "{scene}: mean RGB difference from Edge is {mean}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn recorded_three_scenes_match_edge_captures() {
+    assert_scene_matches_edge(
+        "basic-cube",
+        [
+            include_bytes!("fixtures/basic-cube-0.bin"),
+            include_bytes!("fixtures/basic-cube-1.bin"),
+        ],
+        include_bytes!("fixtures/basic-cube-edge.png"),
+    );
+    assert_scene_matches_edge(
+        "standard-shadow",
+        [
+            include_bytes!("fixtures/standard-shadow-0.bin"),
+            include_bytes!("fixtures/standard-shadow-1.bin"),
+        ],
+        include_bytes!("fixtures/standard-shadow-edge.png"),
+    );
+}

@@ -166,6 +166,37 @@ mod tests {
     }
 
     #[test]
+    fn example_scenes_load_and_submit_frames() -> Result<()> {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        let built = std::process::Command::new("node")
+            .current_dir(root)
+            .arg("tools/scenes/build.mjs")
+            .status()?;
+        assert!(built.success(), "scene bundle build failed");
+        let names = std::fs::read_to_string(format!("{root}/examples/scenes/src/names.js"))?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        for scene in names.split('\'').skip(1).step_by(2) {
+            let log_path = std::env::temp_dir()
+                .join(format!("threejsc-scene-{scene}-{}.log", std::process::id()));
+            let log = Rc::new(RefCell::new(File::create(&log_path)?));
+            let entry = format!("{root}/examples/scenes/index.js");
+            let mut game = Game::new(&entry, log, &runtime, Some(scene), (1280, 720))?;
+            let mut submitted = 0;
+            for _ in 0..4 {
+                game.frame()?;
+                submitted += usize::from(game.take_commands().is_some());
+            }
+            let output = std::fs::read_to_string(&log_path)?;
+            assert_eq!(submitted, 4, "{scene}: {output}");
+            assert!(!output.contains("Error"), "{scene}: {output}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn pending_ops_do_not_block_frames_and_resume_when_ready() -> Result<()> {
         use std::{
             cell::Cell,

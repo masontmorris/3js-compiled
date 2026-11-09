@@ -5,6 +5,13 @@ let nextFrame = 1;
 globalThis.window = globalThis;
 globalThis.self = globalThis;
 globalThis.devicePixelRatio = 1;
+globalThis.AbortController ??= class AbortController {
+  signal = { aborted: false, reason: undefined, addEventListener() {}, removeEventListener() {} };
+  abort(reason) {
+    this.signal.aborted = true;
+    this.signal.reason = reason;
+  }
+};
 globalThis.TextDecoder ??= class TextDecoder {
   constructor(label = "utf-8") {
     if (!/^utf-?8$/i.test(label)) throw new RangeError(`Unsupported encoding: ${label}`);
