@@ -149,6 +149,35 @@ fn errors_name_their_frame_and_resource_label() {
 
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn float_and_depth_textures_read_back_their_texels() {
+    let halves: Vec<u8> = [0x3c00u16, 0x3800, 0x3400, 0x3c00, 0, 0x3c00, 0, 0x3c00]
+        .iter()
+        .flat_map(|half| half.to_le_bytes())
+        .collect();
+    assert_eq!(
+        executor()
+            .replay(include_bytes!("fixtures/readback-formats.bin"), None)
+            .unwrap(),
+        vec![
+            Response::Readback {
+                request: 10,
+                bytes: halves
+            },
+            Response::Readback {
+                request: 11,
+                bytes: 0.25f32.to_le_bytes().to_vec()
+            },
+            Response::Readback {
+                request: 12,
+                bytes: 0.5f32.to_le_bytes().repeat(4)
+            },
+            error(13, Some(13), "Depth24Plus textures cannot be read back"),
+        ]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn anisotropic_comparison_sampler_is_created_and_released() {
     let mut executor = executor();
     assert_eq!(
@@ -349,7 +378,10 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
     );
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/surface-resize.bin"), Some(&surface))
+            .replay(
+                include_bytes!("fixtures/surface-resize.bin"),
+                Some(&surface)
+            )
             .unwrap(),
         vec![Response::Readback {
             request: 100,

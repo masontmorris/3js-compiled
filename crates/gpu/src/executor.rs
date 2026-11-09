@@ -596,16 +596,16 @@ impl Executor {
                 {
                     return Err("texture readback exceeds bounds".into());
                 }
-                if !matches!(
-                    texture.format,
-                    wgpu::TextureFormat::Rgba8Unorm
-                        | wgpu::TextureFormat::Rgba8UnormSrgb
-                        | wgpu::TextureFormat::Bgra8Unorm
-                        | wgpu::TextureFormat::Bgra8UnormSrgb
-                ) {
-                    return Err("unsupported texture readback format".into());
-                }
-                let row_bytes = width.checked_mul(4).ok_or("texture row is too large")?;
+                let aspect = if texture.format.has_depth_aspect() {
+                    wgpu::TextureAspect::DepthOnly
+                } else {
+                    wgpu::TextureAspect::All
+                };
+                let texel = (texture.format.block_dimensions() == (1, 1))
+                    .then(|| texture.format.block_copy_size(Some(aspect)))
+                    .flatten()
+                    .ok_or_else(|| format!("{:?} textures cannot be read back", texture.format))?;
+                let row_bytes = width.checked_mul(texel).ok_or("texture row is too large")?;
                 let stride = row_bytes
                     .checked_add(255)
                     .ok_or("texture row is too large")?
@@ -627,7 +627,7 @@ impl Executor {
                         texture: &texture.raw,
                         mip_level: mip,
                         origin: wgpu::Origin3d { x, y, z: layer },
-                        aspect: wgpu::TextureAspect::All,
+                        aspect,
                     },
                     wgpu::TexelCopyBufferInfo {
                         buffer: &staging,

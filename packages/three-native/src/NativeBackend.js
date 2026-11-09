@@ -635,8 +635,9 @@ export class NativeBackend extends WebGPUBackend {
 
   async copyTextureToBuffer(texture, x, y, width, height, faceIndex = 0) {
     const gpuTexture = this.get(texture).texture;
+    const TypedArray = this.textureUtils._getTypedArrayType(gpuTexture.format);
     const bytes = await this.recordingDevice.readTexture(gpuTexture, { mip: 0, x, y, layer: faceIndex, width, height });
-    return new Uint8Array(bytes);
+    return new TypedArray(bytes);
   }
 
   async getArrayBufferAsync(attribute, target = null, offset = 0, count = -1) {

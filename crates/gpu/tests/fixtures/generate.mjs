@@ -229,3 +229,20 @@ ownedEncoder.beginRenderPass({ colorAttachments: [{ view: owned.createView(), lo
 ownedDevice.queue.submit([ownedEncoder.finish()]);
 ownedDevice.commands.readTexture(100, owned.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
 writeFileSync(new URL('./surface-destroy.bin', import.meta.url), ownedDevice.takeFrame());
+
+const formats = new CommandEncoder();
+formats.createTexture(1, { width: 2, height: 1, layers: 1, mips: 1, samples: 1, usage: 3, format: 'rgba16float' });
+formats.writeTexture(1, { mip: 0, x: 0, y: 0, layer: 0, bytesPerRow: 16, rowsPerImage: 1, width: 2, height: 1, layers: 1 }, new Uint8Array(new Uint16Array([0x3c00, 0x3800, 0x3400, 0x3c00, 0, 0x3c00, 0, 0x3c00]).buffer));
+formats.readTexture(10, 1, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 1 });
+formats.createTexture(2, { width: 1, height: 1, layers: 1, mips: 1, samples: 1, usage: 3, format: 'r32float' });
+formats.writeTexture(2, { mip: 0, x: 0, y: 0, layer: 0, bytesPerRow: 4, rowsPerImage: 1, width: 1, height: 1, layers: 1 }, new Uint8Array(new Float32Array([0.25]).buffer));
+formats.readTexture(11, 2, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
+formats.createTexture(3, { width: 2, height: 2, layers: 1, mips: 1, samples: 1, usage: 17, format: 'depth32float' });
+formats.createTextureView(4, 3, { baseMip: 0, mips: 0, baseLayer: 0, layers: 0, dimension: 0, aspect: 0, usage: 0 });
+formats.beginRenderPass([], { view: 4, flags: 1, depthLoad: 1, depthStore: 1, depthClear: 0.5, stencilLoad: 0, stencilStore: 0, stencilClear: 0 });
+formats.append(Opcode.END_RENDER_PASS);
+formats.append(Opcode.SUBMIT);
+formats.readTexture(12, 3, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 });
+formats.createTexture(5, { width: 1, height: 1, layers: 1, mips: 1, samples: 1, usage: 17, format: 'depth24plus' });
+formats.readTexture(13, 5, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
+writeFileSync(new URL('./readback-formats.bin', import.meta.url), formats.finish());

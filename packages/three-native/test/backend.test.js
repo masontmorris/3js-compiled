@@ -323,6 +323,30 @@ test('a canvas resize within a frame acquires a texture of the new size', async 
   await renderer.dispose();
 });
 
+test('render target readbacks return the typed array three returns for the format', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const { HalfFloatType, FloatType, RenderTarget, Scene, PerspectiveCamera } = await import('three/webgpu');
+  const results = [];
+  for (const type of [HalfFloatType, FloatType]) {
+    const target = new RenderTarget(2, 2, { type });
+    renderer.setRenderTarget(target);
+    renderer.render(new Scene(), new PerspectiveCamera());
+    renderer.setRenderTarget(null);
+    const pending = renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1);
+    const read = decodeCommands(backend.takeFrame()).find(item => item.opcode === Opcode.READ_TEXTURE);
+    const request = new DataView(read.payload.buffer).getUint32(0, true);
+    const bytes = new Uint8Array(type === HalfFloatType ? 8 : 16).fill(0x3c);
+    backend.recordingDevice.receiveResponses([{ type: 'readback', request, bytes }]);
+    results.push(await pending);
+  }
+  assert.ok(results[0] instanceof Uint16Array && results[0].length === 4, String(results[0]));
+  assert.ok(results[1] instanceof Float32Array && results[1].length === 4, String(results[1]));
+  await renderer.dispose();
+});
+
 test('the canvas texture is acquired once per frame and released with the frame', async () => {
   const canvas = { width: 4, height: 2, style: {}, addEventListener() {}, removeEventListener() {} };
   const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
