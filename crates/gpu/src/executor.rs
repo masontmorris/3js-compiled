@@ -42,6 +42,7 @@ pub struct Executor {
     samplers: HashMap<u32, wgpu::Sampler>,
     bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
     bind_groups: HashMap<u32, wgpu::BindGroup>,
+    pipeline_layouts: HashMap<u32, wgpu::PipelineLayout>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -72,6 +73,7 @@ impl Executor {
             samplers: HashMap::new(),
             bind_group_layouts: HashMap::new(),
             bind_groups: HashMap::new(),
+            pipeline_layouts: HashMap::new(),
         }
     }
 
@@ -84,6 +86,7 @@ impl Executor {
             || self.samplers.contains_key(&handle)
             || self.bind_group_layouts.contains_key(&handle)
             || self.bind_groups.contains_key(&handle)
+            || self.pipeline_layouts.contains_key(&handle)
     }
 
     pub fn replay(&mut self, frame: &[u8]) -> Result<Vec<Response>, crate::DecodeError> {
@@ -731,6 +734,42 @@ impl Executor {
                 self.bind_groups.insert(handle, group);
                 Ok(None)
             }
+            12 => {
+                if payload.len() < 8 || !(payload.len() - 8).is_multiple_of(4) {
+                    return Err("invalid pipeline layout length".into());
+                }
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate pipeline layout handle".into());
+                }
+                if u32_at(payload, 4) as usize != (payload.len() - 8) / 4 {
+                    return Err("invalid pipeline layout count".into());
+                }
+                let layouts = payload[8..]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| {
+                        self.bind_group_layouts
+                            .get(&u32::from_le_bytes(*bytes))
+                            .map(Some)
+                            .ok_or("unknown bind group layout handle")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let layout = self
+                    .device
+                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: None,
+                        bind_group_layouts: &layouts,
+                        immediate_size: 0,
+                    });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.pipeline_layouts.insert(handle, layout);
+                Ok(None)
+            }
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
@@ -738,6 +777,7 @@ impl Executor {
                     && self.views.remove(&handle).is_none()
                     && self.samplers.remove(&handle).is_none()
                     && self.bind_groups.remove(&handle).is_none()
+                    && self.pipeline_layouts.remove(&handle).is_none()
                     && self.bind_group_layouts.remove(&handle).is_none()
                 {
                     return Err("unknown resource handle".into());

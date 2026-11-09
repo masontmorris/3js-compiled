@@ -204,3 +204,17 @@ test('replacing and deleting cached bindings releases their groups', async () =>
   ]);
   await renderer.dispose();
 });
+
+test('pipeline layouts retain their ordered bind group layouts', () => {
+  const device = new RecordingDevice();
+  const first = device.createBindGroupLayout({ entries: [] });
+  const second = device.createBindGroupLayout({ entries: [] });
+  const pipeline = device.createPipelineLayout({ bindGroupLayouts: [second, first] });
+  device.releasePipelineLayout(pipeline);
+  const records = decodeCommands(device.takeFrame());
+  const payload = new DataView(records[2].payload.buffer);
+  assert.equal(records[2].opcode, Opcode.CREATE_PIPELINE_LAYOUT);
+  assert.deepEqual([0, 4, 8, 12].map(offset => payload.getUint32(offset, true)), [pipeline.handle, 2, second.handle, first.handle]);
+  assert.equal(records[3].opcode, Opcode.DESTROY_RESOURCE);
+  assert.throws(() => device.createPipelineLayout({ bindGroupLayouts: [{}] }), /Invalid bind group layout/);
+});

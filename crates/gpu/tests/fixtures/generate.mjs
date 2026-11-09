@@ -75,3 +75,11 @@ device.commands.readBuffer(100, buffer.handle, 0, 16);
 device.releaseBindGroup(group);
 device.releaseBindGroupLayout(layout);
 writeFileSync(new URL('./bindings.bin', import.meta.url), device.takeFrame());
+
+const pipelineDevice = new RecordingDevice();
+const groupLayout = pipelineDevice.createBindGroupLayout({ entries: [] });
+const pipelineLayout = pipelineDevice.createPipelineLayout({ bindGroupLayouts: [groupLayout] });
+pipelineDevice.releaseBindGroupLayout(groupLayout);
+pipelineDevice.commands.createBuffer(pipelineLayout.handle, 16, 12);
+pipelineDevice.releasePipelineLayout(pipelineLayout);
+writeFileSync(new URL('./pipeline-layouts.bin', import.meta.url), pipelineDevice.takeFrame());

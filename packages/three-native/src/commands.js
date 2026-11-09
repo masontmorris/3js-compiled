@@ -154,6 +154,15 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_BIND_GROUP, payload);
   }
 
+  createPipelineLayout(handle, layouts) {
+    const payload = new Uint8Array(8 + layouts.length * 4);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setUint32(4, u32(layouts.length, 'layout count'), true);
+    layouts.forEach((layout, index) => view.setUint32(8 + index * 4, u32(layout, 'layout handle', true), true));
+    this.append(Opcode.CREATE_PIPELINE_LAYOUT, payload);
+  }
+
   createTextureView(handle, texture, descriptor) {
     const payload = new Uint8Array(36);
     const view = new DataView(payload.buffer);

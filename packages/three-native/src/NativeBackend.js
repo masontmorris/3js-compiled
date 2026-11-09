@@ -102,6 +102,7 @@ export class RecordingDevice {
     this.samplers = new Set();
     this.bindGroupLayouts = new Set();
     this.bindGroups = new Set();
+    this.pipelineLayouts = new Set();
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -267,6 +268,20 @@ export class RecordingDevice {
     this.commands.destroyResource(group.handle);
   }
 
+  createPipelineLayout(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    if (!descriptor.bindGroupLayouts.every(layout => this.bindGroupLayouts.has(layout))) throw new Error('Invalid bind group layout');
+    const layout = { handle: this.handles.allocate() };
+    this.commands.createPipelineLayout(layout.handle, descriptor.bindGroupLayouts.map(item => item.handle));
+    this.pipelineLayouts.add(layout);
+    return layout;
+  }
+
+  releasePipelineLayout(layout) {
+    if (!this.pipelineLayouts.delete(layout)) return;
+    this.commands.destroyResource(layout.handle);
+  }
+
   releaseSampler(sampler) {
     if (!this.samplers.delete(sampler)) return;
     this.commands.destroyResource(sampler.handle);
@@ -299,6 +314,7 @@ export class RecordingDevice {
     for (const texture of this.textures) texture.destroy();
     for (const sampler of this.samplers) this.releaseSampler(sampler);
     for (const group of this.bindGroups) this.releaseBindGroup(group);
+    for (const layout of this.pipelineLayouts) this.releasePipelineLayout(layout);
     for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
