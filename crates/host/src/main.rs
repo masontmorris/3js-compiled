@@ -100,6 +100,7 @@ fn main() -> Result<()> {
         log_file.clone(),
         &runtime,
         options.scene.as_deref(),
+        window.size_in_pixels(),
     )?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
@@ -181,15 +182,26 @@ fn main() -> Result<()> {
             }
         }
         let (width, height) = window.size_in_pixels();
-        renderer.resize(width, height);
+        if renderer.resize(width, height) {
+            game.event(&json!({"type": "resize", "width": width, "height": height}))?;
+        }
         let color = game.frame()?;
+        let acquire_started = Instant::now();
+        let surface_frame = renderer.acquire()?;
+        let acquire_wait = acquire_started.elapsed();
+        let mut clear = Some(color);
         if let Some(commands) = game.take_commands() {
-            let responses = match renderer.replay(&commands) {
-                Ok(responses) => responses.into_iter().map(|response| match response {
-                    threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
-                    threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
-                    threejsc_gpu::Response::Error { command, request, message } => json!({"type": "error", "command": command, "request": request, "message": message}),
-                }).collect::<Vec<_>>(),
+            let responses = match renderer.replay(&commands, &surface_frame) {
+                Ok((responses, drew)) => {
+                    if drew {
+                        clear = None;
+                    }
+                    responses.into_iter().map(|response| match response {
+                        threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
+                        threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
+                        threejsc_gpu::Response::Error { command, request, message } => json!({"type": "error", "command": command, "request": request, "message": message}),
+                    }).collect::<Vec<_>>()
+                }
                 Err(error) => vec![json!({"type": "error", "message": error.to_string()})],
             };
             for response in &responses {
@@ -216,11 +228,8 @@ fn main() -> Result<()> {
             .into_iter()
             .chain(record.as_deref())
             .collect();
-        let preparation = started.elapsed();
-        let surface_frame = renderer.acquire()?;
-        let render_started = Instant::now();
-        let surface_frame = renderer.render(surface_frame, color, &captures)?;
-        let elapsed_cpu = (preparation + render_started.elapsed()).as_secs_f64() * 1000.0;
+        let surface_frame = renderer.render(surface_frame, clear, &captures)?;
+        let elapsed_cpu = (started.elapsed() - acquire_wait).as_secs_f64() * 1000.0;
         renderer.present(surface_frame);
         let interval = started.duration_since(last).as_secs_f64() * 1000.0;
         writeln!(csv, "{frame},{elapsed_cpu:.4},{interval:.4}")?;

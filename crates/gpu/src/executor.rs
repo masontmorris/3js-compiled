@@ -51,6 +51,9 @@ pub struct Executor {
     render_pass: Option<wgpu::RenderPass<'static>>,
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
     valid_pipeline: Option<bool>,
+    surface: Option<wgpu::Texture>,
+    surface_handle: Option<u32>,
+    surface_used: bool,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -109,6 +112,9 @@ impl Executor {
             render_pass: None,
             render_pass_scope: None,
             valid_pipeline: None,
+            surface: None,
+            surface_handle: None,
+            surface_used: false,
         }
     }
 
@@ -125,8 +131,15 @@ impl Executor {
             || self.render_pipelines.contains_key(&handle)
     }
 
-    pub fn replay(&mut self, frame: &[u8]) -> Result<Vec<Response>, crate::DecodeError> {
+    /// Replays one frame. `surface` is the texture that `ACQUIRE_SURFACE` binds for this frame only.
+    pub fn replay(
+        &mut self,
+        frame: &[u8],
+        surface: Option<&wgpu::Texture>,
+    ) -> Result<Vec<Response>, crate::DecodeError> {
         let records = decode(frame)?;
+        self.surface = surface.cloned();
+        self.surface_used = false;
         let mut responses = Vec::new();
         for (command, record) in records.iter().enumerate() {
             match self.execute(record.opcode, record.payload) {
@@ -165,7 +178,17 @@ impl Executor {
                 message: "incomplete command submission".into(),
             });
         }
+        if let Some(handle) = self.surface_handle.take() {
+            self.textures.remove(&handle);
+            self.views.retain(|_, (parent, _)| *parent != handle);
+        }
+        self.surface = None;
         Ok(responses)
+    }
+
+    /// Whether the last replay bound its surface with `ACQUIRE_SURFACE`.
+    pub fn surface_used(&self) -> bool {
+        self.surface_used
     }
 
     fn execute(&mut self, opcode: u16, payload: &[u8]) -> Result<Option<Response>, String> {
@@ -305,19 +328,11 @@ impl Executor {
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate texture handle".into());
                 }
-                let format = match std::str::from_utf8(&payload[32..])
-                    .map_err(|_| "invalid texture format")?
-                {
-                    "rgba8unorm" => wgpu::TextureFormat::Rgba8Unorm,
-                    "rgba8unorm-srgb" => wgpu::TextureFormat::Rgba8UnormSrgb,
-                    "bgra8unorm" => wgpu::TextureFormat::Bgra8Unorm,
-                    "bgra8unorm-srgb" => wgpu::TextureFormat::Bgra8UnormSrgb,
-                    "rgba16float" => wgpu::TextureFormat::Rgba16Float,
-                    "depth24plus" => wgpu::TextureFormat::Depth24Plus,
-                    "depth24plus-stencil8" => wgpu::TextureFormat::Depth24PlusStencil8,
-                    "depth32float" => wgpu::TextureFormat::Depth32Float,
-                    _ => return Err("unsupported texture format".into()),
-                };
+                let name =
+                    std::str::from_utf8(&payload[32..]).map_err(|_| "invalid texture format")?;
+                let format: wgpu::TextureFormat =
+                    serde_json::from_value(serde_json::Value::from(name))
+                        .map_err(|_| format!("unsupported texture format {name}"))?;
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let raw = self.device.create_texture(&wgpu::TextureDescriptor {
                     label: None,
@@ -842,10 +857,14 @@ impl Executor {
                 let request = u32_at(payload, 4);
                 let spec: crate::pipeline::Pipeline = serde_json::from_slice(&payload[8..])
                     .map_err(|error| format!("invalid render pipeline descriptor: {error}"))?;
-                let layout = self
-                    .pipeline_layouts
-                    .get(&spec.layout)
-                    .ok_or("unknown pipeline layout handle")?;
+                let layout = match spec.layout {
+                    0 => None,
+                    handle => Some(
+                        self.pipeline_layouts
+                            .get(&handle)
+                            .ok_or("unknown pipeline layout handle")?,
+                    ),
+                };
                 let vertex = self
                     .shaders
                     .get(&spec.vertex.module)
@@ -1174,6 +1193,59 @@ impl Executor {
                     self.encoder = None;
                     return Err(error.to_string());
                 }
+                Ok(None)
+            }
+            30 => {
+                size(payload, 12)?;
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) || self.surface_handle.is_some() {
+                    return Err("invalid or duplicate surface handle".into());
+                }
+                let raw = self.surface.clone().ok_or("no surface for this frame")?;
+                if (raw.width(), raw.height()) != (u32_at(payload, 4), u32_at(payload, 8)) {
+                    return Err(format!(
+                        "surface is {}x{}, not {}x{}",
+                        raw.width(),
+                        raw.height(),
+                        u32_at(payload, 4),
+                        u32_at(payload, 8)
+                    ));
+                }
+                self.textures.insert(
+                    handle,
+                    Texture {
+                        format: raw.format(),
+                        width: raw.width(),
+                        height: raw.height(),
+                        layers: 1,
+                        mips: 1,
+                        samples: 1,
+                        usage: raw.usage(),
+                        raw,
+                    },
+                );
+                self.surface_handle = Some(handle);
+                self.surface_used = true;
+                Ok(None)
+            }
+            31 => {
+                size(payload, 12)?;
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate bind group layout handle".into());
+                }
+                let pipeline = self
+                    .render_pipelines
+                    .get(&u32_at(payload, 4))
+                    .ok_or("unknown render pipeline handle")?
+                    .as_ref()
+                    .ok_or("render pipeline is invalid")?;
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let layout = pipeline.get_bind_group_layout(u32_at(payload, 8));
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.bind_group_layouts.insert(handle, layout);
                 Ok(None)
             }
             29 => {

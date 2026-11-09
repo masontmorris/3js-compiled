@@ -67,7 +67,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
             .get(offset..offset + RECORD_LEN)
             .ok_or(DecodeError::Truncated)?;
         let opcode = u16_at(header, 0);
-        if !(1..=29).contains(&opcode) {
+        if !(1..=31).contains(&opcode) {
             return Err(DecodeError::Opcode);
         }
         if u16_at(header, 2) != 0 {

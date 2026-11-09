@@ -45,6 +45,7 @@ impl<'a> Game<'a> {
         log: Log,
         runtime: &'a tokio::runtime::Runtime,
         scene: Option<&str>,
+        (width, height): (u32, u32),
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(FsModuleLoader)),
@@ -59,7 +60,12 @@ impl<'a> Game<'a> {
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let scene = serde_json::to_string(&scene)?;
-        js.execute_script("host:scene", format!("globalThis.__sceneName = {scene}"))?;
+        js.execute_script(
+            "host:scene",
+            format!(
+                "globalThis.__sceneName = {scene}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height};"
+            ),
+        )?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
         runtime
             .block_on(async {
@@ -119,7 +125,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-jobs-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
-        let mut game = Game::new(entry, log, &runtime, None)?;
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
 
         game.frame()?;
         assert_eq!(game.frame()?, [0.0, 1.0, 0.0, 1.0]);
@@ -139,6 +145,23 @@ mod tests {
             color = game.frame()?;
         }
         assert_eq!(color, [1.0, 1.0, 0.0, 1.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_provides_window_size_self_and_utf8_decoding() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-globals-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/globals.js");
+        let mut game = Game::new(entry, log, &runtime, None, (640, 360))?;
+        assert_eq!(game.frame()?, [1.0, 1.0, 1.0, 1.0]);
+        game.event(&serde_json::json!({"type": "resize", "width": 800, "height": 600}))?;
+        assert_eq!(game.frame()?, [0.0, 0.0, 0.0, 0.5]);
         Ok(())
     }
 
@@ -174,7 +197,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-ops-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
-        let mut game = Game::new(entry, log, &runtime, None)?;
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
         let gate = Rc::new(ReadGate {
             ready: Cell::new(false),
             waker: RefCell::new(None),

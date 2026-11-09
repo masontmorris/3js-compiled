@@ -177,3 +177,25 @@ for (const [index, output] of outputs.entries()) {
 drawDevice.queue.submit([drawEncoder.finish()]);
 outputs.forEach((output, index) => drawDevice.commands.readTexture(100 + index, output.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 }));
 writeFileSync(new URL('./draw.bin', import.meta.url), drawDevice.takeFrame());
+
+const surfaceDevice = new RecordingDevice();
+const surfaceShader = surfaceDevice.createShaderModule({ label: 'surface', code: '@group(0) @binding(0) var<uniform> color: vec4f; @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { return vec4f(vec2f(f32(i & 1u) * 4.0 - 1.0, f32(i >> 1u) * 4.0 - 1.0), 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return color; }' });
+const surfacePipeline = surfaceDevice.createRenderPipeline({ layout: 'auto', vertex: { module: surfaceShader }, fragment: { module: surfaceShader, targets: [{ format: 'bgra8unorm' }] } });
+const surfaceColor = surfaceDevice.createBuffer({ size: 16, usage: 72 });
+surfaceDevice.queue.writeBuffer(surfaceColor, 0, new Float32Array([0, 0, 1, 1]));
+const surfaceGroup = surfaceDevice.createBindGroup({ layout: surfacePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: surfaceColor } }] });
+const bundleEncoder = surfaceDevice.createRenderBundleEncoder({ colorFormats: ['bgra8unorm'] });
+bundleEncoder.setPipeline(surfacePipeline);
+bundleEncoder.setBindGroup(0, surfaceGroup);
+bundleEncoder.draw(3);
+const bundle = bundleEncoder.finish();
+const surfaceEncoder = surfaceDevice.createCommandEncoder();
+const surface = surfaceDevice.surfaceTexture(4, 4, { format: 'bgra8unorm', usage: 17 });
+const surfacePass = surfaceEncoder.beginRenderPass({ colorAttachments: [{ view: surface.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+surfacePass.executeBundles([bundle]);
+surfacePass.end();
+surfaceDevice.queue.submit([surfaceEncoder.finish()]);
+surfaceDevice.commands.readTexture(100, surface.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
+writeFileSync(new URL('./surface.bin', import.meta.url), surfaceDevice.takeFrame());
+surfaceDevice.surfaceTexture(8, 8, { format: 'bgra8unorm', usage: 17 });
+writeFileSync(new URL('./surface-mismatch.bin', import.meta.url), surfaceDevice.takeFrame());

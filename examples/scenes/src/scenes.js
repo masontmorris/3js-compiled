@@ -70,6 +70,7 @@ export async function buildScene(name, renderer) {
   } else if (name === 'standard-shadow') {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    light.position.set(-5, 8, 2);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     light.shadow.camera.left = -5;

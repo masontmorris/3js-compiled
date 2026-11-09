@@ -304,6 +304,52 @@ test('render pass draw state records typed fields and rejects use after end', ()
   assert.deepEqual([0, 4, 8, 12, 16].map(offset => field(4, offset)), [6, 2, 0, 0xfffffffd, 1]);
 });
 
+test('the canvas texture is acquired once per frame and released with the frame', async () => {
+  const canvas = { width: 4, height: 2, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const first = backend.context.getCurrentTexture();
+  assert.equal(backend.context.getCurrentTexture(), first);
+  assert.equal(backend.context.getConfiguration().format, 'bgra8unorm');
+  const acquired = decodeCommands(backend.takeFrame()).filter(item => item.opcode === Opcode.ACQUIRE_SURFACE);
+  assert.deepEqual(acquired.map(item => [...new Uint32Array(item.payload.buffer)]), [[first.handle, 4, 2]]);
+  assert.equal(first.destroyed, true);
+  assert.throws(() => first.createView(), /destroyed/);
+  assert.notEqual(backend.context.getCurrentTexture(), first);
+  await renderer.dispose();
+});
+
+test('automatic pipeline layouts are shared and bundles replay inline in each pass', () => {
+  const device = new RecordingDevice();
+  const shader = device.createShaderModule({ code: '' });
+  const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: shader }, fragment: { module: shader, targets: [{ format: 'rgba8unorm' }] } });
+  const layout = pipeline.getBindGroupLayout(0);
+  assert.equal(pipeline.getBindGroupLayout(0), layout);
+  const bundleEncoder = device.createRenderBundleEncoder({ colorFormats: ['rgba8unorm'] });
+  bundleEncoder.setPipeline(pipeline);
+  bundleEncoder.draw(3);
+  const bundle = bundleEncoder.finish();
+  assert.throws(() => bundleEncoder.draw(3), /finished/);
+  const view = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 16 }).createView();
+  const encoder = device.createCommandEncoder();
+  for (let i = 0; i < 2; i++) {
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store' }] });
+    pass.executeBundles([bundle]);
+    pass.end();
+  }
+  device.queue.submit([encoder.finish()]);
+  device.releaseRenderPipeline(pipeline);
+  const records = decodeCommands(device.takeFrame());
+  const spec = JSON.parse(new TextDecoder().decode(records.find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE).payload.slice(8)));
+  assert.equal(spec.layout, 0);
+  assert.equal(spec.vertex.entryPoint, null);
+  assert.equal(records.filter(item => item.opcode === Opcode.GET_BIND_GROUP_LAYOUT).length, 1);
+  assert.equal(records.filter(item => item.opcode === Opcode.DRAW).length, 2);
+  const released = records.filter(item => item.opcode === Opcode.DESTROY_RESOURCE).map(item => new DataView(item.payload.buffer).getUint32(0, true));
+  assert.deepEqual(released, [layout.handle, pipeline.handle]);
+});
+
 test('render pipeline snapshots its shader and vertex descriptors', () => {
   const device = new RecordingDevice();
   const layout = device.createPipelineLayout({ bindGroupLayouts: [] });

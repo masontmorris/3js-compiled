@@ -1,6 +1,6 @@
 use threejsc_gpu::{Executor, Response};
 
-fn executor() -> Executor {
+fn device() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
         flags: wgpu::InstanceFlags::default(),
@@ -14,7 +14,11 @@ fn executor() -> Executor {
     }))
     .expect("a software adapter is required");
     assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    pollster::block_on(adapter.request_device(&Default::default())).unwrap()
+}
+
+fn executor() -> Executor {
+    let (device, queue) = device();
     Executor::new(device, queue)
 }
 
@@ -23,7 +27,7 @@ fn executor() -> Executor {
 fn recorded_buffers_round_trip_on_vulkan() {
     let mut executor = executor();
     let responses = executor
-        .replay(include_bytes!("fixtures/buffers.bin"))
+        .replay(include_bytes!("fixtures/buffers.bin"), None)
         .unwrap();
     assert_eq!(
         responses,
@@ -46,7 +50,7 @@ fn recorded_buffers_round_trip_on_vulkan() {
 fn invalid_shader_reports_its_label_and_other_commands_continue() {
     let mut executor = executor();
     let responses = executor
-        .replay(include_bytes!("fixtures/shaders.bin"))
+        .replay(include_bytes!("fixtures/shaders.bin"), None)
         .unwrap();
     assert_eq!(responses.len(), 2);
     match &responses[0] {
@@ -73,7 +77,7 @@ fn invalid_shader_reports_its_label_and_other_commands_continue() {
 fn texture_upload_and_readback_preserve_rows() {
     let mut executor = executor();
     let responses = executor
-        .replay(include_bytes!("fixtures/textures.bin"))
+        .replay(include_bytes!("fixtures/textures.bin"), None)
         .unwrap();
     assert_eq!(
         responses,
@@ -108,7 +112,7 @@ fn anisotropic_comparison_sampler_is_created_and_released() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/samplers.bin"))
+            .replay(include_bytes!("fixtures/samplers.bin"), None)
             .unwrap(),
         vec![Response::Error {
             command: 2,
@@ -124,7 +128,7 @@ fn bind_group_layouts_validate_and_share_the_handle_namespace() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/layouts.bin"))
+            .replay(include_bytes!("fixtures/layouts.bin"), None)
             .unwrap(),
         vec![
             Response::Error {
@@ -147,7 +151,7 @@ fn recorded_bind_group_accepts_buffers_samplers_and_views() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/bindings.bin"))
+            .replay(include_bytes!("fixtures/bindings.bin"), None)
             .unwrap(),
         vec![Response::Readback {
             request: 100,
@@ -162,7 +166,7 @@ fn pipeline_layout_keeps_its_bind_group_layout_and_handle() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/pipeline-layouts.bin"))
+            .replay(include_bytes!("fixtures/pipeline-layouts.bin"), None)
             .unwrap(),
         vec![Response::Error {
             command: 3,
@@ -178,7 +182,7 @@ fn recorded_render_pass_clears_and_reads_back_pixels() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/clear-pass.bin"))
+            .replay(include_bytes!("fixtures/clear-pass.bin"), None)
             .unwrap(),
         vec![Response::Readback {
             request: 100,
@@ -195,7 +199,7 @@ fn recorded_multisample_pass_resolves_with_depth() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/msaa-pass.bin"))
+            .replay(include_bytes!("fixtures/msaa-pass.bin"), None)
             .unwrap(),
         vec![Response::Readback {
             request: 100,
@@ -212,7 +216,7 @@ fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
     let mut executor = executor();
     assert_eq!(
         executor
-            .replay(include_bytes!("fixtures/pipeline.bin"))
+            .replay(include_bytes!("fixtures/pipeline.bin"), None)
             .unwrap(),
         vec![
             Response::Validation { request: 3 },
@@ -231,7 +235,7 @@ fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
 fn invalid_shader_and_pipeline_report_requests_and_leave_other_work_usable() {
     let mut executor = executor();
     let responses = executor
-        .replay(include_bytes!("fixtures/pipeline-errors.bin"))
+        .replay(include_bytes!("fixtures/pipeline-errors.bin"), None)
         .unwrap();
     assert_eq!(responses.len(), 6);
     match &responses[0] {
@@ -271,7 +275,7 @@ fn recorded_draws_fill_targets_with_bound_uniform_color() {
     let red = [255, 0, 0, 255].repeat(16);
     assert_eq!(
         executor()
-            .replay(include_bytes!("fixtures/draw.bin"))
+            .replay(include_bytes!("fixtures/draw.bin"), None)
             .unwrap(),
         vec![
             Response::Validation { request: 4 },
@@ -285,5 +289,52 @@ fn recorded_draws_fill_targets_with_bound_uniform_color() {
                 bytes: red
             },
         ]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
+    let (device, queue) = device();
+    let surface = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let mut executor = Executor::new(device, queue);
+    let frame = include_bytes!("fixtures/surface.bin");
+    assert_eq!(
+        executor.replay(frame, Some(&surface)).unwrap(),
+        vec![
+            Response::Validation { request: 2 },
+            Response::Readback {
+                request: 100,
+                bytes: [255, 0, 0, 255].repeat(16)
+            },
+        ]
+    );
+    let mismatch = executor
+        .replay(
+            include_bytes!("fixtures/surface-mismatch.bin"),
+            Some(&surface),
+        )
+        .unwrap();
+    assert!(
+        matches!(&mismatch[..], [Response::Error { message, .. }] if message == "surface is 4x4, not 8x8"),
+        "{mismatch:?}"
+    );
+    let missing = executor.replay(frame, None).unwrap();
+    assert!(
+        missing.iter().any(|response| matches!(response, Response::Error { message, .. } if message == "no surface for this frame")),
+        "{missing:?}"
     );
 }

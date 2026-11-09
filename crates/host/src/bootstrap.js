@@ -3,6 +3,17 @@ const listeners = new Map();
 const callbacks = new Map();
 let nextFrame = 1;
 globalThis.window = globalThis;
+globalThis.self = globalThis;
+globalThis.devicePixelRatio = 1;
+globalThis.TextDecoder ??= class TextDecoder {
+  constructor(label = "utf-8") {
+    if (!/^utf-?8$/i.test(label)) throw new RangeError(`Unsupported encoding: ${label}`);
+  }
+  get encoding() { return "utf-8"; }
+  decode(input = new Uint8Array()) {
+    return Deno.core.decode(ArrayBuffer.isView(input) ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength) : new Uint8Array(input));
+  }
+};
 globalThis.performance = { now: () => ops.op_now() };
 globalThis.console = Object.fromEntries(["log", "info", "warn", "error", "debug"].map(level =>
   [level, (...args) => ops.op_log(args.map(arg => typeof arg === "string" ? arg : JSON.stringify(arg)).join(" "))]));
@@ -21,6 +32,10 @@ const gamepads = [];
 globalThis.navigator = { getGamepads: () => gamepads };
 function report(error) { console.error(error?.stack ?? String(error)); }
 globalThis.__hostDispatch = event => {
+  if (event.type === "resize") {
+    globalThis.innerWidth = event.width;
+    globalThis.innerHeight = event.height;
+  }
   if (event.type === "gamepadbutton") {
     let pad = gamepads[event.index];
     if (!pad) {

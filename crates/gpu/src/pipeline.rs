@@ -18,7 +18,7 @@ pub struct Pipeline {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Stage {
     pub module: u32,
-    pub entry_point: String,
+    pub entry_point: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -74,7 +74,7 @@ impl Pipeline {
     pub fn create(
         &self,
         device: &wgpu::Device,
-        layout: &wgpu::PipelineLayout,
+        layout: Option<&wgpu::PipelineLayout>,
         vertex_module: &wgpu::ShaderModule,
         fragment_module: Option<&wgpu::ShaderModule>,
     ) -> Result<wgpu::RenderPipeline, String> {
@@ -112,7 +112,7 @@ impl Pipeline {
             .zip(fragment_module)
             .map(|(stage, module)| wgpu::FragmentState {
                 module,
-                entry_point: Some(&stage.entry_point),
+                entry_point: stage.entry_point.as_deref(),
                 compilation_options: Default::default(),
                 targets: &targets,
             });
@@ -143,10 +143,10 @@ impl Pipeline {
         Ok(
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&self.label),
-                layout: Some(layout),
+                layout,
                 vertex: wgpu::VertexState {
                     module: vertex_module,
-                    entry_point: Some(&self.vertex.entry_point),
+                    entry_point: self.vertex.entry_point.as_deref(),
                     compilation_options: Default::default(),
                     buffers: &buffers,
                 },

@@ -64,13 +64,8 @@ impl Renderer {
             .formats
             .iter()
             .copied()
-            .find(|f| {
-                matches!(
-                    f,
-                    wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm
-                )
-            })
-            .context("surface has no 8-bit unorm format")?;
+            .find(|f| *f == wgpu::TextureFormat::Bgra8Unorm)
+            .context("surface does not support bgra8unorm")?;
         let (width, height) = window.size_in_pixels();
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
@@ -103,15 +98,24 @@ impl Renderer {
             ),
         ))
     }
-    pub fn replay(&mut self, commands: &[u8]) -> Result<Vec<threejsc_gpu::Response>> {
-        Ok(self.executor.replay(commands)?)
+    /// Replays JS commands into `frame`. Returns whether they drew to the surface.
+    pub fn replay(
+        &mut self,
+        commands: &[u8],
+        frame: &wgpu::SurfaceTexture,
+    ) -> Result<(Vec<threejsc_gpu::Response>, bool)> {
+        let responses = self.executor.replay(commands, Some(&frame.texture))?;
+        Ok((responses, self.executor.surface_used()))
     }
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 && (width != self.config.width || height != self.config.height) {
+    pub fn resize(&mut self, width: u32, height: u32) -> bool {
+        let changed =
+            width > 0 && height > 0 && (width != self.config.width || height != self.config.height);
+        if changed {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
         }
+        changed
     }
     pub fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
@@ -123,7 +127,7 @@ impl Renderer {
     pub fn render(
         &self,
         frame: wgpu::SurfaceTexture,
-        color: [f64; 4],
+        clear: Option<[f64; 4]>,
         captures: &[&Path],
     ) -> Result<wgpu::SurfaceTexture> {
         let view = frame.texture.create_view(&Default::default());
@@ -132,7 +136,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
-        {
+        if let Some(color) = clear {
             let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -206,11 +210,7 @@ impl Renderer {
                 .take(self.config.height as usize)
             {
                 for pixel in row[..(self.config.width * 4) as usize].as_chunks::<4>().0 {
-                    if self.config.format == wgpu::TextureFormat::Bgra8Unorm {
-                        rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-                    } else {
-                        rgba.extend_from_slice(pixel);
-                    }
+                    rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
                 }
             }
             for path in captures {

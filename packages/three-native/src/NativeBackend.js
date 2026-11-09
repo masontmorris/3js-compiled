@@ -1,5 +1,11 @@
-import { WebGPUBackend } from 'three/webgpu';
+import { UnsignedByteType, WebGPUBackend } from 'three/webgpu';
 import { CommandEncoder, Handles, Opcode } from './commands.js';
+
+globalThis.GPUBufferUsage ??= Object.freeze({ MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64, STORAGE: 128, INDIRECT: 256, QUERY_RESOLVE: 512 });
+globalThis.GPUTextureUsage ??= Object.freeze({ COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 });
+globalThis.GPUShaderStage ??= Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
+globalThis.GPUMapMode ??= Object.freeze({ READ: 1, WRITE: 2 });
+globalThis.GPURenderBundleEncoder ??= class GPURenderBundleEncoder {};
 
 class RecordingBuffer {
   constructor(device, descriptor) {
@@ -34,7 +40,7 @@ class RecordingBuffer {
 }
 
 class RecordingTexture {
-  constructor(device, descriptor) {
+  constructor(device, descriptor, surface = false) {
     if ((descriptor.dimension ?? '2d') !== '2d') throw new Error('Only 2D textures are implemented');
     if (descriptor.viewFormats?.length || descriptor.textureBindingViewDimension) throw new Error('Texture view formats and binding dimensions are not implemented');
     const size = descriptor.size;
@@ -48,7 +54,9 @@ class RecordingTexture {
     this.device = device;
     this.handle = device.handles.allocate();
     this.destroyed = false;
-    device.commands.createTexture(this.handle, {
+    this.surface = surface;
+    if (surface) device.commands.words(Opcode.ACQUIRE_SURFACE, [this.handle, this.width, this.height]);
+    else device.commands.createTexture(this.handle, {
       width: this.width, height: this.height, layers: this.depthOrArrayLayers,
       mips: this.mipLevelCount, samples: this.sampleCount, usage: this.usage, format: this.format,
     });
@@ -75,7 +83,7 @@ class RecordingTexture {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.device.commands.destroyTexture(this.handle);
+    if (!this.surface) this.device.commands.destroyTexture(this.handle);
     this.device.textures.delete(this);
   }
 }
@@ -90,6 +98,56 @@ function origin(value = {}) {
   return Array.isArray(value)
     ? { x: value[0] ?? 0, y: value[1] ?? 0, layer: value[2] ?? 0 }
     : { x: value.x ?? 0, y: value.y ?? 0, layer: value.z ?? 0 };
+}
+
+function drawCommands(device, commands, record) {
+  const bufferHandle = buffer => {
+    if (!(buffer instanceof RecordingBuffer) || !device.buffers.has(buffer) || buffer.destroyed) throw new Error('Invalid render buffer');
+    return buffer.handle;
+  };
+  return {
+    setPipeline: pipeline => {
+      if (!device.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
+      record(() => commands.words(Opcode.SET_PIPELINE, [pipeline.handle]));
+    },
+    setBindGroup: (index, group, offsets = []) => {
+      if (!device.bindGroups.has(group)) throw new Error('Invalid bind group');
+      record(() => commands.words(Opcode.SET_BIND_GROUP, [index, group.handle, offsets.length, ...offsets]));
+    },
+    setVertexBuffer: (slot, buffer, offset = 0, size = 0) => {
+      record(() => commands.bufferRange(Opcode.SET_VERTEX_BUFFER, slot, bufferHandle(buffer), offset, size));
+    },
+    setIndexBuffer: (buffer, format, offset = 0, size = 0) => {
+      const formatValue = { uint16: 0, uint32: 1 }[format];
+      if (formatValue === undefined) throw new Error('Invalid index format');
+      record(() => commands.bufferRange(Opcode.SET_INDEX_BUFFER, formatValue, bufferHandle(buffer), offset, size));
+    },
+    draw: (vertices, instances = 1, firstVertex = 0, firstInstance = 0) => record(() => commands.words(Opcode.DRAW, [vertices, instances, firstVertex, firstInstance])),
+    drawIndexed: (indices, instances = 1, firstIndex = 0, baseVertex = 0, firstInstance = 0) => {
+      if (!Number.isInteger(baseVertex) || baseVertex < -0x80000000 || baseVertex > 0x7fffffff) throw new RangeError('Invalid base vertex');
+      record(() => commands.words(Opcode.DRAW_INDEXED, [indices, instances, firstIndex, baseVertex >>> 0, firstInstance]));
+    },
+  };
+}
+
+// The executor has no bundles; a pass copies a bundle's commands when it executes the bundle.
+class RecordingRenderBundleEncoder extends GPURenderBundleEncoder {
+  constructor(device) {
+    super();
+    this.device = device;
+    this.commands = new CommandEncoder();
+    this.finished = false;
+    Object.assign(this, drawCommands(device, this.commands, write => {
+      if (this.finished) throw new Error('Render bundle is finished');
+      write();
+    }));
+  }
+
+  finish() {
+    if (this.finished) throw new Error('Render bundle is finished');
+    this.finished = true;
+    return { device: this.device, commands: this.commands };
+  }
 }
 
 class RecordingCommandEncoder {
@@ -143,40 +201,22 @@ class RecordingCommandEncoder {
       };
     }
     this.commands.beginRenderPass(colors, depth);
-    const record = (write, ...args) => {
+    const record = write => {
       if (this.activePass !== pass) throw new Error('Render pass has ended');
-      write(...args);
-    };
-    const bufferHandle = buffer => {
-      if (!(buffer instanceof RecordingBuffer) || !this.device.buffers.has(buffer) || buffer.destroyed) throw new Error('Invalid render buffer');
-      return buffer.handle;
+      write();
     };
     const pass = {
-      setPipeline: pipeline => {
-        if (!this.device.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
-        record(() => this.commands.words(Opcode.SET_PIPELINE, [pipeline.handle]));
-      },
-      setBindGroup: (index, group, offsets = []) => {
-        if (!this.device.bindGroups.has(group)) throw new Error('Invalid bind group');
-        record(() => this.commands.words(Opcode.SET_BIND_GROUP, [index, group.handle, offsets.length, ...offsets]));
-      },
-      setVertexBuffer: (slot, buffer, offset = 0, size = 0) => {
-        record(() => this.commands.bufferRange(Opcode.SET_VERTEX_BUFFER, slot, bufferHandle(buffer), offset, size));
-      },
-      setIndexBuffer: (buffer, format, offset = 0, size = 0) => {
-        const formatValue = { uint16: 0, uint32: 1 }[format];
-        if (formatValue === undefined) throw new Error('Invalid index format');
-        record(() => this.commands.bufferRange(Opcode.SET_INDEX_BUFFER, formatValue, bufferHandle(buffer), offset, size));
-      },
+      ...drawCommands(this.device, this.commands, record),
       setViewport: (x, y, width, height, minDepth, maxDepth) => record(() => this.commands.floats(Opcode.SET_VIEWPORT, [x, y, width, height, minDepth, maxDepth], 4)),
       setScissorRect: (x, y, width, height) => record(() => this.commands.words(Opcode.SET_SCISSOR, [x, y, width, height])),
       setBlendConstant: color => record(() => this.commands.floats(Opcode.SET_BLEND_CONSTANT, Array.isArray(color) ? color : [color.r, color.g, color.b, color.a], 8)),
       setStencilReference: reference => record(() => this.commands.words(Opcode.SET_STENCIL_REFERENCE, [reference])),
-      draw: (vertices, instances = 1, firstVertex = 0, firstInstance = 0) => record(() => this.commands.words(Opcode.DRAW, [vertices, instances, firstVertex, firstInstance])),
-      drawIndexed: (indices, instances = 1, firstIndex = 0, baseVertex = 0, firstInstance = 0) => {
-        if (!Number.isInteger(baseVertex) || baseVertex < -0x80000000 || baseVertex > 0x7fffffff) throw new RangeError('Invalid base vertex');
-        record(() => this.commands.words(Opcode.DRAW_INDEXED, [indices, instances, firstIndex, baseVertex >>> 0, firstInstance]));
-      },
+      executeBundles: bundles => record(() => {
+        for (const bundle of bundles) {
+          if (bundle?.device !== this.device) throw new Error('Invalid render bundle');
+          bundle.commands.copyTo(this.commands);
+        }
+      }),
       end: () => {
         if (this.activePass !== pass) throw new Error('Render pass has ended');
         this.commands.append(Opcode.END_RENDER_PASS);
@@ -194,6 +234,32 @@ class RecordingCommandEncoder {
   }
 }
 
+class RecordingCanvasContext {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.configuration = null;
+  }
+
+  configure(configuration) {
+    if (!(configuration.device instanceof RecordingDevice)) throw new Error('Invalid canvas device');
+    if (configuration.format !== 'bgra8unorm') throw new Error('The native surface format is bgra8unorm');
+    this.configuration = configuration;
+  }
+
+  unconfigure() {
+    this.configuration = null;
+  }
+
+  getConfiguration() {
+    return this.configuration;
+  }
+
+  getCurrentTexture() {
+    if (!this.configuration) throw new Error('Canvas context is not configured');
+    return this.configuration.device.surfaceTexture(this.canvas.width, this.canvas.height, this.configuration);
+  }
+}
+
 export class RecordingDevice {
   constructor({ features = [], limits = {} } = {}) {
     this.handles = new Handles();
@@ -206,6 +272,7 @@ export class RecordingDevice {
     this.bindGroups = new Set();
     this.pipelineLayouts = new Set();
     this.renderPipelines = new Set();
+    this.surface = null;
     this.errorScopes = [];
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
@@ -267,6 +334,11 @@ export class RecordingDevice {
   createCommandEncoder() {
     if (this.destroyed) throw new Error('Device is destroyed');
     return new RecordingCommandEncoder(this);
+  }
+
+  createRenderBundleEncoder() {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    return new RecordingRenderBundleEncoder(this);
   }
 
   pushErrorScope(filter) {
@@ -416,11 +488,12 @@ export class RecordingDevice {
 
   createRenderPipeline(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
-    if (!this.pipelineLayouts.has(descriptor.layout)) throw new Error('Invalid pipeline layout');
+    const autoLayout = descriptor.layout === 'auto';
+    if (!autoLayout && !this.pipelineLayouts.has(descriptor.layout)) throw new Error('Invalid pipeline layout');
     const stage = value => {
       if (!value || !this.shaders.has(value.module)) throw new Error('Invalid shader module');
       if (value.constants && Object.keys(value.constants).length) throw new Error('Shader constants are not implemented');
-      return { module: value.module.handle, entryPoint: value.entryPoint ?? 'main' };
+      return { module: value.module.handle, entryPoint: value.entryPoint ?? null };
     };
     const face = (value = {}) => ({
       compare: value.compare ?? 'always', failOp: value.failOp ?? 'keep',
@@ -433,7 +506,7 @@ export class RecordingDevice {
     const samples = descriptor.multisample ?? {};
     const depth = descriptor.depthStencil;
     const spec = {
-      label: descriptor.label ?? '', layout: descriptor.layout.handle,
+      label: descriptor.label ?? '', layout: autoLayout ? 0 : descriptor.layout.handle,
       vertex: stage(descriptor.vertex), fragment: descriptor.fragment ? stage(descriptor.fragment) : null,
       buffers: (descriptor.vertex.buffers ?? []).map(buffer => ({
         arrayStride: buffer.arrayStride, stepMode: buffer.stepMode ?? 'vertex',
@@ -456,7 +529,20 @@ export class RecordingDevice {
       } : null,
       samples: { count: samples.count ?? 1, mask: samples.mask ?? 0xffffffff, alphaToCoverageEnabled: samples.alphaToCoverageEnabled ?? false },
     };
-    const pipeline = { handle: this.handles.allocate(), layout: descriptor.layout };
+    const autoLayouts = new Map();
+    const pipeline = {
+      handle: this.handles.allocate(), layout: descriptor.layout, autoLayouts,
+      getBindGroupLayout: index => {
+        if (!this.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
+        if (!autoLayouts.has(index)) {
+          const layout = { handle: this.handles.allocate() };
+          this.commands.words(Opcode.GET_BIND_GROUP_LAYOUT, [layout.handle, pipeline.handle, index]);
+          this.bindGroupLayouts.add(layout);
+          autoLayouts.set(index, layout);
+        }
+        return autoLayouts.get(index);
+      },
+    };
     const scope = this.errorScopes.at(-1);
     const request = scope ? this.handles.allocate() : 0;
     if (scope) scope.push(new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, validation: true })));
@@ -467,6 +553,7 @@ export class RecordingDevice {
 
   releaseRenderPipeline(pipeline) {
     if (!this.renderPipelines.delete(pipeline)) return;
+    for (const layout of pipeline.autoLayouts.values()) this.releaseBindGroupLayout(layout);
     this.commands.destroyResource(pipeline.handle);
   }
 
@@ -480,6 +567,15 @@ export class RecordingDevice {
     const texture = new RecordingTexture(this, descriptor);
     this.textures.add(texture);
     return texture;
+  }
+
+  surfaceTexture(width, height, { format, usage }) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    if (!this.surface) {
+      this.surface = new RecordingTexture(this, { size: [width, height], format, usage }, true);
+      this.textures.add(this.surface);
+    }
+    return this.surface;
   }
 
   readTexture(texture, descriptor) {
@@ -514,6 +610,8 @@ export class RecordingDevice {
   }
 
   takeFrame() {
+    this.surface?.destroy();
+    this.surface = null;
     return this.commands.finish();
   }
 }
@@ -521,7 +619,7 @@ export class RecordingDevice {
 export class NativeBackend extends WebGPUBackend {
   constructor(parameters = {}, capabilities = {}) {
     const device = new RecordingDevice(capabilities);
-    super({ ...parameters, device });
+    super({ outputType: UnsignedByteType, ...parameters, device, context: new RecordingCanvasContext(parameters.canvas) });
     this.recordingDevice = device;
     this.isNativeBackend = true;
   }

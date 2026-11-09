@@ -2145,6 +2145,7 @@ dependencies = [
 name = "threejsc-gpu"
 version = "0.1.0"
 dependencies = [
+ "image",
  "pollster",
  "serde",
  "serde_json",

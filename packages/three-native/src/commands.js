@@ -28,6 +28,8 @@ export const Opcode = Object.freeze({
   READ_BUFFER: 27,
   READ_TEXTURE: 28,
   DESTROY_RESOURCE: 29,
+  ACQUIRE_SURFACE: 30,
+  GET_BIND_GROUP_LAYOUT: 31,
 });
 
 const MAGIC = 0x43534a33;
@@ -207,8 +209,12 @@ export class CommandEncoder {
     this.append(Opcode.BEGIN_RENDER_PASS, payload);
   }
 
-  drainTo(destination) {
+  copyTo(destination) {
     for (const { opcode, payload } of this.#records) destination.append(opcode, payload);
+  }
+
+  drainTo(destination) {
+    this.copyTo(destination);
     this.#records = [];
     this.#size = HEADER_SIZE;
   }
