@@ -3,7 +3,8 @@
 
 use std::{
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, ExitStatus},
+    time::{Duration, Instant},
 };
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -13,27 +14,57 @@ struct Run {
     capture: image::RgbaImage,
 }
 
-fn run(name: &str, entry: &Path, steps: serde_json::Value) -> Run {
+fn workdir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("threejsc-gpu-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Runs the host in `dir` and fails the test if it does not exit within a minute.
+fn host(
+    dir: &Path,
+    entry: &Path,
+    steps: &serde_json::Value,
+    args: &[&str],
+) -> (ExitStatus, String) {
+    std::fs::write(dir.join("steps.json"), steps.to_string()).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_host"))
+        .current_dir(dir)
+        .arg("--entry")
+        .arg(entry)
+        .args(["--script", "steps.json"])
+        .args(args)
+        .spawn()
+        .unwrap();
+    let status = wait(&mut child, Duration::from_secs(60));
+    (
+        status,
+        std::fs::read_to_string(dir.join("host.log")).unwrap_or_default(),
+    )
+}
+
+fn wait(child: &mut Child, timeout: Duration) -> ExitStatus {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("host did not exit within {timeout:?}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn run(name: &str, entry: &Path, steps: serde_json::Value) -> Run {
+    let dir = workdir(name);
     let mut steps = steps.as_array().unwrap().clone();
     let capture = dir.join("capture.png");
     steps.push(serde_json::json!({"type": "capture", "path": capture}));
     steps.push(serde_json::json!({"type": "close"}));
-    std::fs::write(
-        dir.join("steps.json"),
-        serde_json::to_string(&steps).unwrap(),
-    )
-    .unwrap();
-    let status = Command::new(env!("CARGO_BIN_EXE_host"))
-        .current_dir(&dir)
-        .arg("--entry")
-        .arg(entry)
-        .args(["--script", "steps.json"])
-        .status()
-        .unwrap();
-    let log = std::fs::read_to_string(dir.join("host.log")).unwrap_or_default();
+    let (status, log) = host(&dir, entry, &steps.into(), &[]);
     assert!(status.success(), "{name}: host exited with {status}\n{log}");
     Run {
         log,
@@ -54,6 +85,23 @@ fn test_entry(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join(name)
+}
+
+fn resize_bundle() -> PathBuf {
+    let bundle = std::env::temp_dir().join(format!("threejsc-resize-{}.js", std::process::id()));
+    let built = Command::new("node")
+        .current_dir(ROOT)
+        .env("OUT", &bundle)
+        .args(["-e", "import('esbuild').then(({ build }) => build({ entryPoints: ['crates/host/tests/resize.js'], outfile: process.env.OUT, bundle: true, format: 'esm', platform: 'browser', target: 'es2022' }))"])
+        .status()
+        .unwrap();
+    assert!(built.success(), "resize bundle build failed");
+    bundle
+}
+
+fn red(path: &Path) -> (u8, (u32, u32)) {
+    let image = image::open(path).unwrap().to_rgba8();
+    (image.get_pixel(4, 4).0[0], image.dimensions())
 }
 
 #[test]
@@ -88,17 +136,9 @@ fn a_stream_cannot_destroy_the_surface() {
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn the_first_frame_after_a_resize_draws_the_scene() {
-    let bundle = std::env::temp_dir().join(format!("threejsc-resize-{}.js", std::process::id()));
-    let built = Command::new("node")
-        .current_dir(ROOT)
-        .env("OUT", &bundle)
-        .args(["-e", "import('esbuild').then(({ build }) => build({ entryPoints: ['crates/host/tests/resize.js'], outfile: process.env.OUT, bundle: true, format: 'esm', platform: 'browser', target: 'es2022' }))"])
-        .status()
-        .unwrap();
-    assert!(built.success(), "resize bundle build failed");
     let run = run(
         "resize",
-        &bundle,
+        &resize_bundle(),
         serde_json::json!([
             {"type": "wait", "frames": 3},
             {"type": "resize", "width": 800, "height": 600},
@@ -108,4 +148,122 @@ fn the_first_frame_after_a_resize_draws_the_scene() {
     assert!(!run.log.contains("GPU error"), "{}", run.log);
     assert_near(&run, (400, 300), [255, 136, 0]);
     assert_near(&run, (8, 8), [51, 102, 153]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn responses_carry_the_frame_that_requested_them() {
+    let run = run(
+        "frames",
+        &test_entry("frames.js"),
+        serde_json::json!([{"type": "wait", "frames": 10}]),
+    );
+    println!("{}", run.log);
+    assert!(
+        run.log.contains("responses match their frames: true"),
+        "{}",
+        run.log
+    );
+    assert_near(&run, (640, 360), [0, 255, 0]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn captures_and_recordings_hold_the_frame_javascript_produced() {
+    let dir = workdir("record");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 3},
+        {"type": "resize", "width": 800, "height": 600},
+        {"type": "capture", "path": "resized.png"},
+        {"type": "wait", "frames": 2},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(
+        &dir,
+        &test_entry("counter.js"),
+        &steps,
+        &["--record", "frames"],
+    );
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let mut recorded: Vec<_> = std::fs::read_dir(dir.join("frames"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    recorded.sort();
+    let frames: Vec<_> = recorded.iter().map(|path| red(path)).collect();
+    assert_eq!(
+        frames,
+        [
+            (0, (1280, 720)),
+            (1, (1280, 720)),
+            (2, (1280, 720)),
+            (3, (800, 600)),
+            (4, (800, 600)),
+            (5, (800, 600)),
+        ]
+    );
+    assert_eq!(red(&dir.join("resized.png")), (3, (800, 600)));
+    let rows = std::fs::read_to_string(dir.join("frames.csv")).unwrap();
+    assert_eq!(rows.lines().count(), 7, "{rows}");
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn repeated_runs_capture_identical_frames() {
+    let bundle = resize_bundle();
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 3},
+        {"type": "resize", "width": 800, "height": 600},
+        {"type": "wait", "frames": 2},
+    ]);
+    let first = run("repeat-1", &bundle, steps.clone());
+    let second = run("repeat-2", &bundle, steps);
+    assert_eq!(first.capture.dimensions(), (800, 600));
+    assert!(first.capture == second.capture, "captures differ");
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_render_thread_failure_ends_the_host_with_a_logged_error() {
+    let dir = workdir("render-failure");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 2},
+        {"type": "capture", "path": "host.log/capture.png"},
+        {"type": "wait", "frames": 2},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("counter.js"), &steps, &[]);
+    assert_eq!(status.code(), Some(1), "{log}");
+    assert!(log.contains("host failed: render thread failed: "), "{log}");
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn closing_the_window_joins_every_thread() {
+    let dir = workdir("close-window");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_host"))
+        .current_dir(&dir)
+        .arg("--entry")
+        .arg(test_entry("counter.js"))
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_secs(3));
+    let closed = Command::new("taskkill")
+        .args(["/PID", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(closed.success(), "taskkill could not post WM_CLOSE");
+    let status = wait(&mut child, Duration::from_secs(30));
+    let log = std::fs::read_to_string(dir.join("host.log")).unwrap();
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let frames: usize = log
+        .lines()
+        .find_map(|line| line.strip_prefix("closed after "))
+        .and_then(|rest| rest.strip_suffix(" frames"))
+        .unwrap_or_else(|| panic!("no close line\n{log}"))
+        .parse()
+        .unwrap();
+    let rows = std::fs::read_to_string(dir.join("frames.csv")).unwrap();
+    assert!(frames > 0, "{log}");
+    assert_eq!(rows.lines().count(), frames + 1, "every frame has a row");
 }
