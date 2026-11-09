@@ -1,0 +1,20 @@
+using adapter: NVIDIA GeForce RTX 3060 (Dx12) driver 
+window 1920x1080, surface Bgra8UnormSrgb, AutoNoVsync
+adapter LUID (0, 55822)
+deno_core 0.413.0 / V8 15.0.245.2-rusty ready in 8.2 ms
+=== xproc-game report (4000 frames in 3.5 s, vsync=false, sync=Poll, ring=3, ui=false)
+frames with HUD composited 0 / without 4000
+HUD publications picked: 0 (0.0/s)
+frame interval ms:          n=3999 avg=0.733 p50=0.655 p95=1.272 max=17.490
+frame CPU ms:               n=4000 avg=0.677 p50=0.616 p95=1.205 max=17.427
+  drain pipe msgs ms:       n=4000 avg=0.000 p50=0.000 p95=0.000 max=0.004
+  js tick ms:               n=4000 avg=0.034 p50=0.030 p95=0.044 max=1.296
+  pick (fence poll) ms:     n=4000 avg=0.000 p50=0.000 p95=0.000 max=0.001
+  render+composite+present: n=4000 avg=0.638 p50=0.582 p95=1.167 max=17.369
+FrameReady->picked frames:  n=0
+bridge RTT ms:              n=0
+bridge RTT frames:          n=0
+patch->HUD pixels ms:       n=0
+patch->HUD pixels frames:   n=0
+game memory: working set 244 MB, peak 244 MB, private 396 MB
+game CPU time 2.45 s (71% of one core)

@@ -1,0 +1,4 @@
+
+thread 'main' (15124) panicked at C:\Users\mason\st\build\release\build\surfman-ef4b6cdd8c5af19d\out/egl_bindings.rs:284:13:
+egl function was not loaded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

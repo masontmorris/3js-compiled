@@ -1,0 +1,1950 @@
+{
+  "three": "187",
+  "adapter": "NVIDIA GeForce RTX 3060",
+  "scenes": [
+    {
+      "name": "mat/basic",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/basic-map-vertexcolors",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/lambert",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/phong",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/standard",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/standard-maps",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical-clearcoat",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical-transmission",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical-iridescence",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical-sheen",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/physical-anisotropy",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/toon",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/normal",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/matcap",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/line-basic",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/points",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "mat/sprite",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "env/pmrem-room",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "env/fog",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "env/fog-exp2",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "alpha/test",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "alpha/hash",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "alpha/transparent",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "light/point-spot-hemi",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "light/rectarea",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "shadow/dir-pcf",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "shadow/dir-basic",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "shadow/dir-vsm",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "shadow/point",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "shadow/spot",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "obj/instanced",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "obj/batched",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "obj/skinned",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "obj/morph",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "obj/clipping",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "tsl/custom-material",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "tsl/compute-instanced",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "tsl/compute-atomics-storage-texture",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/passthrough-tonemap",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/bloom",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/fxaa",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/smaa",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/gtao",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/dof",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/motionblur-velocity",
+      "ok": true,
+      "error": null,
+      "frames": 3
+    },
+    {
+      "name": "post/afterimage",
+      "ok": true,
+      "error": null,
+      "frames": 3
+    },
+    {
+      "name": "post/outline",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/traa",
+      "ok": true,
+      "error": null,
+      "frames": 3
+    },
+    {
+      "name": "post/ssr",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "post/gaussian-blur",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    }
+  ],
+  "deviceErrors": [],
+  "shaders": {
+    "1c1f8a489a1a": {
+      "file": "1c1f8a489a1a.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c2b85ac0eda0": {
+      "file": "c2b85ac0eda0.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "170b53b282d4": {
+      "file": "170b53b282d4.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/basic",
+        "mat/basic-map-vertexcolors",
+        "mat/lambert",
+        "mat/phong",
+        "mat/standard",
+        "mat/standard-maps",
+        "mat/physical",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/physical-iridescence",
+        "mat/physical-sheen",
+        "mat/physical-anisotropy",
+        "mat/toon",
+        "mat/normal",
+        "mat/matcap",
+        "mat/line-basic",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "env/fog",
+        "env/fog-exp2",
+        "alpha/test",
+        "alpha/hash",
+        "alpha/transparent",
+        "light/point-spot-hemi",
+        "light/rectarea",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "obj/instanced",
+        "obj/batched",
+        "obj/skinned",
+        "obj/morph",
+        "obj/clipping",
+        "tsl/custom-material",
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3101841c5ce7": {
+      "file": "3101841c5ce7.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/basic",
+        "mat/basic-map-vertexcolors",
+        "mat/lambert",
+        "mat/phong",
+        "mat/standard",
+        "mat/standard-maps",
+        "mat/physical",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/physical-iridescence",
+        "mat/physical-sheen",
+        "mat/physical-anisotropy",
+        "mat/toon",
+        "mat/normal",
+        "mat/matcap",
+        "mat/line-basic",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "env/fog",
+        "env/fog-exp2",
+        "alpha/test",
+        "alpha/hash",
+        "alpha/transparent",
+        "light/point-spot-hemi",
+        "light/rectarea",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "obj/instanced",
+        "obj/batched",
+        "obj/skinned",
+        "obj/morph",
+        "obj/clipping",
+        "tsl/custom-material",
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d98ba31bf0d2": {
+      "file": "d98ba31bf0d2.vf.wgsl",
+      "stage": "vf",
+      "scenes": [
+        "mat/basic-map-vertexcolors",
+        "mat/standard-maps",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/matcap",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "alpha/test",
+        "tsl/custom-material",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "ecb9ff8878a3": {
+      "file": "ecb9ff8878a3.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/basic-map-vertexcolors"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c44fcdc21d3e": {
+      "file": "c44fcdc21d3e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/basic-map-vertexcolors"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1bf34c1839c9": {
+      "file": "1bf34c1839c9.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/lambert"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d560bfb57b0a": {
+      "file": "d560bfb57b0a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/lambert"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e61a4c2cb03a": {
+      "file": "e61a4c2cb03a.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/phong"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1bce41d63864": {
+      "file": "1bce41d63864.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/phong"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c156389b68f8": {
+      "file": "c156389b68f8.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/standard",
+        "mat/physical-transmission",
+        "alpha/transparent",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "obj/clipping",
+        "post/passthrough-tonemap",
+        "post/bloom",
+        "post/fxaa",
+        "post/smaa",
+        "post/gtao",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "6bff40ea6bbb": {
+      "file": "6bff40ea6bbb.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/standard",
+        "mat/physical-transmission",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "post/passthrough-tonemap",
+        "post/bloom",
+        "post/fxaa",
+        "post/smaa",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "8d67fc0c7168": {
+      "file": "8d67fc0c7168.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/standard-maps"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d1ee9fd15ed2": {
+      "file": "d1ee9fd15ed2.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/standard-maps"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4b83d4470e29": {
+      "file": "4b83d4470e29.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1745663f393b": {
+      "file": "1745663f393b.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "b895c2c12dc5": {
+      "file": "b895c2c12dc5.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical-clearcoat"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "306388e79b98": {
+      "file": "306388e79b98.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical-clearcoat"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0063f872cfc2": {
+      "file": "0063f872cfc2.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical-transmission"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "68d7f122c58d": {
+      "file": "68d7f122c58d.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical-transmission"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "84edc5518269": {
+      "file": "84edc5518269.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical-iridescence"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "03efe7e64e57": {
+      "file": "03efe7e64e57.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical-iridescence"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "37ef3cbacab7": {
+      "file": "37ef3cbacab7.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical-sheen"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f69402777dfe": {
+      "file": "f69402777dfe.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical-sheen"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a657e732f391": {
+      "file": "a657e732f391.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/physical-anisotropy"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a0bf00e781b1": {
+      "file": "a0bf00e781b1.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/physical-anisotropy"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f241d92dc5df": {
+      "file": "f241d92dc5df.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/toon"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "8434a64b8934": {
+      "file": "8434a64b8934.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/toon"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d0e2bfd3305b": {
+      "file": "d0e2bfd3305b.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/normal"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "99f952295339": {
+      "file": "99f952295339.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/normal"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "fb6c19d4f899": {
+      "file": "fb6c19d4f899.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/matcap"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "414c1ce53f26": {
+      "file": "414c1ce53f26.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/matcap"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "67b66f2cdddd": {
+      "file": "67b66f2cdddd.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d572f5897db0": {
+      "file": "d572f5897db0.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1ea61a0644f1": {
+      "file": "1ea61a0644f1.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "49e61e306c21": {
+      "file": "49e61e306c21.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "933536d77c6f": {
+      "file": "933536d77c6f.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/points"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f3a9bdc670ca": {
+      "file": "f3a9bdc670ca.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/points"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "5a310ff78c08": {
+      "file": "5a310ff78c08.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "mat/sprite"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a02b8895018d": {
+      "file": "a02b8895018d.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "mat/sprite"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "17132657cae5": {
+      "file": "17132657cae5.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "8bba3fd976dd": {
+      "file": "8bba3fd976dd.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "524df6164481": {
+      "file": "524df6164481.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "ace94349e72e": {
+      "file": "ace94349e72e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "6582769778ef": {
+      "file": "6582769778ef.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "eb514cd9963a": {
+      "file": "eb514cd9963a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4ccc46b472c7": {
+      "file": "4ccc46b472c7.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f84d93562407": {
+      "file": "f84d93562407.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "b7802d412f83": {
+      "file": "b7802d412f83.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3a71d58ffa7a": {
+      "file": "3a71d58ffa7a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d522f41898d0": {
+      "file": "d522f41898d0.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "cc9e3dea02da": {
+      "file": "cc9e3dea02da.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "ca5865cea747": {
+      "file": "ca5865cea747.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "25c442a8f222": {
+      "file": "25c442a8f222.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "cae716be1108": {
+      "file": "cae716be1108.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "efefa9752f2e": {
+      "file": "efefa9752f2e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "719ce6d08ea1": {
+      "file": "719ce6d08ea1.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/fog"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d88852ab1c9e": {
+      "file": "d88852ab1c9e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/fog"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "2628b4483129": {
+      "file": "2628b4483129.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "env/fog-exp2"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3704a0d98634": {
+      "file": "3704a0d98634.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "env/fog-exp2"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "942040c60033": {
+      "file": "942040c60033.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "alpha/test"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "93ba11eed5b9": {
+      "file": "93ba11eed5b9.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "alpha/test"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c776a3e6bb10": {
+      "file": "c776a3e6bb10.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "alpha/hash"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "35fb542e5352": {
+      "file": "35fb542e5352.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "alpha/hash"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "00dfc2dfab0e": {
+      "file": "00dfc2dfab0e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "alpha/transparent"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "124a1668e37e": {
+      "file": "124a1668e37e.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "light/point-spot-hemi"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "b99c37873253": {
+      "file": "b99c37873253.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "light/point-spot-hemi"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e549de556a21": {
+      "file": "e549de556a21.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "light/rectarea"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "387544a91631": {
+      "file": "387544a91631.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "light/rectarea"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0b9b9ca10c42": {
+      "file": "0b9b9ca10c42.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d897658a7320": {
+      "file": "d897658a7320.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3c9738024a86": {
+      "file": "3c9738024a86.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/dir-pcf"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0efdf0763062": {
+      "file": "0efdf0763062.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-pcf"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "71e47716cd38": {
+      "file": "71e47716cd38.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/dir-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a917ffbe9568": {
+      "file": "a917ffbe9568.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-basic"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "ce5d14340fa2": {
+      "file": "ce5d14340fa2.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "22ab7ec24c31": {
+      "file": "22ab7ec24c31.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0652e9f7a4c8": {
+      "file": "0652e9f7a4c8.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "2997a676af38": {
+      "file": "2997a676af38.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "278371b0bc97": {
+      "file": "278371b0bc97.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f4fdcb5e83a4": {
+      "file": "f4fdcb5e83a4.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/point"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1851d018f884": {
+      "file": "1851d018f884.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/point"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "7a31346352b0": {
+      "file": "7a31346352b0.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/point"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "30390272267f": {
+      "file": "30390272267f.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/point"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "bdce01dde6e3": {
+      "file": "bdce01dde6e3.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "8cde952bf567": {
+      "file": "8cde952bf567.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "544e696c9e34": {
+      "file": "544e696c9e34.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e357aacf0e52": {
+      "file": "e357aacf0e52.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "63961f47f136": {
+      "file": "63961f47f136.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "obj/instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "7b87dbf038cf": {
+      "file": "7b87dbf038cf.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "obj/instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "cdcf6991ed80": {
+      "file": "cdcf6991ed80.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "obj/batched"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d10b4af6c488": {
+      "file": "d10b4af6c488.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "obj/batched"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "9d6064fe5b4b": {
+      "file": "9d6064fe5b4b.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "obj/skinned"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "960e11541fab": {
+      "file": "960e11541fab.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "obj/skinned"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4722442b6b8d": {
+      "file": "4722442b6b8d.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "obj/morph"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "51b1ab8a4070": {
+      "file": "51b1ab8a4070.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "obj/morph"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "53799e3ef869": {
+      "file": "53799e3ef869.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "obj/clipping"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "9b893ad26a48": {
+      "file": "9b893ad26a48.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/custom-material"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "26fa51f831f6": {
+      "file": "26fa51f831f6.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/custom-material"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e9348c573e8d": {
+      "file": "e9348c573e8d.comp.wgsl",
+      "stage": "comp",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": [
+        "subgroups"
+      ]
+    },
+    "dee593e7b971": {
+      "file": "dee593e7b971.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "2728d8d3509e": {
+      "file": "2728d8d3509e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "5662559a8e0c": {
+      "file": "5662559a8e0c.comp.wgsl",
+      "stage": "comp",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": [
+        "subgroups"
+      ]
+    },
+    "4263f86d0000": {
+      "file": "4263f86d0000.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4d6e4781980b": {
+      "file": "4d6e4781980b.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "eb2d9a86b885": {
+      "file": "eb2d9a86b885.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/passthrough-tonemap"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "43527254684e": {
+      "file": "43527254684e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/passthrough-tonemap"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "6ce6c768f17e": {
+      "file": "6ce6c768f17e.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/bloom",
+        "post/smaa",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f24cde4fb570": {
+      "file": "f24cde4fb570.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "30f95c10952f": {
+      "file": "30f95c10952f.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f8649e4acd8e": {
+      "file": "f8649e4acd8e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "dc6f34f4757d": {
+      "file": "dc6f34f4757d.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "742541421d2b": {
+      "file": "742541421d2b.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "34c74473b1cd": {
+      "file": "34c74473b1cd.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3c61234932fa": {
+      "file": "3c61234932fa.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "61d2f001557f": {
+      "file": "61d2f001557f.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/bloom",
+        "post/gtao",
+        "post/outline",
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "078de10f2ecc": {
+      "file": "078de10f2ecc.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/bloom"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "72d3c792f38f": {
+      "file": "72d3c792f38f.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/fxaa",
+        "post/smaa",
+        "post/dof",
+        "post/motionblur-velocity",
+        "post/afterimage",
+        "post/outline",
+        "post/traa",
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0fa1c932e668": {
+      "file": "0fa1c932e668.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/fxaa",
+        "post/smaa",
+        "post/afterimage",
+        "post/traa",
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "485739372581": {
+      "file": "485739372581.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/fxaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "dcf779ef09d6": {
+      "file": "dcf779ef09d6.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/fxaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "13445597399d": {
+      "file": "13445597399d.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0c3b881b81a3": {
+      "file": "0c3b881b81a3.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "11e39894e454": {
+      "file": "11e39894e454.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "126f3e7efb3f": {
+      "file": "126f3e7efb3f.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c69f3ea2c482": {
+      "file": "c69f3ea2c482.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "6e418ab67489": {
+      "file": "6e418ab67489.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "aa15425b516d": {
+      "file": "aa15425b516d.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/smaa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "516e758953c5": {
+      "file": "516e758953c5.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/gtao"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e7cc25aa2e0f": {
+      "file": "e7cc25aa2e0f.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/gtao"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c5c20659d365": {
+      "file": "c5c20659d365.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/gtao"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "90b7fd0f1a67": {
+      "file": "90b7fd0f1a67.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/gtao"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "fc03901afe28": {
+      "file": "fc03901afe28.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "45c7aa7d6994": {
+      "file": "45c7aa7d6994.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "99f2d0bdf145": {
+      "file": "99f2d0bdf145.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "972c890b3e85": {
+      "file": "972c890b3e85.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "277ee11bf17e": {
+      "file": "277ee11bf17e.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/dof",
+        "post/outline",
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c1a60674f334": {
+      "file": "c1a60674f334.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "06ff6b826763": {
+      "file": "06ff6b826763.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "2da1e4290b7a": {
+      "file": "2da1e4290b7a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "476991f8ccc1": {
+      "file": "476991f8ccc1.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/dof"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "768ef1124fd5": {
+      "file": "768ef1124fd5.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/motionblur-velocity",
+        "post/traa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e498307d61b1": {
+      "file": "e498307d61b1.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/motionblur-velocity",
+        "post/traa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "355bb235a702": {
+      "file": "355bb235a702.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/motionblur-velocity"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "84ef29752e8f": {
+      "file": "84ef29752e8f.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/afterimage"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a848923a35c6": {
+      "file": "a848923a35c6.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "0823bf094d1e": {
+      "file": "0823bf094d1e.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "a1c36594dfe0": {
+      "file": "a1c36594dfe0.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "f540b5e73aa0": {
+      "file": "f540b5e73aa0.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline",
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "7fddc9364b9a": {
+      "file": "7fddc9364b9a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3ef98c85aace": {
+      "file": "3ef98c85aace.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "5204e52b148a": {
+      "file": "5204e52b148a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "b9c1769442dd": {
+      "file": "b9c1769442dd.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c0537e95a685": {
+      "file": "c0537e95a685.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/outline"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "9efde526b51a": {
+      "file": "9efde526b51a.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/traa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "e7b9437085ce": {
+      "file": "e7b9437085ce.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/traa"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d79183c00e5b": {
+      "file": "d79183c00e5b.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "b42217cc0716": {
+      "file": "b42217cc0716.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "c2a085369723": {
+      "file": "c2a085369723.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1c7528e2929e": {
+      "file": "1c7528e2929e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d3a2e3ac6dab": {
+      "file": "d3a2e3ac6dab.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "1220278a849a": {
+      "file": "1220278a849a.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/ssr"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "9efd476599a1": {
+      "file": "9efd476599a1.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "da96cd75f320": {
+      "file": "da96cd75f320.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "post/gaussian-blur"
+      ],
+      "tint": "ok",
+      "enables": []
+    }
+  }
+}

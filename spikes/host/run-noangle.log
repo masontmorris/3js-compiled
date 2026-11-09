@@ -1,0 +1,6 @@
+available adapter: NVIDIA GeForce RTX 3060 (Dx12, DiscreteGpu)
+available adapter: NVIDIA GeForce RTX 3060 (Dx12, DiscreteGpu)
+available adapter: Microsoft Basic Render Driver (Dx12, Cpu)
+using adapter: NVIDIA GeForce RTX 3060 (Dx12) driver 
+surface format Bgra8UnormSrgb, present mode Fifo
+window inner size: 1920x1080 scale=1

@@ -1,0 +1,104 @@
+{
+  "three": "187",
+  "adapter": "NVIDIA GeForce RTX 3060",
+  "scenes": [
+    {
+      "name": "tsl/compute-instanced",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    },
+    {
+      "name": "tsl/compute-atomics-storage-texture",
+      "ok": true,
+      "error": null,
+      "frames": 2
+    }
+  ],
+  "deviceErrors": [],
+  "shaders": {
+    "05332b97cb25": {
+      "file": "05332b97cb25.comp.wgsl",
+      "stage": "comp",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "dee593e7b971": {
+      "file": "dee593e7b971.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "2728d8d3509e": {
+      "file": "2728d8d3509e.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "170b53b282d4": {
+      "file": "170b53b282d4.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "3101841c5ce7": {
+      "file": "3101841c5ce7.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "dfe19a12a054": {
+      "file": "dfe19a12a054.comp.wgsl",
+      "stage": "comp",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "d98ba31bf0d2": {
+      "file": "d98ba31bf0d2.vf.wgsl",
+      "stage": "vf",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4263f86d0000": {
+      "file": "4263f86d0000.vert.wgsl",
+      "stage": "vert",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    },
+    "4d6e4781980b": {
+      "file": "4d6e4781980b.frag.wgsl",
+      "stage": "frag",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "tint": "ok",
+      "enables": []
+    }
+  }
+}

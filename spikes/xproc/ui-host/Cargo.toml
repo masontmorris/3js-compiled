@@ -1,0 +1,38 @@
+[package]
+name = "ui-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MPL-2.0"
+
+# Own workspace root: resolved independently of the game (no V8 in this graph).
+[workspace]
+
+[dependencies]
+dpi = "0.1.2"
+euclid = "0.22.11"
+glow = "0.17.0"
+grafting = { path = "../../wgpu-graft/grafting", default-features = false, features = ["wgpu-30", "surfman"] }
+grafting-servo = { path = "grafting-servo", default-features = false, features = ["wgpu-30", "servo"] }
+rustls = "0.23.37"
+servo = { version = "=0.7.0", features = ["no-wgl"] }
+surfman = "0.14.0"
+url = "2.5.7"
+wio = "0.2"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
+[patch.crates-io]
+# Same override as wgpu-graft so the shared target dir reuses its build.
+glslopt = { git = "https://github.com/jamienicol/glslopt-rs", rev = "68019f02a1437d785408ebc8ce7fd20341fffb8a" }
+
+[profile.release]
+debug = 0

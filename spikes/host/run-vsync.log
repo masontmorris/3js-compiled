@@ -1,0 +1,26 @@
+available adapter: NVIDIA GeForce RTX 3060 (Dx12, DiscreteGpu)
+available adapter: NVIDIA GeForce RTX 3060 (Dx12, DiscreteGpu)
+available adapter: Microsoft Basic Render Driver (Dx12, Cpu)
+using adapter: NVIDIA GeForce RTX 3060 (Dx12) driver 
+surface format Bgra8UnormSrgb, present mode Fifo
+window inner size: 1920x1080 scale=1
+interop capabilities: CapabilityMatrix { host_backend: Dx12, gl_framebuffer_source: Supported, vulkan_external_image: Unsupported(HostBackendMismatch), metal_texture_ref: Unsupported(HostBackendMismatch), dx12_shared_texture: Supported }
+deno_core runtime ready in 16.6 ms
+probe half-transparent red rgba(255,0,0,0.5) @(100,50) = [128, 0, 0, 128]
+probe opaque green @(100,110) = [0, 255, 0, 255]
+probe empty page area @(960,1070) = [0, 0, 0, 0]
+=== spike-host report (1200 frames, vsync=true)
+first imported HUD frame after Some(1.8549762s)
+servo imports: 450 (50.6/s over run)
+frame interval ms:        n=1199 avg=6.177 p50=5.889 p95=6.401 max=331.400
+frame CPU ms:             n=1200 avg=6.019 p50=5.759 p95=6.176 max=331.157
+  servo spin ms:          n=1200 avg=0.002 p50=0.002 p95=0.004 max=0.054
+  js tick ms:             n=1200 avg=0.053 p50=0.049 p95=0.073 max=0.665
+  servo paint+import ms:  n=1200 avg=1.133 p50=0.000 p95=2.719 max=320.936
+    WebView::paint ms:    n=450 avg=1.335 p50=0.614 p95=0.910 max=311.463
+    import+swap ms:       n=450 avg=1.638 p50=1.487 p95=2.121 max=18.727
+  game+composite ms:      n=1200 avg=4.824 p50=5.582 p95=6.056 max=21.151
+bridge RTT ms:            n=1194 avg=6.087 p50=5.800 p95=6.258 max=331.262
+bridge RTT frames:        n=1194 avg=1.000 p50=1.000 p95=1.000 max=1.000
+bridge errors (before page load): 5
+memory: working set 329 MB, peak 329 MB, private 531 MB

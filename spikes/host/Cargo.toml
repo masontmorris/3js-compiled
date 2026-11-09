@@ -1,0 +1,29 @@
+[package]
+name = "spike-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MPL-2.0"
+
+[dependencies]
+# deno_core 0.399+ pulls V8 147.1+ whose Temporal needs icu_calendar ^2.2, but SpiderMonkey
+# (mozjs_sys) pins icu_capi =2.1.2. V8 147.0.0 is the newest whose Temporal accepts ICU4X 2.1.
+deno_core = "=0.398.0"
+v8 = "=147.0.0"
+euclid = "0.22.11"
+grafting = { path = "../wgpu-graft/grafting", default-features = false, features = ["wgpu-30", "surfman"] }
+grafting-servo = { path = "grafting-servo", default-features = false, features = ["wgpu-30", "servo"] }
+pollster = "0.4.0"
+rustls = "0.23.37"
+servo = { version = "=0.7.0", features = ["no-wgl"] }
+url = "2.5.7"
+wgpu = "30.0.1"
+winit = "0.30.13"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
+[patch.crates-io]
+# Same override as wgpu-graft so the shared target dir reuses its build.
+glslopt = { git = "https://github.com/jamienicol/glslopt-rs", rev = "68019f02a1437d785408ebc8ce7fd20341fffb8a" }
+
+[profile.release]
+debug = 0

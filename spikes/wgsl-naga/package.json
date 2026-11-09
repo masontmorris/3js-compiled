@@ -1,0 +1,13 @@
+{
+  "name": "wgsl-naga-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "three": "0.187.0",
+    "webgpu": "0.6.2"
+  },
+  "scripts": {
+    "dump": "node dump.mjs",
+    "validate": "node validate.mjs"
+  }
+}

@@ -1,0 +1,9834 @@
+{
+  "tally": {
+    "total": 233,
+    "validateRaw": 231,
+    "validatePatched": 233,
+    "spirv": 233,
+    "hlsl51": 233,
+    "hlsl60": 233,
+    "fxc": 231,
+    "dxc": 233
+  },
+  "report": {
+    "00458063e55e": {
+      "file": "00458063e55e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "012abcf3a6c9": {
+      "file": "012abcf3a6c9.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "01d877dafb9a": {
+      "file": "01d877dafb9a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "033d2cc93409": {
+      "file": "033d2cc93409.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "04ef96cc25f0": {
+      "file": "04ef96cc25f0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "06cf3b332d69": {
+      "file": "06cf3b332d69.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "072dc3e70785": {
+      "file": "072dc3e70785.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "074afa632d5c": {
+      "file": "074afa632d5c.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "078de10f2ecc": {
+      "file": "078de10f2ecc.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "08912f5eaa03": {
+      "file": "08912f5eaa03.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "08df873f76ae": {
+      "file": "08df873f76ae.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "09708ecb7a64": {
+      "file": "09708ecb7a64.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0a486412f162": {
+      "file": "0a486412f162.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0b2b413e6094": {
+      "file": "0b2b413e6094.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0b9b9ca10c42": {
+      "file": "0b9b9ca10c42.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0c0b68ecff19": {
+      "file": "0c0b68ecff19.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0c6bc57ae667": {
+      "file": "0c6bc57ae667.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "10611fc50b3e": {
+      "file": "10611fc50b3e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "11fb9fa297b1": {
+      "file": "11fb9fa297b1.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "132c70d084c6": {
+      "file": "132c70d084c6.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "13f0e94a48dd": {
+      "file": "13f0e94a48dd.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1697ead713f8": {
+      "file": "1697ead713f8.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "186266468a48": {
+      "file": "186266468a48.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "19fd1c1d5bde": {
+      "file": "19fd1c1d5bde.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1b9001ae94aa": {
+      "file": "1b9001ae94aa.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1ce86beeac80": {
+      "file": "1ce86beeac80.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1d0aff8d75bb": {
+      "file": "1d0aff8d75bb.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1dbfb4f9aa8d": {
+      "file": "1dbfb4f9aa8d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1e0b45c8d093": {
+      "file": "1e0b45c8d093.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1e31974947d7": {
+      "file": "1e31974947d7.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "204360a6c540": {
+      "file": "204360a6c540.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "20fb34a05d88": {
+      "file": "20fb34a05d88.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "22aa9bb03b6a": {
+      "file": "22aa9bb03b6a.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2414fcf2f71e": {
+      "file": "2414fcf2f71e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "244ae02c8859": {
+      "file": "244ae02c8859.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2537337ec841": {
+      "file": "2537337ec841.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "25abb0a947ef": {
+      "file": "25abb0a947ef.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "25f7be3b8afc": {
+      "file": "25f7be3b8afc.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "277ee11bf17e": {
+      "file": "277ee11bf17e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "29f407d57d3d": {
+      "file": "29f407d57d3d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2a3379c288be": {
+      "file": "2a3379c288be.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2b27bbbaa0bb": {
+      "file": "2b27bbbaa0bb.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2fa6ba4bd6db": {
+      "file": "2fa6ba4bd6db.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "307b861ea086": {
+      "file": "307b861ea086.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "30f95c10952f": {
+      "file": "30f95c10952f.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3199c24fe532": {
+      "file": "3199c24fe532.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "32192fd55ede": {
+      "file": "32192fd55ede.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "330598d87ce0": {
+      "file": "330598d87ce0.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "339b83f69433": {
+      "file": "339b83f69433.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3954def2b74e": {
+      "file": "3954def2b74e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3b360c09a9a3": {
+      "file": "3b360c09a9a3.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3b707ad92c57": {
+      "file": "3b707ad92c57.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3c208f7dee7a": {
+      "file": "3c208f7dee7a.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3c61234932fa": {
+      "file": "3c61234932fa.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3c640c4a9975": {
+      "file": "3c640c4a9975.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3ede9ac559b9": {
+      "file": "3ede9ac559b9.compute.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": true,
+      "validateRaw": {
+        "ok": false,
+        "error": "Could not parse WGSL:\nerror: the `subgroups` enable-extension is not yet supported\n  ┌─ C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\folio-2025-wgsl\\wgsl\\3ede9ac559b9.compute.wgsl:4:8\n  │\n4 │ enable subgroups;\n  │        ^^^^^^^^^ this enable-extension specifies standard functionality which is not yet implemented in Naga"
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": false,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_5_1",
+            "ok": false,
+            "error": "C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\folio-2025-wgsl\\out\\3ede9ac559b9.sm51.hlsl(36,25-42): error X3004: undeclared identifier 'WaveGetLaneCount'\r\ncompilation failed; no code produced"
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "40607772189a": {
+      "file": "40607772189a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "426829173770": {
+      "file": "426829173770.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "43341a4282c7": {
+      "file": "43341a4282c7.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "438992864745": {
+      "file": "438992864745.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "44d16f9038e0": {
+      "file": "44d16f9038e0.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "44d24a5bb923": {
+      "file": "44d24a5bb923.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "454cc7994448": {
+      "file": "454cc7994448.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4848aa9f1d24": {
+      "file": "4848aa9f1d24.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4acf48d5a007": {
+      "file": "4acf48d5a007.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4bd815e82075": {
+      "file": "4bd815e82075.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4d3d5b950994": {
+      "file": "4d3d5b950994.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4e537c77ca42": {
+      "file": "4e537c77ca42.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4ebc1703ffb0": {
+      "file": "4ebc1703ffb0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4f0bae9905ff": {
+      "file": "4f0bae9905ff.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4f7e6df8f4a0": {
+      "file": "4f7e6df8f4a0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "501d954f114e": {
+      "file": "501d954f114e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "528d6bf47d0f": {
+      "file": "528d6bf47d0f.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "53aaed9a768b": {
+      "file": "53aaed9a768b.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5400d80427c2": {
+      "file": "5400d80427c2.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "55166067cd38": {
+      "file": "55166067cd38.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "556dd46b22c1": {
+      "file": "556dd46b22c1.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "559bb9c3d316": {
+      "file": "559bb9c3d316.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "566e4c382dd4": {
+      "file": "566e4c382dd4.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "58a414e3e4ec": {
+      "file": "58a414e3e4ec.compute.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": true,
+      "validateRaw": {
+        "ok": false,
+        "error": "Could not parse WGSL:\nerror: the `subgroups` enable-extension is not yet supported\n  ┌─ C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\folio-2025-wgsl\\wgsl\\58a414e3e4ec.compute.wgsl:4:8\n  │\n4 │ enable subgroups;\n  │        ^^^^^^^^^ this enable-extension specifies standard functionality which is not yet implemented in Naga"
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": false,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_5_1",
+            "ok": false,
+            "error": "C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\folio-2025-wgsl\\out\\58a414e3e4ec.sm51.hlsl(67,25-42): error X3004: undeclared identifier 'WaveGetLaneCount'\r\ncompilation failed; no code produced"
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5a904eeba04f": {
+      "file": "5a904eeba04f.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5b253aa27836": {
+      "file": "5b253aa27836.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5bb11cc2e09e": {
+      "file": "5bb11cc2e09e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5cec96a5b5c2": {
+      "file": "5cec96a5b5c2.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5dc2b242f817": {
+      "file": "5dc2b242f817.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5e0b461ce272": {
+      "file": "5e0b461ce272.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5e1b6686bcc1": {
+      "file": "5e1b6686bcc1.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5f96bc160a31": {
+      "file": "5f96bc160a31.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "61d2f001557f": {
+      "file": "61d2f001557f.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "655f17ecf7ca": {
+      "file": "655f17ecf7ca.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "660fe14b55fb": {
+      "file": "660fe14b55fb.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6709be926471": {
+      "file": "6709be926471.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "676b7dc9d3bd": {
+      "file": "676b7dc9d3bd.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "67ed06bb5110": {
+      "file": "67ed06bb5110.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6818aa7d6500": {
+      "file": "6818aa7d6500.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6827fddc0ea7": {
+      "file": "6827fddc0ea7.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "686db1b0e562": {
+      "file": "686db1b0e562.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "68a042bd908d": {
+      "file": "68a042bd908d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6926734415cf": {
+      "file": "6926734415cf.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6997a2adcde2": {
+      "file": "6997a2adcde2.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6c71d004a879": {
+      "file": "6c71d004a879.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6cb52f2e646a": {
+      "file": "6cb52f2e646a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6ce6c768f17e": {
+      "file": "6ce6c768f17e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6dd10056329b": {
+      "file": "6dd10056329b.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "71382cad707c": {
+      "file": "71382cad707c.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7184c919c5d9": {
+      "file": "7184c919c5d9.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "71dcc48b9843": {
+      "file": "71dcc48b9843.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "735eae3513b0": {
+      "file": "735eae3513b0.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "73beef9efe73": {
+      "file": "73beef9efe73.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "742541421d2b": {
+      "file": "742541421d2b.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7432a88de561": {
+      "file": "7432a88de561.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "747d8c6ec8e4": {
+      "file": "747d8c6ec8e4.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7495293a85dd": {
+      "file": "7495293a85dd.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "779f2f776926": {
+      "file": "779f2f776926.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "78fba9c0596b": {
+      "file": "78fba9c0596b.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "794c07703ab7": {
+      "file": "794c07703ab7.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7aa27f275879": {
+      "file": "7aa27f275879.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7b58a4d0729a": {
+      "file": "7b58a4d0729a.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7c416a4593a5": {
+      "file": "7c416a4593a5.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7dcc5b5169f4": {
+      "file": "7dcc5b5169f4.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "812d655832f2": {
+      "file": "812d655832f2.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "82c7434abf55": {
+      "file": "82c7434abf55.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "82ea3cabf116": {
+      "file": "82ea3cabf116.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "834f4a771940": {
+      "file": "834f4a771940.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "84b7b0355e6b": {
+      "file": "84b7b0355e6b.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "85bc9b7158e0": {
+      "file": "85bc9b7158e0.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "86a2ee73eaac": {
+      "file": "86a2ee73eaac.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "86e6184f8731": {
+      "file": "86e6184f8731.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "87e3073e42db": {
+      "file": "87e3073e42db.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8858c3f12bf9": {
+      "file": "8858c3f12bf9.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "886d6c75f975": {
+      "file": "886d6c75f975.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "89475b46c477": {
+      "file": "89475b46c477.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "89e437e411b2": {
+      "file": "89e437e411b2.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8afac4933180": {
+      "file": "8afac4933180.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8d6f9f51c828": {
+      "file": "8d6f9f51c828.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8d7d3d502a00": {
+      "file": "8d7d3d502a00.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8da9f23e4c78": {
+      "file": "8da9f23e4c78.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8e7ab45c68b9": {
+      "file": "8e7ab45c68b9.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8f5f3fa1a9e7": {
+      "file": "8f5f3fa1a9e7.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "90b935e3f3ec": {
+      "file": "90b935e3f3ec.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "91d81dc5295e": {
+      "file": "91d81dc5295e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "92785be0352e": {
+      "file": "92785be0352e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "92d1e2400b75": {
+      "file": "92d1e2400b75.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "936728d20948": {
+      "file": "936728d20948.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9485750c33f5": {
+      "file": "9485750c33f5.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "952095c2f144": {
+      "file": "952095c2f144.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "95531206b818": {
+      "file": "95531206b818.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "97074767e4ea": {
+      "file": "97074767e4ea.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "97c120450dab": {
+      "file": "97c120450dab.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "97d6c1702c26": {
+      "file": "97d6c1702c26.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9895ebbf8de0": {
+      "file": "9895ebbf8de0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "98f851797762": {
+      "file": "98f851797762.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9cb1d85bff76": {
+      "file": "9cb1d85bff76.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9dcc5e05d783": {
+      "file": "9dcc5e05d783.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9dcef5db0280": {
+      "file": "9dcef5db0280.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9e56dcdf06d1": {
+      "file": "9e56dcdf06d1.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9ea187485eb9": {
+      "file": "9ea187485eb9.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9fafaba38a6f": {
+      "file": "9fafaba38a6f.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a48a90073006": {
+      "file": "a48a90073006.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a5b3f93e8bde": {
+      "file": "a5b3f93e8bde.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a687d4f2cab4": {
+      "file": "a687d4f2cab4.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a6bea31b3e3a": {
+      "file": "a6bea31b3e3a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a717758c8978": {
+      "file": "a717758c8978.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a749a0d6fb01": {
+      "file": "a749a0d6fb01.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a8ce439867c7": {
+      "file": "a8ce439867c7.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "abb891c1c196": {
+      "file": "abb891c1c196.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "acaf26b30b03": {
+      "file": "acaf26b30b03.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "aeda37e50314": {
+      "file": "aeda37e50314.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b0b8374e9a46": {
+      "file": "b0b8374e9a46.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b106608db4a3": {
+      "file": "b106608db4a3.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b21a8cc47e70": {
+      "file": "b21a8cc47e70.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b2afa501388b": {
+      "file": "b2afa501388b.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b3709e751288": {
+      "file": "b3709e751288.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b438a2e3e352": {
+      "file": "b438a2e3e352.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b4c6c1409adf": {
+      "file": "b4c6c1409adf.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b85b18d5834e": {
+      "file": "b85b18d5834e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ba75cc2b6607": {
+      "file": "ba75cc2b6607.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "be45b7126df0": {
+      "file": "be45b7126df0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "beaaa0ddcf4e": {
+      "file": "beaaa0ddcf4e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "bf28e8e9f26a": {
+      "file": "bf28e8e9f26a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "bfe1fdf9785e": {
+      "file": "bfe1fdf9785e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c114b5f05173": {
+      "file": "c114b5f05173.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c1d3cb296b87": {
+      "file": "c1d3cb296b87.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c2ed0c9cd781": {
+      "file": "c2ed0c9cd781.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c39bffd8ac6f": {
+      "file": "c39bffd8ac6f.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c3cdd427d4d0": {
+      "file": "c3cdd427d4d0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c5a17af3b77e": {
+      "file": "c5a17af3b77e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c6fac905c97b": {
+      "file": "c6fac905c97b.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c85df1d512a3": {
+      "file": "c85df1d512a3.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ca7c66d6c1f6": {
+      "file": "ca7c66d6c1f6.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "cac55ae618eb": {
+      "file": "cac55ae618eb.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "cbf9583822f7": {
+      "file": "cbf9583822f7.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ce5d14340fa2": {
+      "file": "ce5d14340fa2.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ce9a01d6f69f": {
+      "file": "ce9a01d6f69f.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d1a77a14d5aa": {
+      "file": "d1a77a14d5aa.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d311f4f5cfc2": {
+      "file": "d311f4f5cfc2.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d4b16f1dbe18": {
+      "file": "d4b16f1dbe18.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d4ef7f6ca52b": {
+      "file": "d4ef7f6ca52b.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d58f00cb8140": {
+      "file": "d58f00cb8140.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d7302a6c1c94": {
+      "file": "d7302a6c1c94.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d77546f5f31f": {
+      "file": "d77546f5f31f.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d837622f5196": {
+      "file": "d837622f5196.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d897658a7320": {
+      "file": "d897658a7320.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d98ba31bf0d2": {
+      "file": "d98ba31bf0d2.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "mainVS",
+            "target": "vs_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_2d",
+            "target": "ps_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_2d_array",
+            "target": "ps_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_cube",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "mainVS",
+            "target": "vs_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_2d",
+            "target": "ps_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_2d_array",
+            "target": "ps_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_cube",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "db96c2325841": {
+      "file": "db96c2325841.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dc6f34f4757d": {
+      "file": "dc6f34f4757d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dd4de4a68a89": {
+      "file": "dd4de4a68a89.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dded330d098c": {
+      "file": "dded330d098c.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "de5f98fb8dd6": {
+      "file": "de5f98fb8dd6.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "df12ae6d06c5": {
+      "file": "df12ae6d06c5.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "df9f521b555f": {
+      "file": "df9f521b555f.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e1916910542a": {
+      "file": "e1916910542a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e3401308d839": {
+      "file": "e3401308d839.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e37ab933b795": {
+      "file": "e37ab933b795.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e3973d9fa406": {
+      "file": "e3973d9fa406.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e3c7c5679c04": {
+      "file": "e3c7c5679c04.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e7e099e90346": {
+      "file": "e7e099e90346.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e8160ccbaa38": {
+      "file": "e8160ccbaa38.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e971059be666": {
+      "file": "e971059be666.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "eac063433237": {
+      "file": "eac063433237.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "eb4754d56546": {
+      "file": "eb4754d56546.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "edc6b285731d": {
+      "file": "edc6b285731d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ee3beb9c50e0": {
+      "file": "ee3beb9c50e0.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f051b0f02b2d": {
+      "file": "f051b0f02b2d.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f08b316ff7bd": {
+      "file": "f08b316ff7bd.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f12370ea301e": {
+      "file": "f12370ea301e.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f1701ab81bbb": {
+      "file": "f1701ab81bbb.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f24cde4fb570": {
+      "file": "f24cde4fb570.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f31c53bccc83": {
+      "file": "f31c53bccc83.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f734d5f52e5a": {
+      "file": "f734d5f52e5a.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f7f5997dbbb1": {
+      "file": "f7f5997dbbb1.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f8649e4acd8e": {
+      "file": "f8649e4acd8e.fragment.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f960b6655022": {
+      "file": "f960b6655022.vertex.wgsl",
+      "scenes": [
+        "folio-2025"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    }
+  }
+}

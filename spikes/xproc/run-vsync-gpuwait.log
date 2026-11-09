@@ -1,0 +1,34 @@
+using adapter: NVIDIA GeForce RTX 3060 (Dx12) driver 
+window 1920x1080, surface Bgra8UnormSrgb, Fifo
+adapter LUID (0, 55822)
+deno_core 0.413.0 / V8 15.0.245.2-rusty ready in 9.4 ms
+probe half-transparent red rgba(255,0,0,0.5) @page(140,50) = [128, 0, 0, 128]
+probe opaque green @page(140,110) = [0, 255, 0, 255]
+probe empty page area @page(960,1070) = [0, 0, 0, 0]
+ui-host first painted frame after Some(281.5558ms)
+ui-host frames published: 533, skipped (no free ring slot): 0
+ui-host patches received 1451 / evaluated 1415 (coalesced) / eval errors 0
+ui-host per published frame ms: paint n=533 avg=1.132 p50=0.688 p95=1.000 max=218.948
+ui-host per published frame ms: export (blit+flush+Signal) n=533 avg=0.588 p50=0.552 p95=0.811 max=2.221
+ui-host per published frame ms: swap n=533 avg=0.065 p50=0.059 p95=0.093 max=0.908
+ui-host per published frame ms: total n=533 avg=1.785 p50=1.319 p95=1.850 max=220.675
+ui-host memory: working set 99 MB, peak 100 MB, private 173 MB
+=== xproc-game report (1500 frames in 9.4 s, vsync=true, sync=GpuWait, ring=3, ui=true)
+ui-host gen 1: spawned at game frame 0; slots after Some(276.9551ms), first FrameReady after Some(298.4238ms), first composited frame after 298.5423ms; game kept rendering 50 frames meanwhile, max frame interval 17.36 ms
+frames with HUD composited 1451 / without 49
+HUD publications picked: 532 (56.5/s)
+frame interval ms:          n=1499 avg=5.895 p50=5.881 p95=6.343 max=17.355
+frame CPU ms:               n=1500 avg=5.813 p50=5.818 p95=6.192 max=15.602
+  drain pipe msgs ms:       n=1500 avg=0.002 p50=0.001 p95=0.002 max=2.094
+  js tick ms:               n=1500 avg=0.066 p50=0.060 p95=0.111 max=0.474
+  pick (fence poll) ms:     n=1500 avg=0.000 p50=0.000 p95=0.001 max=0.003
+  render+composite+present: n=1500 avg=5.733 p50=5.752 p95=6.128 max=14.696
+FrameReady->picked frames:  n=532 avg=0.000 p50=0.000 p95=0.000 max=0.000
+bridge RTT ms:              n=1414 avg=5.828 p50=5.826 p95=6.256 max=11.660
+bridge RTT frames:          n=1414 avg=1.000 p50=1.000 p95=1.000 max=1.000
+patch->HUD pixels ms:       n=530 avg=29.121 p50=29.322 p95=29.649 max=234.984
+patch->HUD pixels frames:   n=530 avg=3.964 p50=4.000 p95=4.000 max=39.000
+game memory: working set 240 MB, peak 240 MB, private 393 MB
+ui-host memory: working set 99 MB, peak 100 MB, private 173 MB
+game CPU time 1.64 s (17% of one core)
+ui-host CPU time 2.06 s (process lifetime)

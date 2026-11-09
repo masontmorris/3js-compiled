@@ -1,0 +1,1928 @@
+{
+  "generatedAt": "2026-11-09T05:02:52.047Z",
+  "channel": "msedge",
+  "adapterInfo": {
+    "info": {
+      "vendor": "nvidia",
+      "architecture": "ampere",
+      "device": "",
+      "description": ""
+    },
+    "features": [
+      "depth32float-stencil8",
+      "rg11b10ufloat-renderable",
+      "texture-formats-tier1",
+      "bgra8unorm-storage",
+      "texture-compression-bc",
+      "dual-source-blending",
+      "core-features-and-limits",
+      "float32-filterable",
+      "indirect-first-instance",
+      "float32-blendable",
+      "depth-clip-control",
+      "texture-compression-bc-sliced-3d",
+      "timestamp-query",
+      "texture-formats-tier2",
+      "shader-f16",
+      "clip-distances",
+      "subgroups"
+    ]
+  },
+  "backend": null,
+  "errors": [],
+  "log": [
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[warning] The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127",
+    "[warning] The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/respawns/respawnsReferences-compressed.glb was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/intro/sound.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/palette.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+    "[warning] The resource http://127.0.0.1:58025/behindTheScene/stars.ktx was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+  ],
+  "shaders": {
+    "277ee11bf17e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 1.722
+    },
+    "00458063e55e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 1.724
+    },
+    "9cb1d85bff76": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 1.729
+    },
+    "ce5d14340fa2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 1.732
+    },
+    "86e6184f8731": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 1.732
+    },
+    "92d1e2400b75": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_Background.material",
+      "firstSeen": 2.025
+    },
+    "9485750c33f5": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Background.material",
+      "firstSeen": 2.026
+    },
+    "2414fcf2f71e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.027
+    },
+    "44d16f9038e0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.028
+    },
+    "1e0b45c8d093": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.036
+    },
+    "8f5f3fa1a9e7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.037
+    },
+    "7dcc5b5169f4": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.038
+    },
+    "89e437e411b2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.038
+    },
+    "4acf48d5a007": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_RTT",
+      "firstSeen": 2.046
+    },
+    "6ce6c768f17e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_Bloom_highPass",
+      "firstSeen": 2.047
+    },
+    "f24cde4fb570": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_highPass",
+      "firstSeen": 2.047
+    },
+    "30f95c10952f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_separable",
+      "firstSeen": 2.048
+    },
+    "f8649e4acd8e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_separable",
+      "firstSeen": 2.049
+    },
+    "dc6f34f4757d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_separable",
+      "firstSeen": 2.049
+    },
+    "742541421d2b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_separable",
+      "firstSeen": 2.057
+    },
+    "779f2f776926": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_separable",
+      "firstSeen": 2.057
+    },
+    "3c61234932fa": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_Bloom_comp",
+      "firstSeen": 2.058
+    },
+    "97d6c1702c26": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_RenderPipeline",
+      "firstSeen": 2.058
+    },
+    "40607772189a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_RenderPipeline",
+      "firstSeen": 2.059
+    },
+    "3ede9ac559b9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "compute",
+      "label": "compute",
+      "firstSeen": 2.687
+    },
+    "4f7e6df8f4a0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.826
+    },
+    "eb4754d56546": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.826
+    },
+    "5b253aa27836": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.828
+    },
+    "3b360c09a9a3": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.829
+    },
+    "08912f5eaa03": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.83
+    },
+    "c3cdd427d4d0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.831
+    },
+    "c5a17af3b77e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.832
+    },
+    "11fb9fa297b1": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.834
+    },
+    "6997a2adcde2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.835
+    },
+    "be45b7126df0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.836
+    },
+    "747d8c6ec8e4": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.837
+    },
+    "d98ba31bf0d2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "mipmap",
+      "firstSeen": 2.84
+    },
+    "4d3d5b950994": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.842
+    },
+    "4bd815e82075": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.843
+    },
+    "df9f521b555f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.846
+    },
+    "c114b5f05173": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.847
+    },
+    "e3c7c5679c04": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.869
+    },
+    "735eae3513b0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.87
+    },
+    "0b2b413e6094": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.873
+    },
+    "936728d20948": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.874
+    },
+    "df12ae6d06c5": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.88
+    },
+    "c1d3cb296b87": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.881
+    },
+    "acaf26b30b03": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.883
+    },
+    "98f851797762": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.884
+    },
+    "f1701ab81bbb": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.888
+    },
+    "1e31974947d7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.889
+    },
+    "0b9b9ca10c42": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.891
+    },
+    "d897658a7320": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.891
+    },
+    "bfe1fdf9785e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.896
+    },
+    "d4b16f1dbe18": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.897
+    },
+    "87e3073e42db": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 2.899
+    },
+    "033d2cc93409": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 2.899
+    },
+    "426829173770": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.901
+    },
+    "6818aa7d6500": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.901
+    },
+    "20fb34a05d88": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.905
+    },
+    "9e56dcdf06d1": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.906
+    },
+    "7b58a4d0729a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.91
+    },
+    "e7e099e90346": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.912
+    },
+    "cac55ae618eb": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.921
+    },
+    "19fd1c1d5bde": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.923
+    },
+    "10611fc50b3e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.935
+    },
+    "a687d4f2cab4": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.937
+    },
+    "244ae02c8859": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.942
+    },
+    "95531206b818": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.944
+    },
+    "32192fd55ede": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.947
+    },
+    "b106608db4a3": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.948
+    },
+    "04ef96cc25f0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.953
+    },
+    "53aaed9a768b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.954
+    },
+    "c6fac905c97b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.959
+    },
+    "22aa9bb03b6a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.965
+    },
+    "6827fddc0ea7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.969
+    },
+    "d4ef7f6ca52b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.971
+    },
+    "db96c2325841": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.976
+    },
+    "8e7ab45c68b9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.978
+    },
+    "e971059be666": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 2.984
+    },
+    "072dc3e70785": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 2.985
+    },
+    "556dd46b22c1": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3
+    },
+    "aeda37e50314": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.002
+    },
+    "8858c3f12bf9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.005
+    },
+    "5a904eeba04f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.007
+    },
+    "9fafaba38a6f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.011
+    },
+    "1697ead713f8": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.012
+    },
+    "f051b0f02b2d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.015
+    },
+    "012abcf3a6c9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.019
+    },
+    "90b935e3f3ec": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.02
+    },
+    "834f4a771940": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.025
+    },
+    "01d877dafb9a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.026
+    },
+    "dd4de4a68a89": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.028
+    },
+    "de5f98fb8dd6": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.029
+    },
+    "8d6f9f51c828": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.03
+    },
+    "7aa27f275879": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.031
+    },
+    "e37ab933b795": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.033
+    },
+    "794c07703ab7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.034
+    },
+    "d58f00cb8140": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.041
+    },
+    "edc6b285731d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.042
+    },
+    "f12370ea301e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.05
+    },
+    "84b7b0355e6b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.051
+    },
+    "2b27bbbaa0bb": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.053
+    },
+    "a6bea31b3e3a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.054
+    },
+    "2a3379c288be": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.056
+    },
+    "566e4c382dd4": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.058
+    },
+    "5dc2b242f817": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.067
+    },
+    "6926734415cf": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.068
+    },
+    "7495293a85dd": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.07
+    },
+    "08df873f76ae": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.071
+    },
+    "5400d80427c2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.073
+    },
+    "d77546f5f31f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.073
+    },
+    "0a486412f162": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.075
+    },
+    "1b9001ae94aa": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.075
+    },
+    "3c208f7dee7a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.08
+    },
+    "6cb52f2e646a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.082
+    },
+    "676b7dc9d3bd": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.083
+    },
+    "44d24a5bb923": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.084
+    },
+    "3199c24fe532": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.087
+    },
+    "339b83f69433": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.088
+    },
+    "b2afa501388b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.099
+    },
+    "8da9f23e4c78": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.115
+    },
+    "330598d87ce0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.116
+    },
+    "655f17ecf7ca": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.119
+    },
+    "6c71d004a879": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.121
+    },
+    "0c0b68ecff19": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.136
+    },
+    "dded330d098c": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.138
+    },
+    "a749a0d6fb01": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.14
+    },
+    "ca7c66d6c1f6": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.141
+    },
+    "82c7434abf55": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.145
+    },
+    "0c6bc57ae667": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.147
+    },
+    "67ed06bb5110": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.157
+    },
+    "c85df1d512a3": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.159
+    },
+    "91d81dc5295e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.161
+    },
+    "f960b6655022": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.174
+    },
+    "86a2ee73eaac": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.175
+    },
+    "d1a77a14d5aa": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.181
+    },
+    "886d6c75f975": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.182
+    },
+    "204360a6c540": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.186
+    },
+    "f31c53bccc83": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.187
+    },
+    "9895ebbf8de0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.189
+    },
+    "501d954f114e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.191
+    },
+    "43341a4282c7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.193
+    },
+    "b3709e751288": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.195
+    },
+    "ce9a01d6f69f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.2
+    },
+    "25f7be3b8afc": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.201
+    },
+    "660fe14b55fb": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.212
+    },
+    "68a042bd908d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.213
+    },
+    "1d0aff8d75bb": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.22
+    },
+    "e1916910542a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.221
+    },
+    "beaaa0ddcf4e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.222
+    },
+    "bf28e8e9f26a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.223
+    },
+    "6dd10056329b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.268
+    },
+    "eac063433237": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.27
+    },
+    "82ea3cabf116": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.278
+    },
+    "abb891c1c196": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.28
+    },
+    "5f96bc160a31": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.302
+    },
+    "97074767e4ea": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.304
+    },
+    "ba75cc2b6607": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.309
+    },
+    "074afa632d5c": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.311
+    },
+    "9ea187485eb9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.313
+    },
+    "5e0b461ce272": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.314
+    },
+    "97c120450dab": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.349
+    },
+    "3c640c4a9975": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.351
+    },
+    "ee3beb9c50e0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.352
+    },
+    "55166067cd38": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.353
+    },
+    "a48a90073006": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.354
+    },
+    "2537337ec841": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.355
+    },
+    "5e1b6686bcc1": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.358
+    },
+    "f08b316ff7bd": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.359
+    },
+    "78fba9c0596b": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.365
+    },
+    "3b707ad92c57": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.366
+    },
+    "b4c6c1409adf": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.378
+    },
+    "a717758c8978": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.38
+    },
+    "559bb9c3d316": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.415
+    },
+    "a5b3f93e8bde": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.418
+    },
+    "a8ce439867c7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.422
+    },
+    "1dbfb4f9aa8d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.424
+    },
+    "7c416a4593a5": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.43
+    },
+    "952095c2f144": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.432
+    },
+    "c39bffd8ac6f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.434
+    },
+    "d311f4f5cfc2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.435
+    },
+    "9dcc5e05d783": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.436
+    },
+    "3954def2b74e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.437
+    },
+    "4848aa9f1d24": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.446
+    },
+    "8d7d3d502a00": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.448
+    },
+    "9dcef5db0280": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.45
+    },
+    "89475b46c477": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.471
+    },
+    "e3973d9fa406": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.474
+    },
+    "71dcc48b9843": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.475
+    },
+    "d7302a6c1c94": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.484
+    },
+    "85bc9b7158e0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.485
+    },
+    "528d6bf47d0f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.506
+    },
+    "5bb11cc2e09e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.508
+    },
+    "4f0bae9905ff": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.543
+    },
+    "438992864745": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.544
+    },
+    "8afac4933180": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.546
+    },
+    "7432a88de561": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.547
+    },
+    "58a414e3e4ec": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "compute",
+      "label": "compute",
+      "firstSeen": 3.559
+    },
+    "d837622f5196": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 3.588
+    },
+    "186266468a48": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 3.589
+    },
+    "b0b8374e9a46": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 3.67
+    },
+    "92785be0352e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 3.672
+    },
+    "e3401308d839": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 9.134
+    },
+    "c2ed0c9cd781": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 9.136
+    },
+    "4e537c77ca42": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 9.141
+    },
+    "73beef9efe73": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 9.143
+    },
+    "686db1b0e562": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 9.936
+    },
+    "e8160ccbaa38": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 9.937
+    },
+    "454cc7994448": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 10.023
+    },
+    "f7f5997dbbb1": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 10.023
+    },
+    "09708ecb7a64": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 10.136
+    },
+    "71382cad707c": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 10.137
+    },
+    "4ebc1703ffb0": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 33.433
+    },
+    "812d655832f2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 33.435
+    },
+    "b21a8cc47e70": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 33.667
+    },
+    "6709be926471": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 35.67
+    },
+    "b85b18d5834e": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 35.671
+    },
+    "7184c919c5d9": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 40.911
+    },
+    "f734d5f52e5a": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 40.912
+    },
+    "5cec96a5b5c2": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_ShadowMaterial",
+      "firstSeen": 90.744
+    },
+    "132c70d084c6": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_ShadowMaterial",
+      "firstSeen": 90.745
+    },
+    "06cf3b332d69": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 101.777
+    },
+    "307b861ea086": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 101.779
+    },
+    "b438a2e3e352": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 112.971
+    },
+    "cbf9583822f7": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 112.972
+    },
+    "1ce86beeac80": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 113.005
+    },
+    "25abb0a947ef": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 113.006
+    },
+    "13f0e94a48dd": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 169.763
+    },
+    "2fa6ba4bd6db": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex",
+      "firstSeen": 170.348
+    },
+    "29f407d57d3d": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment",
+      "firstSeen": 170.349
+    },
+    "61d2f001557f": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "vertex",
+      "label": "vertex_RenderPipeline",
+      "firstSeen": 170.352
+    },
+    "078de10f2ecc": {
+      "scenes": [
+        "folio-2025"
+      ],
+      "stage": "fragment",
+      "label": "fragment_RenderPipeline",
+      "firstSeen": 170.353
+    }
+  }
+}

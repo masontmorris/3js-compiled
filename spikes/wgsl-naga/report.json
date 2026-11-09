@@ -1,0 +1,7125 @@
+{
+  "tally": {
+    "total": 165,
+    "validateRaw": 163,
+    "validatePatched": 165,
+    "spirv": 165,
+    "hlsl51": 165,
+    "hlsl60": 165,
+    "fxc": 162,
+    "dxc": 165
+  },
+  "report": {
+    "0063f872cfc2": {
+      "file": "0063f872cfc2.vert.wgsl",
+      "scenes": [
+        "mat/physical-transmission"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "00dfc2dfab0e": {
+      "file": "00dfc2dfab0e.frag.wgsl",
+      "scenes": [
+        "alpha/transparent"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "03efe7e64e57": {
+      "file": "03efe7e64e57.frag.wgsl",
+      "scenes": [
+        "mat/physical-iridescence"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0652e9f7a4c8": {
+      "file": "0652e9f7a4c8.frag.wgsl",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "06ff6b826763": {
+      "file": "06ff6b826763.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "078de10f2ecc": {
+      "file": "078de10f2ecc.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0823bf094d1e": {
+      "file": "0823bf094d1e.vert.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0b9b9ca10c42": {
+      "file": "0b9b9ca10c42.vert.wgsl",
+      "scenes": [
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0c3b881b81a3": {
+      "file": "0c3b881b81a3.frag.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0efdf0763062": {
+      "file": "0efdf0763062.frag.wgsl",
+      "scenes": [
+        "shadow/dir-pcf"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "0fa1c932e668": {
+      "file": "0fa1c932e668.frag.wgsl",
+      "scenes": [
+        "post/fxaa",
+        "post/smaa",
+        "post/afterimage",
+        "post/traa",
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "11e39894e454": {
+      "file": "11e39894e454.vert.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1220278a849a": {
+      "file": "1220278a849a.frag.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "124a1668e37e": {
+      "file": "124a1668e37e.vert.wgsl",
+      "scenes": [
+        "light/point-spot-hemi"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "126f3e7efb3f": {
+      "file": "126f3e7efb3f.frag.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "13445597399d": {
+      "file": "13445597399d.vert.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "170b53b282d4": {
+      "file": "170b53b282d4.vert.wgsl",
+      "scenes": [
+        "mat/basic",
+        "mat/basic-map-vertexcolors",
+        "mat/lambert",
+        "mat/phong",
+        "mat/standard",
+        "mat/standard-maps",
+        "mat/physical",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/physical-iridescence",
+        "mat/physical-sheen",
+        "mat/physical-anisotropy",
+        "mat/toon",
+        "mat/normal",
+        "mat/matcap",
+        "mat/line-basic",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "env/fog",
+        "env/fog-exp2",
+        "alpha/test",
+        "alpha/hash",
+        "alpha/transparent",
+        "light/point-spot-hemi",
+        "light/rectarea",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "obj/instanced",
+        "obj/batched",
+        "obj/skinned",
+        "obj/morph",
+        "obj/clipping",
+        "tsl/custom-material",
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "17132657cae5": {
+      "file": "17132657cae5.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1745663f393b": {
+      "file": "1745663f393b.frag.wgsl",
+      "scenes": [
+        "mat/physical"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1851d018f884": {
+      "file": "1851d018f884.frag.wgsl",
+      "scenes": [
+        "shadow/point"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1bce41d63864": {
+      "file": "1bce41d63864.frag.wgsl",
+      "scenes": [
+        "mat/phong"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1bf34c1839c9": {
+      "file": "1bf34c1839c9.vert.wgsl",
+      "scenes": [
+        "mat/lambert"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1c1f8a489a1a": {
+      "file": "1c1f8a489a1a.vert.wgsl",
+      "scenes": [
+        "mat/basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1c7528e2929e": {
+      "file": "1c7528e2929e.frag.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": false,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": false,
+            "error": "C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\out\\1c7528e2929e.sm51.hlsl(422,36-84): warning X3570: gradient instruction used in a loop with varying iteration, attempting to unroll the loop\r\nC:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\out\\1c7528e2929e.sm51.hlsl(302,5-15): error X3511: unable to unroll loop, loop does not appear to terminate in a timely manner (146 iterations) or unrolled loop is too large, use the [unroll(n)] attribute to force an exact higher number\r\ncompilation failed; no code produced"
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "1ea61a0644f1": {
+      "file": "1ea61a0644f1.vert.wgsl",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "22ab7ec24c31": {
+      "file": "22ab7ec24c31.frag.wgsl",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "25c442a8f222": {
+      "file": "25c442a8f222.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2628b4483129": {
+      "file": "2628b4483129.vert.wgsl",
+      "scenes": [
+        "env/fog-exp2"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "26fa51f831f6": {
+      "file": "26fa51f831f6.frag.wgsl",
+      "scenes": [
+        "tsl/custom-material"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2728d8d3509e": {
+      "file": "2728d8d3509e.frag.wgsl",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "277ee11bf17e": {
+      "file": "277ee11bf17e.vert.wgsl",
+      "scenes": [
+        "post/dof",
+        "post/outline",
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "278371b0bc97": {
+      "file": "278371b0bc97.frag.wgsl",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2997a676af38": {
+      "file": "2997a676af38.vert.wgsl",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "2da1e4290b7a": {
+      "file": "2da1e4290b7a.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "30390272267f": {
+      "file": "30390272267f.frag.wgsl",
+      "scenes": [
+        "shadow/point"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "306388e79b98": {
+      "file": "306388e79b98.frag.wgsl",
+      "scenes": [
+        "mat/physical-clearcoat"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "30f95c10952f": {
+      "file": "30f95c10952f.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3101841c5ce7": {
+      "file": "3101841c5ce7.frag.wgsl",
+      "scenes": [
+        "mat/basic",
+        "mat/basic-map-vertexcolors",
+        "mat/lambert",
+        "mat/phong",
+        "mat/standard",
+        "mat/standard-maps",
+        "mat/physical",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/physical-iridescence",
+        "mat/physical-sheen",
+        "mat/physical-anisotropy",
+        "mat/toon",
+        "mat/normal",
+        "mat/matcap",
+        "mat/line-basic",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "env/fog",
+        "env/fog-exp2",
+        "alpha/test",
+        "alpha/hash",
+        "alpha/transparent",
+        "light/point-spot-hemi",
+        "light/rectarea",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot",
+        "obj/instanced",
+        "obj/batched",
+        "obj/skinned",
+        "obj/morph",
+        "obj/clipping",
+        "tsl/custom-material",
+        "tsl/compute-instanced",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "34c74473b1cd": {
+      "file": "34c74473b1cd.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "355bb235a702": {
+      "file": "355bb235a702.frag.wgsl",
+      "scenes": [
+        "post/motionblur-velocity"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "35fb542e5352": {
+      "file": "35fb542e5352.frag.wgsl",
+      "scenes": [
+        "alpha/hash"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3704a0d98634": {
+      "file": "3704a0d98634.frag.wgsl",
+      "scenes": [
+        "env/fog-exp2"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "37ef3cbacab7": {
+      "file": "37ef3cbacab7.vert.wgsl",
+      "scenes": [
+        "mat/physical-sheen"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "387544a91631": {
+      "file": "387544a91631.frag.wgsl",
+      "scenes": [
+        "light/rectarea"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3a71d58ffa7a": {
+      "file": "3a71d58ffa7a.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3c61234932fa": {
+      "file": "3c61234932fa.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3c9738024a86": {
+      "file": "3c9738024a86.vert.wgsl",
+      "scenes": [
+        "shadow/dir-pcf"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "3ef98c85aace": {
+      "file": "3ef98c85aace.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "414c1ce53f26": {
+      "file": "414c1ce53f26.frag.wgsl",
+      "scenes": [
+        "mat/matcap"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4263f86d0000": {
+      "file": "4263f86d0000.vert.wgsl",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "43527254684e": {
+      "file": "43527254684e.frag.wgsl",
+      "scenes": [
+        "post/passthrough-tonemap"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "45c7aa7d6994": {
+      "file": "45c7aa7d6994.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4722442b6b8d": {
+      "file": "4722442b6b8d.vert.wgsl",
+      "scenes": [
+        "obj/morph"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "476991f8ccc1": {
+      "file": "476991f8ccc1.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "485739372581": {
+      "file": "485739372581.vert.wgsl",
+      "scenes": [
+        "post/fxaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "49e61e306c21": {
+      "file": "49e61e306c21.frag.wgsl",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4b83d4470e29": {
+      "file": "4b83d4470e29.vert.wgsl",
+      "scenes": [
+        "mat/physical"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4ccc46b472c7": {
+      "file": "4ccc46b472c7.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "4d6e4781980b": {
+      "file": "4d6e4781980b.frag.wgsl",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "516e758953c5": {
+      "file": "516e758953c5.frag.wgsl",
+      "scenes": [
+        "post/gtao"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "51b1ab8a4070": {
+      "file": "51b1ab8a4070.frag.wgsl",
+      "scenes": [
+        "obj/morph"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5204e52b148a": {
+      "file": "5204e52b148a.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "524df6164481": {
+      "file": "524df6164481.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "53799e3ef869": {
+      "file": "53799e3ef869.frag.wgsl",
+      "scenes": [
+        "obj/clipping"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "544e696c9e34": {
+      "file": "544e696c9e34.vert.wgsl",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5662559a8e0c": {
+      "file": "5662559a8e0c.comp.wgsl",
+      "scenes": [
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": true,
+      "validateRaw": {
+        "ok": false,
+        "error": "Could not parse WGSL:\nerror: the `subgroups` enable-extension is not yet supported\n  ┌─ C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\wgsl\\5662559a8e0c.comp.wgsl:4:8\n  │\n4 │ enable subgroups;\n  │        ^^^^^^^^^ this enable-extension specifies standard functionality which is not yet implemented in Naga"
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": false,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_5_1",
+            "ok": false,
+            "error": "C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\out\\5662559a8e0c.sm51.hlsl(32,25-42): error X3004: undeclared identifier 'WaveGetLaneCount'\r\ncompilation failed; no code produced"
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "5a310ff78c08": {
+      "file": "5a310ff78c08.vert.wgsl",
+      "scenes": [
+        "mat/sprite"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "61d2f001557f": {
+      "file": "61d2f001557f.vert.wgsl",
+      "scenes": [
+        "post/bloom",
+        "post/gtao",
+        "post/outline",
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "63961f47f136": {
+      "file": "63961f47f136.vert.wgsl",
+      "scenes": [
+        "obj/instanced"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6582769778ef": {
+      "file": "6582769778ef.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "67b66f2cdddd": {
+      "file": "67b66f2cdddd.vert.wgsl",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "68d7f122c58d": {
+      "file": "68d7f122c58d.frag.wgsl",
+      "scenes": [
+        "mat/physical-transmission"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6bff40ea6bbb": {
+      "file": "6bff40ea6bbb.frag.wgsl",
+      "scenes": [
+        "mat/standard",
+        "mat/physical-transmission",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "post/passthrough-tonemap",
+        "post/bloom",
+        "post/fxaa",
+        "post/smaa",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6ce6c768f17e": {
+      "file": "6ce6c768f17e.vert.wgsl",
+      "scenes": [
+        "post/bloom",
+        "post/smaa",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "6e418ab67489": {
+      "file": "6e418ab67489.frag.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "719ce6d08ea1": {
+      "file": "719ce6d08ea1.vert.wgsl",
+      "scenes": [
+        "env/fog"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "71e47716cd38": {
+      "file": "71e47716cd38.vert.wgsl",
+      "scenes": [
+        "shadow/dir-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "72d3c792f38f": {
+      "file": "72d3c792f38f.vert.wgsl",
+      "scenes": [
+        "post/fxaa",
+        "post/smaa",
+        "post/dof",
+        "post/motionblur-velocity",
+        "post/afterimage",
+        "post/outline",
+        "post/traa",
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "742541421d2b": {
+      "file": "742541421d2b.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "768ef1124fd5": {
+      "file": "768ef1124fd5.vert.wgsl",
+      "scenes": [
+        "post/motionblur-velocity",
+        "post/traa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7a31346352b0": {
+      "file": "7a31346352b0.vert.wgsl",
+      "scenes": [
+        "shadow/point"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7b87dbf038cf": {
+      "file": "7b87dbf038cf.frag.wgsl",
+      "scenes": [
+        "obj/instanced"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "7fddc9364b9a": {
+      "file": "7fddc9364b9a.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8434a64b8934": {
+      "file": "8434a64b8934.frag.wgsl",
+      "scenes": [
+        "mat/toon"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "84edc5518269": {
+      "file": "84edc5518269.vert.wgsl",
+      "scenes": [
+        "mat/physical-iridescence"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "84ef29752e8f": {
+      "file": "84ef29752e8f.frag.wgsl",
+      "scenes": [
+        "post/afterimage"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8bba3fd976dd": {
+      "file": "8bba3fd976dd.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8cde952bf567": {
+      "file": "8cde952bf567.frag.wgsl",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "8d67fc0c7168": {
+      "file": "8d67fc0c7168.vert.wgsl",
+      "scenes": [
+        "mat/standard-maps"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "90b7fd0f1a67": {
+      "file": "90b7fd0f1a67.frag.wgsl",
+      "scenes": [
+        "post/gtao"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "933536d77c6f": {
+      "file": "933536d77c6f.vert.wgsl",
+      "scenes": [
+        "mat/points"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "93ba11eed5b9": {
+      "file": "93ba11eed5b9.frag.wgsl",
+      "scenes": [
+        "alpha/test"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "942040c60033": {
+      "file": "942040c60033.vert.wgsl",
+      "scenes": [
+        "alpha/test"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "960e11541fab": {
+      "file": "960e11541fab.frag.wgsl",
+      "scenes": [
+        "obj/skinned"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "972c890b3e85": {
+      "file": "972c890b3e85.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "99f2d0bdf145": {
+      "file": "99f2d0bdf145.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "99f952295339": {
+      "file": "99f952295339.frag.wgsl",
+      "scenes": [
+        "mat/normal"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9b893ad26a48": {
+      "file": "9b893ad26a48.vert.wgsl",
+      "scenes": [
+        "tsl/custom-material"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9d6064fe5b4b": {
+      "file": "9d6064fe5b4b.vert.wgsl",
+      "scenes": [
+        "obj/skinned"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9efd476599a1": {
+      "file": "9efd476599a1.frag.wgsl",
+      "scenes": [
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "9efde526b51a": {
+      "file": "9efde526b51a.vert.wgsl",
+      "scenes": [
+        "post/traa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a02b8895018d": {
+      "file": "a02b8895018d.frag.wgsl",
+      "scenes": [
+        "mat/sprite"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a0bf00e781b1": {
+      "file": "a0bf00e781b1.frag.wgsl",
+      "scenes": [
+        "mat/physical-anisotropy"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a1c36594dfe0": {
+      "file": "a1c36594dfe0.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a657e732f391": {
+      "file": "a657e732f391.vert.wgsl",
+      "scenes": [
+        "mat/physical-anisotropy"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a848923a35c6": {
+      "file": "a848923a35c6.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "a917ffbe9568": {
+      "file": "a917ffbe9568.frag.wgsl",
+      "scenes": [
+        "shadow/dir-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "aa15425b516d": {
+      "file": "aa15425b516d.frag.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ace94349e72e": {
+      "file": "ace94349e72e.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b42217cc0716": {
+      "file": "b42217cc0716.frag.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b7802d412f83": {
+      "file": "b7802d412f83.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b895c2c12dc5": {
+      "file": "b895c2c12dc5.vert.wgsl",
+      "scenes": [
+        "mat/physical-clearcoat"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b99c37873253": {
+      "file": "b99c37873253.frag.wgsl",
+      "scenes": [
+        "light/point-spot-hemi"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "b9c1769442dd": {
+      "file": "b9c1769442dd.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "bdce01dde6e3": {
+      "file": "bdce01dde6e3.vert.wgsl",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c0537e95a685": {
+      "file": "c0537e95a685.frag.wgsl",
+      "scenes": [
+        "post/outline"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c156389b68f8": {
+      "file": "c156389b68f8.vert.wgsl",
+      "scenes": [
+        "mat/standard",
+        "mat/physical-transmission",
+        "alpha/transparent",
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "obj/clipping",
+        "post/passthrough-tonemap",
+        "post/bloom",
+        "post/fxaa",
+        "post/smaa",
+        "post/gtao",
+        "post/dof",
+        "post/afterimage",
+        "post/outline",
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c1a60674f334": {
+      "file": "c1a60674f334.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c2a085369723": {
+      "file": "c2a085369723.vert.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c2b85ac0eda0": {
+      "file": "c2b85ac0eda0.frag.wgsl",
+      "scenes": [
+        "mat/basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c44fcdc21d3e": {
+      "file": "c44fcdc21d3e.frag.wgsl",
+      "scenes": [
+        "mat/basic-map-vertexcolors"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c5c20659d365": {
+      "file": "c5c20659d365.frag.wgsl",
+      "scenes": [
+        "post/gtao"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c69f3ea2c482": {
+      "file": "c69f3ea2c482.vert.wgsl",
+      "scenes": [
+        "post/smaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "c776a3e6bb10": {
+      "file": "c776a3e6bb10.vert.wgsl",
+      "scenes": [
+        "alpha/hash"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ca5865cea747": {
+      "file": "ca5865cea747.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "cae716be1108": {
+      "file": "cae716be1108.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "cc9e3dea02da": {
+      "file": "cc9e3dea02da.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "cdcf6991ed80": {
+      "file": "cdcf6991ed80.vert.wgsl",
+      "scenes": [
+        "obj/batched"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ce5d14340fa2": {
+      "file": "ce5d14340fa2.vert.wgsl",
+      "scenes": [
+        "shadow/dir-vsm"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d0e2bfd3305b": {
+      "file": "d0e2bfd3305b.vert.wgsl",
+      "scenes": [
+        "mat/normal"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d10b4af6c488": {
+      "file": "d10b4af6c488.frag.wgsl",
+      "scenes": [
+        "obj/batched"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d1ee9fd15ed2": {
+      "file": "d1ee9fd15ed2.frag.wgsl",
+      "scenes": [
+        "mat/standard-maps"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d3a2e3ac6dab": {
+      "file": "d3a2e3ac6dab.frag.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d522f41898d0": {
+      "file": "d522f41898d0.vert.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d560bfb57b0a": {
+      "file": "d560bfb57b0a.frag.wgsl",
+      "scenes": [
+        "mat/lambert"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d572f5897db0": {
+      "file": "d572f5897db0.frag.wgsl",
+      "scenes": [
+        "mat/line-basic"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d79183c00e5b": {
+      "file": "d79183c00e5b.vert.wgsl",
+      "scenes": [
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d88852ab1c9e": {
+      "file": "d88852ab1c9e.frag.wgsl",
+      "scenes": [
+        "env/fog"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d897658a7320": {
+      "file": "d897658a7320.frag.wgsl",
+      "scenes": [
+        "shadow/dir-pcf",
+        "shadow/dir-basic",
+        "shadow/dir-vsm",
+        "shadow/point",
+        "shadow/spot"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "d98ba31bf0d2": {
+      "file": "d98ba31bf0d2.vf.wgsl",
+      "scenes": [
+        "mat/basic-map-vertexcolors",
+        "mat/standard-maps",
+        "mat/physical-clearcoat",
+        "mat/physical-transmission",
+        "mat/matcap",
+        "mat/points",
+        "mat/sprite",
+        "env/pmrem-room",
+        "alpha/test",
+        "tsl/custom-material",
+        "tsl/compute-atomics-storage-texture"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "mainVS",
+            "target": "vs_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_2d",
+            "target": "ps_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_2d_array",
+            "target": "ps_5_1",
+            "ok": true
+          },
+          {
+            "ep": "main_cube",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "mainVS",
+            "target": "vs_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_2d",
+            "target": "ps_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_2d_array",
+            "target": "ps_6_0",
+            "ok": true
+          },
+          {
+            "ep": "main_cube",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "da96cd75f320": {
+      "file": "da96cd75f320.frag.wgsl",
+      "scenes": [
+        "post/gaussian-blur"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dc6f34f4757d": {
+      "file": "dc6f34f4757d.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dcf779ef09d6": {
+      "file": "dcf779ef09d6.frag.wgsl",
+      "scenes": [
+        "post/fxaa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "dee593e7b971": {
+      "file": "dee593e7b971.vert.wgsl",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e357aacf0e52": {
+      "file": "e357aacf0e52.frag.wgsl",
+      "scenes": [
+        "shadow/spot"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e498307d61b1": {
+      "file": "e498307d61b1.frag.wgsl",
+      "scenes": [
+        "post/motionblur-velocity",
+        "post/traa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e549de556a21": {
+      "file": "e549de556a21.vert.wgsl",
+      "scenes": [
+        "light/rectarea"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e61a4c2cb03a": {
+      "file": "e61a4c2cb03a.vert.wgsl",
+      "scenes": [
+        "mat/phong"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e7b9437085ce": {
+      "file": "e7b9437085ce.frag.wgsl",
+      "scenes": [
+        "post/traa"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e7cc25aa2e0f": {
+      "file": "e7cc25aa2e0f.vert.wgsl",
+      "scenes": [
+        "post/gtao"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "e9348c573e8d": {
+      "file": "e9348c573e8d.comp.wgsl",
+      "scenes": [
+        "tsl/compute-instanced"
+      ],
+      "patched": true,
+      "validateRaw": {
+        "ok": false,
+        "error": "Could not parse WGSL:\nerror: the `subgroups` enable-extension is not yet supported\n  ┌─ C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\wgsl\\e9348c573e8d.comp.wgsl:4:8\n  │\n4 │ enable subgroups;\n  │        ^^^^^^^^^ this enable-extension specifies standard functionality which is not yet implemented in Naga"
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": false,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_5_1",
+            "ok": false,
+            "error": "C:\\Users\\mason\\.t3\\scratch\\2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7\\spikes\\wgsl-naga\\out\\e9348c573e8d.sm51.hlsl(34,25-42): error X3004: undeclared identifier 'WaveGetLaneCount'\r\ncompilation failed; no code produced"
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "cs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "eb2d9a86b885": {
+      "file": "eb2d9a86b885.vert.wgsl",
+      "scenes": [
+        "post/passthrough-tonemap"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "eb514cd9963a": {
+      "file": "eb514cd9963a.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "ecb9ff8878a3": {
+      "file": "ecb9ff8878a3.vert.wgsl",
+      "scenes": [
+        "mat/basic-map-vertexcolors"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "efefa9752f2e": {
+      "file": "efefa9752f2e.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f241d92dc5df": {
+      "file": "f241d92dc5df.vert.wgsl",
+      "scenes": [
+        "mat/toon"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f24cde4fb570": {
+      "file": "f24cde4fb570.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f3a9bdc670ca": {
+      "file": "f3a9bdc670ca.frag.wgsl",
+      "scenes": [
+        "mat/points"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f4fdcb5e83a4": {
+      "file": "f4fdcb5e83a4.vert.wgsl",
+      "scenes": [
+        "shadow/point"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f540b5e73aa0": {
+      "file": "f540b5e73aa0.frag.wgsl",
+      "scenes": [
+        "post/outline",
+        "post/ssr"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f69402777dfe": {
+      "file": "f69402777dfe.frag.wgsl",
+      "scenes": [
+        "mat/physical-sheen"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f84d93562407": {
+      "file": "f84d93562407.frag.wgsl",
+      "scenes": [
+        "env/pmrem-room"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "f8649e4acd8e": {
+      "file": "f8649e4acd8e.frag.wgsl",
+      "scenes": [
+        "post/bloom"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "fb6c19d4f899": {
+      "file": "fb6c19d4f899.vert.wgsl",
+      "scenes": [
+        "mat/matcap"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "vs_6_0",
+            "ok": true
+          }
+        ]
+      }
+    },
+    "fc03901afe28": {
+      "file": "fc03901afe28.frag.wgsl",
+      "scenes": [
+        "post/dof"
+      ],
+      "patched": false,
+      "validateRaw": {
+        "ok": true
+      },
+      "validate": {
+        "ok": true
+      },
+      "spirv": {
+        "ok": true
+      },
+      "hlsl51": {
+        "ok": true
+      },
+      "fxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_5_1",
+            "ok": true
+          }
+        ]
+      },
+      "hlsl60": {
+        "ok": true
+      },
+      "dxc": {
+        "ok": true,
+        "results": [
+          {
+            "ep": "main",
+            "target": "ps_6_0",
+            "ok": true
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html style="background: transparent">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; font-family: sans-serif; }
+  /* The game reads this square back: its RGB encodes the last patch seq the page applied. */
+  #seq { position: absolute; left: 0; top: 0; width: 32px; height: 32px; background: rgb(0, 0, 0); }
+  /* Pixel probes: half-transparent red, opaque green. */
+  #probe-half { position: absolute; left: 40px; top: 0; width: 200px; height: 100px; background: rgba(255, 0, 0, 0.5); }
+  #probe-solid { position: absolute; left: 40px; top: 100px; width: 200px; height: 20px; background: rgb(0, 255, 0); }
+  #panel { position: absolute; left: 40px; top: 160px; width: 420px; padding: 16px;
+           background: rgba(10, 20, 40, 0.85); color: #fff; border-radius: 12px; font-size: 22px; }
+  #spinner { position: absolute; right: 80px; top: 80px; width: 120px; height: 120px; border-radius: 16px;
+             background: linear-gradient(45deg, #ffcc00, #ff4400); animation: spin 2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #bar { height: 18px; background: #333; border-radius: 9px; overflow: hidden; margin-top: 8px; }
+  #hp { height: 100%; width: 100%; background: #3c3; }
+</style>
+</head>
+<body>
+<div id="seq"></div>
+<div id="probe-half"></div>
+<div id="probe-solid"></div>
+<div id="spinner"></div>
+<div id="panel">HP <span id="hp-text">100</span> &middot; seq <span id="seq-text">0</span>
+  <div id="bar"><div id="hp"></div></div>
+</div>
+<script>
+  const seqBox = document.getElementById("seq");
+  const seqText = document.getElementById("seq-text");
+  const hpText = document.getElementById("hp-text");
+  const hpBar = document.getElementById("hp");
+  const outbox = [];
+  document.addEventListener("click", (e) => outbox.push({ type: "click", x: e.clientX, y: e.clientY }));
+  // One round trip per patch: ui-host calls tick(patch) and sends the returned events back.
+  window.__bridge = {
+    tick(patch) {
+      if (patch.hp !== undefined) { hpText.textContent = patch.hp; hpBar.style.width = patch.hp + "%"; }
+      if (patch.seq !== undefined) {
+        const s = patch.seq;
+        seqBox.style.backgroundColor = `rgb(${s & 255}, ${(s >> 8) & 255}, ${(s >> 16) & 255})`;
+        seqText.textContent = s;
+      }
+      outbox.push({ type: "ack", seq: patch.seq });
+      const out = JSON.stringify(outbox);
+      outbox.length = 0;
+      return out;
+    },
+  };
+</script>
+</body>
+</html>

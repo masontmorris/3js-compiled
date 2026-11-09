@@ -1,0 +1,38 @@
+using adapter: NVIDIA GeForce RTX 3060 (Dx12) driver 
+window 1920x1080, surface Bgra8UnormSrgb, Fifo
+adapter LUID (0, 55822)
+deno_core 0.413.0 / V8 15.0.245.2-rusty ready in 9.7 ms
+probe half-transparent red rgba(255,0,0,0.5) @page(140,50) = [128, 0, 0, 128]
+probe opaque green @page(140,110) = [0, 255, 0, 255]
+probe empty page area @page(960,1070) = [0, 0, 0, 0]
+frame 915: ui-host disconnected
+frame 1000: relaunched ui-host
+ui-host first painted frame after Some(255.725ms)
+ui-host frames published: 720, skipped (no free ring slot): 0
+ui-host patches received 1952 / evaluated 1913 (coalesced) / eval errors 0
+ui-host per published frame ms: paint n=720 avg=1.029 p50=0.686 p95=0.963 max=229.618
+ui-host per published frame ms: export (blit+flush+Signal) n=720 avg=0.589 p50=0.552 p95=0.845 max=2.189
+ui-host per published frame ms: swap n=720 avg=0.060 p50=0.053 p95=0.086 max=0.510
+ui-host per published frame ms: total n=720 avg=1.678 p50=1.301 p95=1.815 max=231.867
+ui-host memory: working set 101 MB, peak 101 MB, private 172 MB
+=== xproc-game report (3000 frames in 18.3 s, vsync=true, sync=GpuWait, ring=3, ui=true)
+ui-host gen 1: spawned at game frame 0; slots after Some(254.7128ms), first FrameReady after Some(282.3455ms), first composited frame after 282.487ms; game kept rendering 48 frames meanwhile, max frame interval 11.92 ms
+ui-host gen 2: spawned at game frame 1000; slots after Some(250.8986ms), first FrameReady after Some(273.1931ms), first composited frame after 273.2856ms; game kept rendering 49 frames meanwhile, max frame interval 45.91 ms
+kill test: killed at frame 915; max game frame interval in the 3 s after the kill 45.91 ms; disconnects seen 1
+frames with HUD composited 2820 / without 180
+HUD publications picked: 1030 (56.4/s)
+frame interval ms:          n=2999 avg=5.902 p50=5.877 p95=6.367 max=45.906
+frame CPU ms:               n=3000 avg=5.823 p50=5.810 p95=6.245 max=45.809
+  drain pipe msgs ms:       n=3000 avg=0.020 p50=0.001 p95=0.002 max=44.737
+  js tick ms:               n=3000 avg=0.075 p50=0.069 p95=0.115 max=0.615
+  pick (fence poll) ms:     n=3000 avg=0.000 p50=0.000 p95=0.001 max=0.004
+  render+composite+present: n=3000 avg=5.719 p50=5.729 p95=6.163 max=11.795
+FrameReady->picked frames:  n=1030 avg=0.000 p50=0.000 p95=0.000 max=0.000
+bridge RTT ms:              n=2736 avg=5.820 p50=5.811 p95=6.295 max=11.152
+bridge RTT frames:          n=2736 avg=1.000 p50=1.000 p95=1.000 max=1.000
+patch->HUD pixels ms:       n=1026 avg=29.085 p50=29.301 p95=29.665 max=252.874
+patch->HUD pixels frames:   n=1026 avg=3.959 p50=4.000 p95=4.000 max=42.000
+game memory: working set 245 MB, peak 245 MB, private 396 MB
+ui-host memory: working set 101 MB, peak 101 MB, private 172 MB
+game CPU time 3.06 s (17% of one core)
+ui-host CPU time 3.73 s over 11.8 s alive (32% of one core)
