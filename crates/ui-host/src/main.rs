@@ -20,7 +20,7 @@ use euclid::{Scale, default::Size2D};
 use glow::HasContext;
 use proto::Msg;
 use servo::{
-    DevicePoint, EventLoopWaker, InputEvent, JSValue, MouseButton, MouseButtonAction,
+    DevicePoint, EventLoopWaker, InputEvent, JSValue, LoadStatus, MouseButton, MouseButtonAction,
     MouseButtonEvent, MouseMoveEvent, Preferences, ServoBuilder, WebView, WebViewBuilder,
     WebViewDelegate,
 };
@@ -316,6 +316,7 @@ fn main() {
     let mut shutting_down = false;
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
+    let mut newest_patch: Option<(u64, String)> = None;
 
     loop {
         let mut events = Vec::new();
@@ -327,7 +328,6 @@ fn main() {
         events.extend(rx.try_iter());
 
         // Coalesce patches: state patches are snapshots, so only the newest needs evaluating.
-        let mut newest_patch: Option<(u64, String)> = None;
         for event in events {
             match event {
                 Event::Msg(Msg::Patch { seq, json }) => {
@@ -401,7 +401,9 @@ fn main() {
             break;
         }
 
-        if let Some((seq, json)) = newest_patch {
+        if webview.load_status() == LoadStatus::Complete
+            && let Some((seq, json)) = newest_patch.take()
+        {
             let received = Instant::now();
             stats.borrow_mut().patches_evaluated += 1;
             let send = send.clone();
