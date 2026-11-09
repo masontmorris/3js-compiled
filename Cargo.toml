@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/host"]
+members = ["crates/host", "crates/gpu"]
 exclude = ["spikes/host", "spikes/host/grafting-servo"]
 resolver = "3"
