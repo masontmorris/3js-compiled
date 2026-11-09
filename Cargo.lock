@@ -2118,16 +2118,26 @@ dependencies = [
  "sdl3",
  "serde",
  "serde_json",
- "threejsc-ipc",
+ "threejsc-ui",
  "tokio",
  "wgpu",
- "wgpu-hal",
- "windows",
 ]
 
 [[package]]
 name = "threejsc-ipc"
 version = "0.1.0"
+
+[[package]]
+name = "threejsc-ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "threejsc-ipc",
+ "wgpu",
+ "wgpu-hal",
+ "windows",
+]
 
 [[package]]
 name = "timezone_provider"

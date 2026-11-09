@@ -1,7 +1,7 @@
 mod game;
 mod input;
 mod renderer;
-mod ui;
+use threejsc_ui as ui;
 
 use anyhow::{Context, Result, bail};
 use game::{Game, Log};
