@@ -313,7 +313,8 @@ fn main() {
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
     let mut newest_patch: Option<(u64, String)> = None;
-    let mut warmed = false;
+    let mut warmed_at: Option<Instant> = None;
+    let applied = Rc::new(Cell::new(false));
 
     loop {
         let mut events = Vec::new();
@@ -394,8 +395,13 @@ fn main() {
             stats.borrow_mut().patches_evaluated += 1;
             let send = send.clone();
             let stats = stats.clone();
+            let applied = applied.clone();
+            let new_frame = new_frame.clone();
             webview.evaluate_javascript(format!("__bridge.tick({json})"), move |result| {
                 stats.borrow_mut().round_trip.push(received.elapsed());
+                if !applied.replace(true) {
+                    new_frame.set(false);
+                }
                 match result {
                     Ok(JSValue::String(events)) => {
                         send(&Msg::Events { seq, json: events });
@@ -419,19 +425,24 @@ fn main() {
         }
 
         if new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100) {
-            // The first paint of the loaded page takes 70 to 110 ms. It runs before the host
-            // sends any state, so the first patch is current when it arrives; the result is
-            // not shown.
-            if !warmed && webview.load_status() == LoadStatus::Complete {
+            // Until the first patch is applied, a published frame would show the page without
+            // state, so these paints are not published. The first paint of the loaded page takes
+            // 70 to 110 ms; the host sends state only after it, so the first patch is current
+            // when it arrives. A game that never sends state gets the page as loaded.
+            if !applied.get()
+                && warmed_at.is_none_or(|at| at.elapsed() < Duration::from_millis(250))
+            {
                 new_frame.set(false);
                 last_paint = Instant::now();
                 webview.paint();
                 ctx.present_without_wait();
-                warmed = true;
-                send(&Msg::Events {
-                    seq: 0,
-                    json: "{}".into(),
-                });
+                if warmed_at.is_none() && webview.load_status() == LoadStatus::Complete {
+                    warmed_at = Some(Instant::now());
+                    send(&Msg::Events {
+                        seq: 0,
+                        json: "{}".into(),
+                    });
+                }
                 continue;
             }
             let done_completed = unsafe { done_fence.GetCompletedValue() };
