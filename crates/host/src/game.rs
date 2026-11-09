@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use deno_core::{FsModuleLoader, JsRuntime, OpState, RuntimeOptions, extension, op2};
-use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, fs::File, io::Write, rc::Rc, time::Instant};
 
 pub type Log = Rc<RefCell<File>>;
 struct State {
     color: [f64; 4],
     commands: Option<Vec<u8>>,
+    readbacks: HashMap<u32, Vec<u8>>,
     start: Instant,
     log: Log,
 }
@@ -23,6 +24,15 @@ fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     state.commands = Some(bytes.to_vec());
     true
 }
+#[op2]
+#[arraybuffer]
+fn op_gpu_readback(state: &mut OpState, request: u32) -> Vec<u8> {
+    state
+        .borrow_mut::<State>()
+        .readbacks
+        .remove(&request)
+        .unwrap_or_default()
+}
 #[op2(fast)]
 fn op_now(state: &mut OpState) -> f64 {
     state.borrow::<State>().start.elapsed().as_secs_f64() * 1000.0
@@ -33,7 +43,10 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
     let _ = writeln!(state.log.borrow_mut(), "{message}");
     eprintln!("{message}");
 }
-extension!(host_ext, ops = [op_clear, op_gpu_submit, op_now, op_log]);
+extension!(
+    host_ext,
+    ops = [op_clear, op_gpu_submit, op_gpu_readback, op_now, op_log]
+);
 
 pub struct Game<'a> {
     js: JsRuntime,
@@ -55,6 +68,7 @@ impl<'a> Game<'a> {
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,
+            readbacks: HashMap::new(),
             start: Instant::now(),
             log,
         });
@@ -82,6 +96,20 @@ impl<'a> Game<'a> {
         self.js
             .execute_script("host:event", format!("__hostDispatch({event})"))?;
         self.tick()
+    }
+    /// Dispatches a frame's GPU responses. A readback's bytes stay in the host until the
+    /// `gpu-response` dispatch fetches them, so they cross into JavaScript as one ArrayBuffer.
+    pub fn gpu_responses(
+        &mut self,
+        responses: Vec<serde_json::Value>,
+        readbacks: HashMap<u32, Vec<u8>>,
+    ) -> Result<()> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .readbacks = readbacks;
+        self.event(&serde_json::json!({"type": "gpu-response", "responses": responses}))
     }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
@@ -162,6 +190,38 @@ mod tests {
         assert_eq!(game.frame()?, [1.0, 1.0, 1.0, 1.0]);
         game.event(&serde_json::json!({"type": "resize", "width": 800, "height": 600}))?;
         assert_eq!(game.frame()?, [0.0, 0.0, 0.0, 0.5]);
+        Ok(())
+    }
+
+    #[test]
+    fn readbacks_reach_javascript_as_array_buffers() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-readback-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/readback.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
+        let started = Instant::now();
+        game.gpu_responses(
+            vec![serde_json::json!({"type": "readback", "request": 5})],
+            HashMap::from([(5, vec![7; 1280 * 720 * 4])]),
+        )?;
+        println!("1280x720 readback dispatch took {:?}", started.elapsed());
+        assert_eq!(
+            game.js.op_state().borrow().borrow::<State>().color,
+            [0.0, 1.0, 0.0, 1.0]
+        );
+        assert!(
+            game.js
+                .op_state()
+                .borrow()
+                .borrow::<State>()
+                .readbacks
+                .is_empty()
+        );
         Ok(())
     }
 

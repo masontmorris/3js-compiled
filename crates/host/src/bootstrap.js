@@ -39,6 +39,11 @@ const gamepads = [];
 globalThis.navigator = { getGamepads: () => gamepads };
 function report(error) { console.error(error?.stack ?? String(error)); }
 globalThis.__hostDispatch = event => {
+  if (event.type === "gpu-response") {
+    for (const response of event.responses) {
+      if (response.type === "readback") response.bytes = ops.op_gpu_readback(response.request);
+    }
+  }
   if (event.type === "resize") {
     globalThis.innerWidth = event.width;
     globalThis.innerHeight = event.height;

@@ -369,7 +369,7 @@ export class RecordingDevice {
           const location = response.message?.match(/:(\d+):(\d+)/);
           pending.resolve({ messages: response.type === 'error' ? [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] : [] });
         } else if (pending.validation) pending.resolve(response.type === 'error' ? { message: response.message } : null);
-        else if (response.type === 'readback') pending.resolve(Uint8Array.from(response.bytes).buffer);
+        else if (response.type === 'readback') pending.resolve(response.bytes instanceof ArrayBuffer ? response.bytes : Uint8Array.from(response.bytes).buffer);
         else pending.reject(new Error(response.message));
       } else if (response.type === 'error' && response.request == null) {
         this.onuncapturederror?.({ error: new Error(response.message) });

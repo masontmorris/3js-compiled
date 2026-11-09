@@ -33,7 +33,15 @@ python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted
 
 ## GPU command responses
 
-An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it against that frame's surface texture, and dispatches a `gpu-response` event when responses are available. The event's `responses` array contains readback objects with `request` and `bytes`, or error objects with a command index, optional request, and message. The host also writes errors to `host.log`. A second submission before the host consumes the first throws an error. The host clears the frame to the `setClearColor` color only when the frame's commands did not acquire the surface.
+An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it against that frame's surface texture, and dispatches one `gpu-response` event when the replay produced responses. The event's `responses` array holds three kinds of object:
+
+- `{type: "validation", request}` reports that a shader or render pipeline created with a nonzero request ID compiled.
+- `{type: "readback", request, bytes}` carries a buffer or texture readback. `bytes` is an `ArrayBuffer` that crosses from Rust as one binary buffer.
+- `{type: "error", frame, command, request, label, message}` reports a failed command. `frame` is the stream's frame index, `command` its zero-based index in the stream, `request` the readback or validation ID or `null`, and `label` the label of the resource the command names or `null`.
+
+A stream the host cannot decode produces one error with only a `message`, because no command or frame in it can be trusted. The host writes every error to `host.log` as `GPU error: frame <f>, command <c>, label <l>, request <r>: <message>`, and a stream it cannot decode as `GPU stream rejected in host frame <n>: <message>`. A second submission before the host consumes the first throws an error. The host clears the frame to the `setClearColor` color only when no command acquired the window surface at its current size.
+
+`crates/host/tests/gpu.rs` runs the host on the hardware GPU: a binary 1280x720 readback with a shader error, a stream that tries to destroy the surface, and the first frame after a resize. Run it under the lease with `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
 
 ## Example scenes
 

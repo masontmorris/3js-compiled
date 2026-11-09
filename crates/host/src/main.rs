@@ -9,6 +9,7 @@ use sdl3::event::Event;
 use serde_json::{Value, json};
 use std::{
     cell::RefCell,
+    collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
     path::PathBuf,
@@ -191,6 +192,7 @@ fn main() -> Result<()> {
         let acquire_wait = acquire_started.elapsed();
         let mut clear = Some(color);
         if let Some(commands) = game.take_commands() {
+            let mut readbacks = HashMap::new();
             let responses = match renderer.replay(&commands, &surface_frame) {
                 Ok((responses, drew)) => {
                     if drew {
@@ -200,7 +202,10 @@ fn main() -> Result<()> {
                     for response in responses {
                         values.push(match response {
                             threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
-                            threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
+                            threejsc_gpu::Response::Readback { request, bytes } => {
+                                readbacks.insert(request, bytes);
+                                json!({"type": "readback", "request": request})
+                            }
                             threejsc_gpu::Response::Error { frame, command, request, label, message } => {
                                 let request_text = request.map_or("none".into(), |request| request.to_string());
                                 log(&log_file, &format!("GPU error: frame {frame}, command {command}, label {}, request {request_text}: {message}", label.as_deref().unwrap_or("none")))?;
@@ -219,7 +224,7 @@ fn main() -> Result<()> {
                 }
             };
             if !responses.is_empty() {
-                game.event(&json!({"type": "gpu-response", "responses": responses}))?;
+                game.gpu_responses(responses, readbacks)?;
             }
         }
         let record = options

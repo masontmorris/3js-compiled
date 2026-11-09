@@ -1,5 +1,0 @@
-[
-  {"type":"wait", "frames":3},
-  {"type":"capture", "path":"target/e3-proof/buffer.png"},
-  {"type":"close"}
-]
