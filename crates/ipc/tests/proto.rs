@@ -1,4 +1,4 @@
-use threejsc_ipc::{Msg, read_msg, write_msg};
+use threejsc_ipc::{MAX_JSON, MAX_PAYLOAD, Msg, read_msg, write_msg};
 
 #[test]
 fn messages_round_trip_and_truncated_frames_fail() {
@@ -29,7 +29,9 @@ fn messages_round_trip_and_truncated_frames_fail() {
             height: 480,
         },
         Msg::Shutdown,
+        Msg::SlotsImported { generation: 3 },
         Msg::Slots {
+            generation: 3,
             handles: vec![1, 2, 3, 4],
             width: 640,
             height: 480,
@@ -46,6 +48,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
         Msg::Report {
             text: "done".into(),
         },
+        Msg::Ready,
     ];
     for message in messages {
         let mut bytes = Vec::new();
@@ -56,8 +59,30 @@ fn messages_round_trip_and_truncated_frames_fail() {
 }
 
 #[test]
+fn writer_refuses_what_the_reader_refuses() {
+    for (seq, len) in [(1, MAX_JSON), (2, MAX_JSON + 1)] {
+        let message = Msg::Patch {
+            seq,
+            json: "x".repeat(len),
+        };
+        let mut bytes = Vec::new();
+        let written = write_msg(&mut bytes, &message);
+        if len <= MAX_JSON {
+            written.unwrap();
+            assert_eq!(read_msg(&mut bytes.as_slice()).unwrap(), message);
+        } else {
+            assert_eq!(
+                written.unwrap_err().kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+            assert!(bytes.is_empty());
+        }
+    }
+}
+
+#[test]
 fn rejects_oversized_and_forged_frames() {
-    assert!(read_msg(&mut &((1024u32 * 1024 + 1).to_le_bytes())[..]).is_err());
+    assert!(read_msg(&mut &((MAX_PAYLOAD as u32 + 1).to_le_bytes())[..]).is_err());
     let frame = [5, 0, 0, 0, 10, 255, 255, 255, 255];
     assert!(read_msg(&mut &frame[..]).is_err());
 }

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use deno_core::{FsModuleLoader, JsRuntime, OpState, RuntimeOptions, extension, op2};
+use deno_error::JsErrorBox;
 use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::Instant};
 
 pub type Log = Rc<RefCell<File>>;
@@ -9,6 +10,8 @@ struct State {
     log: Log,
     page: Option<String>,
     patch: Option<String>,
+    ui_events: String,
+    ui_dropped: u64,
 }
 
 #[op2(fast)]
@@ -30,12 +33,38 @@ fn op_ui_page(state: &mut OpState, #[string] page: String) {
     state.borrow_mut::<State>().page = Some(page);
 }
 #[op2(fast)]
-fn op_ui_patch(state: &mut OpState, #[string] patch: String) {
+fn op_ui_patch(state: &mut OpState, #[string] patch: String) -> Result<(), JsErrorBox> {
+    if patch.len() > threejsc_ui::MAX_STATE_BYTES {
+        return Err(JsErrorBox::range_error(format!(
+            "UI state is {} bytes of JSON; the limit is {}",
+            patch.len(),
+            threejsc_ui::MAX_STATE_BYTES
+        )));
+    }
     state.borrow_mut::<State>().patch = Some(patch);
+    Ok(())
+}
+#[op2]
+#[string]
+fn op_ui_events(state: &mut OpState) -> String {
+    std::mem::take(&mut state.borrow_mut::<State>().ui_events)
+}
+#[op2(fast)]
+#[number]
+fn op_ui_dropped(state: &mut OpState) -> u64 {
+    std::mem::take(&mut state.borrow_mut::<State>().ui_dropped)
 }
 extension!(
     host_ext,
-    ops = [op_clear, op_now, op_log, op_ui_page, op_ui_patch]
+    ops = [
+        op_clear,
+        op_now,
+        op_log,
+        op_ui_page,
+        op_ui_patch,
+        op_ui_events,
+        op_ui_dropped
+    ]
 );
 
 pub struct Game<'a> {
@@ -55,6 +84,8 @@ impl<'a> Game<'a> {
             log,
             page: None,
             patch: None,
+            ui_events: String::new(),
+            ui_dropped: 0,
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
@@ -95,9 +126,17 @@ impl<'a> Game<'a> {
             .patch
             .take()
     }
-    pub fn ui_event(&mut self, event: &str) -> Result<()> {
+    /// Delivers a JSON array of page events and the count of dropped ones in one call.
+    pub fn ui_events(&mut self, events: String, dropped: u64) -> Result<()> {
+        {
+            let op_state = self.js.op_state();
+            let mut op_state = op_state.borrow_mut();
+            let state = op_state.borrow_mut::<State>();
+            state.ui_events = events;
+            state.ui_dropped = dropped;
+        }
         self.js
-            .execute_script("host:ui-event", format!("__hostUiEvent({event})"))?;
+            .execute_script("host:ui-events", "__hostUiEvents()")?;
         self.tick()
     }
     fn tick(&mut self) -> Result<()> {

@@ -4,6 +4,12 @@
 
 use std::io::{self, Read, Write};
 
+/// Largest message payload either side writes or accepts.
+pub const MAX_PAYLOAD: usize = 1 << 20;
+/// Largest JSON text a `Patch` or `Events` message carries: the payload minus its tag,
+/// sequence number and length prefix.
+pub const MAX_JSON: usize = MAX_PAYLOAD - 13;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
     /// Fence handles are already duplicated into the ui-host's handle table.
@@ -14,7 +20,7 @@ pub enum Msg {
         width: u32,
         height: u32,
     },
-    /// One bridge round trip: ui-host runs `__bridge.tick(json)` and answers with `Events`.
+    /// The game's full UI state. The host sends one only after `Ready`.
     Patch {
         seq: u64,
         json: String,
@@ -35,8 +41,14 @@ pub enum Msg {
         height: u32,
     },
     Shutdown,
-    /// Shared NT handles of the ring textures, valid in the ui-host's handle table.
+    /// The host has duplicated or skipped the handles of ring `generation`.
+    SlotsImported {
+        generation: u64,
+    },
+    /// Shared NT handles of the ring textures, valid in the ui-host's handle table until
+    /// the host answers with `SlotsImported`.
     Slots {
+        generation: u64,
         handles: Vec<u64>,
         width: u32,
         height: u32,
@@ -47,12 +59,14 @@ pub enum Msg {
         pub_id: u64,
         ready_value: u64,
     },
-    /// Result of `__bridge.tick` for patch `seq`. The host sends its next patch only after
-    /// this reply; ui-host sends `seq` 0 once the page is ready for the first patch.
+    /// Result of `__bridge.tick` for patch `seq`, or for a poll of the current state when
+    /// `seq` is 0.
     Events {
         seq: u64,
         json: String,
     },
+    /// ui-host evaluates the next patch as soon as it arrives.
+    Ready,
     Report {
         text: String,
     },
@@ -144,12 +158,18 @@ impl Msg {
                 put_u32(&mut b, *width);
                 put_u32(&mut b, *height);
             }
+            Msg::SlotsImported { generation } => {
+                b.push(7);
+                put_u64(&mut b, *generation);
+            }
             Msg::Slots {
+                generation,
                 handles,
                 width,
                 height,
             } => {
                 b.push(10);
+                put_u64(&mut b, *generation);
                 put_u32(&mut b, handles.len() as u32);
                 for h in handles {
                     put_u64(&mut b, *h);
@@ -176,6 +196,7 @@ impl Msg {
                 b.push(13);
                 put_str(&mut b, text);
             }
+            Msg::Ready => b.push(14),
         }
         let len = (b.len() - 4) as u32;
         b[..4].copy_from_slice(&len.to_le_bytes());
@@ -211,7 +232,11 @@ impl Msg {
                 width: c.u32()?,
                 height: c.u32()?,
             },
+            7 => Msg::SlotsImported {
+                generation: c.u64()?,
+            },
             10 => {
+                let generation = c.u64()?;
                 let n = c.u32()? as usize;
                 if n > c.0.len().saturating_sub(8) / 8 {
                     return Err(io::Error::new(
@@ -221,6 +246,7 @@ impl Msg {
                 }
                 let handles = (0..n).map(|_| c.u64()).collect::<io::Result<Vec<_>>>()?;
                 Msg::Slots {
+                    generation,
                     handles,
                     width: c.u32()?,
                     height: c.u32()?,
@@ -236,6 +262,7 @@ impl Msg {
                 json: c.string()?,
             },
             13 => Msg::Report { text: c.string()? },
+            14 => Msg::Ready,
             tag => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -247,7 +274,14 @@ impl Msg {
 }
 
 pub fn write_msg(w: &mut impl Write, msg: &Msg) -> io::Result<()> {
-    w.write_all(&msg.encode())?;
+    let bytes = msg.encode();
+    if bytes.len() - 4 > MAX_PAYLOAD {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("message of {} bytes exceeds {MAX_PAYLOAD}", bytes.len() - 4),
+        ));
+    }
+    w.write_all(&bytes)?;
     w.flush()
 }
 
@@ -255,10 +289,10 @@ pub fn read_msg(r: &mut impl Read) -> io::Result<Msg> {
     let mut len = [0u8; 4];
     r.read_exact(&mut len)?;
     let len = u32::from_le_bytes(len) as usize;
-    if len > 1024 * 1024 {
+    if len > MAX_PAYLOAD {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "message exceeds 1 MiB",
+            format!("message of {len} bytes exceeds {MAX_PAYLOAD}"),
         ));
     }
     let mut payload = vec![0u8; len];

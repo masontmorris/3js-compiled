@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 deno_core = "0.413.0"
+deno_error = "0.7.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 pollster = "0.4"
 sdl3 = { version = "0.22.1", features = ["build-from-source-static", "raw-window-handle"] }

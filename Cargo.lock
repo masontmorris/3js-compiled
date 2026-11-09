@@ -2113,6 +2113,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "deno_core",
+ "deno_error",
  "image",
  "pollster",
  "sdl3",
@@ -2133,6 +2134,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "getrandom",
+ "pollster",
  "serde_json",
  "threejsc-ipc",
  "wgpu",

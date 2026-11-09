@@ -9,7 +9,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::BufReader,
-    os::windows::io::FromRawHandle,
+    os::windows::io::{FromRawHandle, OwnedHandle},
     rc::Rc,
     sync::mpsc,
     time::{Duration, Instant},
@@ -20,15 +20,15 @@ use euclid::{Scale, default::Size2D};
 use glow::HasContext;
 use proto::Msg;
 use servo::{
-    DevicePoint, EventLoopWaker, InputEvent, JSValue, LoadStatus, MouseButton, MouseButtonAction,
-    MouseButtonEvent, MouseMoveEvent, Preferences, ServoBuilder, WebView, WebViewBuilder,
-    WebViewDelegate,
+    DevicePoint, EventLoopWaker, InputEvent, InputEventId, InputEventResult, JSValue, LoadStatus,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Preferences, ServoBuilder,
+    WebView, WebViewBuilder, WebViewDelegate,
 };
 use servo_wgpu_interop_adapter::ServoWgpuRenderingContext;
 use url::Url;
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, GENERIC_ALL, GENERIC_READ, GENERIC_WRITE, HANDLE},
+        Foundation::{FILETIME, GENERIC_ALL, GENERIC_READ, GENERIC_WRITE, HANDLE},
         Graphics::{
             Direct3D11::{
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_RESOURCE_MISC_SHARED,
@@ -43,7 +43,7 @@ use windows::{
         Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_NONE, OPEN_EXISTING},
         System::{
             ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
-            Threading::GetCurrentProcess,
+            Threading::{GetCurrentProcess, GetProcessTimes},
         },
     },
     core::{HSTRING, IUnknown, Interface, PCWSTR},
@@ -69,11 +69,20 @@ impl EventLoopWaker for Waker {
 
 struct Delegate {
     new_frame: Rc<Cell<bool>>,
+    input_handled: Rc<Cell<bool>>,
 }
 
 impl WebViewDelegate for Delegate {
     fn notify_new_frame_ready(&self, _webview: WebView) {
         self.new_frame.set(true);
+    }
+    fn notify_input_event_handled(
+        &self,
+        _webview: WebView,
+        _event_id: InputEventId,
+        _result: InputEventResult,
+    ) {
+        self.input_handled.set(true);
     }
     fn notify_crashed(&self, _webview: WebView, reason: String, _backtrace: Option<String>) {
         eprintln!("[ui-host] servo crash: {reason}");
@@ -85,17 +94,114 @@ struct Slot {
     _texture: ID3D11Texture2D,
     surface_texture: Option<surfman::SurfaceTexture>,
     framebuffer: glow::NativeFramebuffer,
-    _handle: HANDLE, // kept open for the process lifetime so the game can duplicate it
     pub_id: u64,
     used: bool,
     last_use: u64,
 }
 
-impl Drop for Slot {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self._handle);
+/// Longest wait for a Servo frame after an evaluation starts, for evaluations that change
+/// nothing on screen.
+const FRAME_FALLBACK: Duration = Duration::from_millis(50);
+/// Longest time between two evaluations once the game has sent state, so that page events
+/// that no input caused still reach the game.
+const IDLE_POLL: Duration = Duration::from_millis(100);
+
+/// Servo 0.7.0 starts a rendering update no sooner than 20 ms after the previous one, and at
+/// once for a page change that arrives later (servo-script's
+/// `maybe_schedule_rendering_opportunity_after_ipc_message`). Evaluations this far apart each
+/// render as soon as they finish.
+const RENDER_INTERVAL: Duration = Duration::from_millis(20);
+
+/// Evaluations that may wait for their Servo frame at once. Two let one evaluation run while
+/// the previous one renders.
+const UNPAINTED: usize = 2;
+
+/// Decides when ui-host evaluates `__bridge.tick`: no more often than Servo frames arrive, no
+/// sooner than `RENDER_INTERVAL` after the previous evaluation, always with the newest state.
+/// It asks for that state early by the host's last response time, so the state arrives fresh
+/// when the next evaluation may start. Without new state it evaluates the current state again
+/// (a poll) after input and when the page has been idle, to collect the page's events.
+#[derive(Default)]
+struct Pacer {
+    state: Option<String>,
+    unevaluated: Option<u64>,
+    poll: bool,
+    evaluating: bool,
+    unpainted: VecDeque<Instant>,
+    last_started: Option<Instant>,
+    ready_sent: Option<Instant>,
+    response: Duration,
+}
+
+impl Pacer {
+    fn patch(&mut self, seq: u64, json: String, now: Instant) {
+        if let Some(at) = self.ready_sent.take() {
+            self.response = (now - at).min(RENDER_INTERVAL);
         }
+        self.state = Some(json);
+        self.unevaluated = Some(seq);
+    }
+    fn input_handled(&mut self) {
+        self.poll = true;
+    }
+    fn finished(&mut self) {
+        self.evaluating = false;
+    }
+    /// Records a new Servo frame and returns how long ago the evaluation it answers started.
+    fn painted(&mut self, now: Instant) -> Option<Duration> {
+        self.unpainted.pop_front().map(|at| now - at)
+    }
+    /// The next time `next` or `ready` can change its answer with no other event.
+    fn deadline(&self, now: Instant) -> Option<Instant> {
+        let start = self.last_started?;
+        [
+            start + RENDER_INTERVAL - self.response,
+            start + RENDER_INTERVAL,
+            start + IDLE_POLL,
+        ]
+        .into_iter()
+        .chain(self.unpainted.front().map(|at| *at + FRAME_FALLBACK))
+        .filter(|&at| at > now)
+        .min()
+    }
+    /// The next evaluation to start, as the patch sequence number (0 for a poll) and script.
+    fn next(&mut self, now: Instant) -> Option<(u64, String)> {
+        let state = self.state.as_ref()?;
+        while self
+            .unpainted
+            .front()
+            .is_some_and(|at| now - *at >= FRAME_FALLBACK)
+        {
+            self.unpainted.pop_front();
+        }
+        let spaced = self
+            .last_started
+            .is_none_or(|at| now - at >= RENDER_INTERVAL);
+        if self.evaluating || !spaced || self.unpainted.len() >= UNPAINTED {
+            return None;
+        }
+        let idle_poll = self.last_started.is_none_or(|at| now - at >= IDLE_POLL);
+        let seq = match self.unevaluated.take() {
+            Some(seq) => seq,
+            None if self.poll || idle_poll => 0,
+            None => return None,
+        };
+        self.poll = false;
+        self.evaluating = true;
+        self.unpainted.push_back(now);
+        self.last_started = Some(now);
+        Some((seq, format!("__bridge.tick({state})")))
+    }
+    /// Whether to ask the host for its next state now.
+    fn ready(&mut self, now: Instant) -> bool {
+        let due = self
+            .last_started
+            .is_none_or(|at| now + self.response >= at + RENDER_INTERVAL);
+        let ready = self.ready_sent.is_none() && self.unevaluated.is_none() && due;
+        if ready {
+            self.ready_sent = Some(now);
+        }
+        ready
     }
 }
 
@@ -135,11 +241,15 @@ struct Stats {
     swap: Samples,
     total: Samples,
     round_trip: Samples,
+    eval_to_frame: Samples,
     published: u64,
     skipped_no_free_slot: u64,
     patches_received: u64,
     patches_evaluated: u64,
+    polls: u64,
     eval_errors: u64,
+    rings: u64,
+    since: Option<(Instant, Duration, u64)>,
 }
 
 fn arg(args: &[String], name: &str) -> Option<String> {
@@ -167,6 +277,10 @@ fn open_pipe(name: &str, access: u32) -> File {
 }
 
 fn main() {
+    // The pacer waits for deadlines a few milliseconds apart; the default 15.6 ms timer
+    // resolution would round each wait up to the next tick.
+    // SAFETY: plain call; the period lasts until the process exits.
+    unsafe { windows::Win32::Media::timeBeginPeriod(1) };
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("install rustls provider");
@@ -273,14 +387,30 @@ fn main() {
         .cast()
         .expect("ID3D11DeviceContext4");
 
-    let mut slots: Vec<Slot> = (0..ring)
-        .map(|_| create_slot(&d3d11, &frame_ctx, size))
-        .collect();
-    send(&Msg::Slots {
-        handles: slots.iter().map(|s| s._handle.0 as u64).collect(),
-        width: size.width,
-        height: size.height,
-    });
+    let send = Rc::new(send);
+    let stats = Rc::new(RefCell::new(Stats::default()));
+    let mut unimported: Vec<(u64, OwnedHandle)> = Vec::new();
+    let new_ring = |size: PhysicalSize<u32>, unimported: &mut Vec<(u64, OwnedHandle)>| {
+        let mut stats = stats.borrow_mut();
+        stats.rings += 1;
+        let (slots, handles): (Vec<_>, Vec<_>) = (0..ring)
+            .map(|_| create_slot(&d3d11, &frame_ctx, size))
+            .unzip();
+        send(&Msg::Slots {
+            generation: stats.rings,
+            handles: handles.iter().map(|h| h.0 as u64).collect(),
+            width: size.width,
+            height: size.height,
+        });
+        // SAFETY: each handle is a fresh NT handle from CreateSharedHandle.
+        unimported.extend(
+            handles
+                .into_iter()
+                .map(|h| (stats.rings, unsafe { OwnedHandle::from_raw_handle(h.0) })),
+        );
+        slots
+    };
+    let mut slots = new_ring(size, &mut unimported);
 
     let preferences = Preferences {
         shell_background_color_rgba: [0.0, 0.0, 0.0, 0.0],
@@ -296,41 +426,51 @@ fn main() {
         .build();
     servo.setup_logging();
     let new_frame = Rc::new(Cell::new(false));
+    let input_handled = Rc::new(Cell::new(false));
     let webview = WebViewBuilder::new(&servo, ctx.clone())
         .url(Url::from_file_path(&hud).expect("hud path"))
         .hidpi_scale_factor(Scale::new(1.0))
         .delegate(Rc::new(Delegate {
             new_frame: new_frame.clone(),
+            input_handled: input_handled.clone(),
         }))
         .build();
 
-    let stats = Rc::new(RefCell::new(Stats::default()));
-    let send = Rc::new(send);
     let mut next_pub: u64 = 0;
     let mut ready_value = ready_base;
     let mut picked: u64 = 0;
     let mut shutting_down = false;
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
-    let mut newest_patch: Option<(u64, String)> = None;
+    let pacer = Rc::new(RefCell::new(Pacer::default()));
     let mut warmed_at: Option<Instant> = None;
     let applied = Rc::new(Cell::new(false));
 
     loop {
         let mut events = Vec::new();
-        match rx.recv_timeout(Duration::from_millis(16)) {
+        let now = Instant::now();
+        let wait = pacer
+            .borrow()
+            .deadline(now)
+            .map_or(Duration::from_millis(16), |at| {
+                (at - now).min(Duration::from_millis(16))
+            });
+        match rx.recv_timeout(wait) {
             Ok(e) => events.push(e),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
         events.extend(rx.try_iter());
 
-        // Coalesce patches: state patches are snapshots, so only the newest needs evaluating.
+        let mut resize = None;
         for event in events {
             match event {
                 Event::Msg(Msg::Patch { seq, json }) => {
                     stats.borrow_mut().patches_received += 1;
-                    newest_patch = Some((seq, json));
+                    pacer.borrow_mut().patch(seq, json, Instant::now());
+                }
+                Event::Msg(Msg::SlotsImported { generation }) => {
+                    unimported.retain(|(g, _)| *g > generation);
                 }
                 Event::Msg(Msg::Picked {
                     pub_id,
@@ -367,18 +507,7 @@ fn main() {
                     webview.notify_input_event(input);
                 }
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
-                    size = PhysicalSize::new(width, height);
-                    webview.resize(size);
-                    destroy_slots(&frame_ctx, &mut slots);
-                    slots = (0..ring)
-                        .map(|_| create_slot(&d3d11, &frame_ctx, size))
-                        .collect();
-                    picked = 0;
-                    send(&Msg::Slots {
-                        handles: slots.iter().map(|s| s._handle.0 as u64).collect(),
-                        width,
-                        height,
-                    });
+                    resize = Some(PhysicalSize::new(width, height));
                 }
                 Event::Msg(Msg::Report { text }) => eprintln!("{text}"),
                 Event::Msg(Msg::Shutdown) => shutting_down = true,
@@ -389,62 +518,90 @@ fn main() {
         if shutting_down {
             break;
         }
+        if let Some(new_size) = resize.filter(|&new_size| new_size != size) {
+            size = new_size;
+            webview.resize(size);
+            destroy_slots(&frame_ctx, &mut slots);
+            slots = new_ring(size, &mut unimported);
+            picked = 0;
+        }
+        if input_handled.take() {
+            pacer.borrow_mut().input_handled();
+        }
 
-        if let Some((seq, json)) = newest_patch.take() {
-            let received = Instant::now();
-            stats.borrow_mut().patches_evaluated += 1;
+        let next = pacer.borrow_mut().next(Instant::now());
+        if let Some((seq, script)) = next {
+            let started = Instant::now();
+            {
+                let mut stats = stats.borrow_mut();
+                if seq == 0 {
+                    stats.polls += 1;
+                } else {
+                    stats.patches_evaluated += 1;
+                }
+            }
             let send = send.clone();
             let stats = stats.clone();
             let applied = applied.clone();
             let new_frame = new_frame.clone();
-            webview.evaluate_javascript(format!("__bridge.tick({json})"), move |result| {
-                stats.borrow_mut().round_trip.push(received.elapsed());
+            let pacer = pacer.clone();
+            webview.evaluate_javascript(script, move |result| {
+                stats.borrow_mut().round_trip.push(started.elapsed());
+                pacer.borrow_mut().finished();
                 if !applied.replace(true) {
                     new_frame.set(false);
                 }
-                match result {
-                    Ok(JSValue::String(events)) => {
-                        send(&Msg::Events { seq, json: events });
+                let failure = match result {
+                    Ok(JSValue::String(json)) if json.len() <= proto::MAX_JSON => {
+                        send(&Msg::Events { seq, json });
+                        return;
                     }
-                    _ => {
-                        stats.borrow_mut().eval_errors += 1;
-                        send(&Msg::Events {
-                            seq,
-                            json: "{}".into(),
-                        });
-                    }
-                }
+                    Ok(JSValue::String(json)) => format!(
+                        "page reply of {} bytes exceeds {} and was dropped",
+                        json.len(),
+                        proto::MAX_JSON
+                    ),
+                    other => format!("page tick did not return a string: {other:?}"),
+                };
+                stats.borrow_mut().eval_errors += 1;
+                let text: String = format!("[ui-host] patch {seq}: {failure}")
+                    .chars()
+                    .take(500)
+                    .collect();
+                eprintln!("{text}");
+                send(&Msg::Report { text });
             });
         }
 
         servo.spin_event_loop();
 
         if last_report.elapsed() >= Duration::from_secs(5) {
-            report_stats(&stats.borrow());
+            report_stats(&mut stats.borrow_mut());
             last_report = Instant::now();
         }
 
-        if new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100) {
-            // Until the first patch is applied, a published frame would show the page without
-            // state, so these paints are not published. The first paint of the loaded page takes
-            // 70 to 110 ms; the host sends state only after it, so the first patch is current
-            // when it arrives. A game that never sends state gets the page as loaded.
-            if !applied.get()
-                && warmed_at.is_none_or(|at| at.elapsed() < Duration::from_millis(250))
-            {
-                new_frame.set(false);
-                last_paint = Instant::now();
-                webview.paint();
-                ctx.present_without_wait();
-                if warmed_at.is_none() && webview.load_status() == LoadStatus::Complete {
-                    warmed_at = Some(Instant::now());
-                    send(&Msg::Events {
-                        seq: 0,
-                        json: "{}".into(),
-                    });
-                }
-                continue;
+        let due = new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100);
+        // Until the first patch is applied, a published frame would show the page without
+        // state, so these paints are not published. The first paint of the loaded page takes
+        // 70 to 110 ms; the host sends state only after it, so the first patch is current
+        // when it arrives. A game that never sends state gets the page as loaded 250 ms later.
+        let warming =
+            !applied.get() && warmed_at.is_none_or(|at| at.elapsed() < Duration::from_millis(250));
+        let painted = |fresh: bool| {
+            if fresh && let Some(waited) = pacer.borrow_mut().painted(Instant::now()) {
+                stats.borrow_mut().eval_to_frame.push(waited);
             }
+        };
+        if due && warming {
+            let fresh = new_frame.replace(false);
+            last_paint = Instant::now();
+            webview.paint();
+            ctx.present_without_wait();
+            painted(fresh);
+            if warmed_at.is_none() && webview.load_status() == LoadStatus::Complete {
+                warmed_at = Some(Instant::now());
+            }
+        } else if due {
             let done_completed = unsafe { done_fence.GetCompletedValue() };
             let free = slots
                 .iter()
@@ -455,63 +612,95 @@ fn main() {
                 })
                 .min_by_key(|(_, s)| s.pub_id)
                 .map(|(i, _)| i);
-            let Some(index) = free else {
+            if let Some(index) = free {
+                let fresh = new_frame.replace(false);
+                last_paint = Instant::now();
+
+                let t0 = Instant::now();
+                webview.paint();
+                let t1 = Instant::now();
+                ready_value += 1;
+                export_into(&frame_ctx, slots[index].framebuffer, size);
+                // SAFETY: the fence and context belong to ANGLE's D3D11 device; same thread as GL.
+                unsafe {
+                    immediate
+                        .Signal(&ready_fence, ready_value)
+                        .expect("D3D11 Signal");
+                    immediate.Flush();
+                }
+                let t2 = Instant::now();
+                ctx.present_without_wait();
+                let t3 = Instant::now();
+                painted(fresh);
+
+                next_pub += 1;
+                let slot = &mut slots[index];
+                slot.pub_id = next_pub;
+                slot.used = false;
+                send(&Msg::FrameReady {
+                    slot: index as u8,
+                    pub_id: next_pub,
+                    ready_value,
+                });
+
+                let mut s = stats.borrow_mut();
+                s.first_paint.get_or_insert(started.elapsed());
+                s.paint.push(t1 - t0);
+                s.export.push(t2 - t1);
+                s.swap.push(t3 - t2);
+                s.total.push(t3 - t0);
+                s.published += 1;
+            } else {
                 stats.borrow_mut().skipped_no_free_slot += 1;
-                continue;
-            };
-            new_frame.set(false);
-            last_paint = Instant::now();
-
-            let t0 = Instant::now();
-            webview.paint();
-            let t1 = Instant::now();
-            ready_value += 1;
-            export_into(&frame_ctx, slots[index].framebuffer, size);
-            // SAFETY: the fence and context belong to ANGLE's D3D11 device; same thread as GL.
-            unsafe {
-                immediate
-                    .Signal(&ready_fence, ready_value)
-                    .expect("D3D11 Signal");
-                immediate.Flush();
             }
-            let t2 = Instant::now();
-            ctx.present_without_wait();
-            let t3 = Instant::now();
-
-            next_pub += 1;
-            let slot = &mut slots[index];
-            slot.pub_id = next_pub;
-            slot.used = false;
-            send(&Msg::FrameReady {
-                slot: index as u8,
-                pub_id: next_pub,
-                ready_value,
-            });
-
-            let mut s = stats.borrow_mut();
-            s.first_paint.get_or_insert(started.elapsed());
-            s.paint.push(t1 - t0);
-            s.export.push(t2 - t1);
-            s.swap.push(t3 - t2);
-            s.total.push(t3 - t0);
-            s.published += 1;
+        }
+        if warmed_at.is_some() && pacer.borrow_mut().ready(Instant::now()) {
+            send(&Msg::Ready);
         }
     }
 
-    report_stats(&stats.borrow());
+    report_stats(&mut stats.borrow_mut());
     destroy_slots(&frame_ctx, &mut slots);
 }
 
-fn report_stats(s: &Stats) {
+fn process_cpu() -> Duration {
+    let [mut created, mut exited, mut kernel, mut user] = [FILETIME::default(); 4];
+    // SAFETY: four valid out-parameters for the current process.
+    let times = unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    let ticks = |t: FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
+    match times {
+        Ok(()) => Duration::from_nanos((ticks(kernel) + ticks(user)) * 100),
+        Err(_) => Duration::ZERO,
+    }
+}
+
+fn report_stats(s: &mut Stats) {
     let mut report = String::new();
+    let now = (Instant::now(), process_cpu(), s.patches_evaluated + s.polls);
+    if let Some((at, cpu, evaluations)) = s.since.replace(now) {
+        let seconds = (now.0 - at).as_secs_f64();
+        report += &format!(
+            "ui-host per second: cpu {:.1} ms, evaluations {:.1}\n",
+            (now.1 - cpu).as_secs_f64() * 1000.0 / seconds,
+            (now.2 - evaluations) as f64 / seconds
+        );
+    }
     report += &format!("ui-host first painted frame after {:?}\n", s.first_paint);
     report += &format!(
         "ui-host frames published: {}, skipped (no free ring slot): {}\n",
         s.published, s.skipped_no_free_slot
     );
     report += &format!(
-        "ui-host patches received {} / evaluated {} (coalesced) / eval errors {}\n",
-        s.patches_received, s.patches_evaluated, s.eval_errors
+        "ui-host patches received {} / evaluated {} / polls {} / eval errors {} / rings {}\n",
+        s.patches_received, s.patches_evaluated, s.polls, s.eval_errors, s.rings
     );
     report += &format!(
         "ui-host per published frame ms: paint {}\n",
@@ -530,6 +719,10 @@ fn report_stats(s: &Stats) {
         s.total.summary()
     );
     report += &format!("ui-host patch evaluation ms: {}\n", s.round_trip.summary());
+    report += &format!(
+        "ui-host evaluation start to Servo frame ms: {}\n",
+        s.eval_to_frame.summary()
+    );
     report += &memory_line();
     eprint!("{report}");
 }
@@ -601,7 +794,7 @@ fn create_slot(
     d3d11: &ID3D11Device,
     frame_ctx: &grafting::surfman_gl::SurfmanFrameContext,
     size: PhysicalSize<u32>,
-) -> Slot {
+) -> (Slot, HANDLE) {
     let texture = create_shared_texture(d3d11, size);
     let handle = export_nt_handle(&texture);
     let device = frame_ctx.device.borrow();
@@ -636,15 +829,17 @@ fn create_slot(
         gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
         draw
     };
-    Slot {
-        _texture: texture,
-        surface_texture: Some(surface_texture),
-        framebuffer,
-        _handle: handle,
-        pub_id: 0,
-        used: false,
-        last_use: 0,
-    }
+    (
+        Slot {
+            _texture: texture,
+            surface_texture: Some(surface_texture),
+            framebuffer,
+            pub_id: 0,
+            used: false,
+            last_use: 0,
+        },
+        handle,
+    )
 }
 
 fn destroy_slots(frame_ctx: &grafting::surfman_gl::SurfmanFrameContext, slots: &mut [Slot]) {
@@ -715,5 +910,61 @@ mod tests {
         }
         assert_eq!(samples.0.len(), 1024);
         assert_eq!(samples.0.front(), Some(&8976.0));
+    }
+
+    fn tick(seq: u64, state: &str) -> Option<(u64, String)> {
+        Some((seq, format!("__bridge.tick({state})")))
+    }
+
+    #[test]
+    fn evaluates_the_newest_state_no_faster_than_frames() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut pacer = Pacer::default();
+        assert!(pacer.ready(t));
+        assert!(!pacer.ready(t));
+        pacer.patch(1, "1".into(), ms(2));
+        assert_eq!(pacer.next(ms(2)), tick(1, "1"));
+        assert_eq!(pacer.next(ms(2)), None);
+        pacer.finished();
+        pacer.patch(2, "2".into(), ms(5));
+        pacer.patch(3, "3".into(), ms(6));
+        assert_eq!(pacer.next(ms(10)), None, "sooner than the render interval");
+        assert_eq!(pacer.next(ms(22)), tick(3, "3"));
+        pacer.finished();
+        pacer.patch(4, "4".into(), ms(30));
+        assert_eq!(pacer.next(ms(45)), None, "two evaluations await frames");
+        assert_eq!(pacer.painted(ms(46)), Some(Duration::from_millis(44)));
+        assert_eq!(pacer.next(ms(46)), tick(4, "4"));
+        pacer.finished();
+        assert!(!pacer.ready(ms(50)));
+        assert!(
+            pacer.ready(ms(64)),
+            "asks for state early by the response time"
+        );
+        assert_eq!(pacer.deadline(ms(64)), Some(ms(66)));
+        pacer.patch(5, "5".into(), ms(67));
+        assert_eq!(pacer.next(ms(67)), None);
+        assert_eq!(pacer.next(ms(72)), tick(5, "5"), "a frame that never came");
+    }
+
+    #[test]
+    fn polls_the_current_state_after_input_and_when_idle() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut pacer = Pacer::default();
+        pacer.input_handled();
+        assert_eq!(pacer.next(ms(200)), None, "no state yet");
+        pacer.patch(5, "5".into(), t);
+        assert_eq!(pacer.next(t), tick(5, "5"));
+        pacer.finished();
+        pacer.painted(t);
+        assert_eq!(pacer.next(ms(30)), None);
+        pacer.input_handled();
+        assert_eq!(pacer.next(ms(30)), tick(0, "5"));
+        pacer.finished();
+        pacer.painted(ms(31));
+        assert_eq!(pacer.next(ms(100)), None);
+        assert_eq!(pacer.next(ms(130)), tick(0, "5"));
     }
 }

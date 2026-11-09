@@ -232,13 +232,20 @@ fn main() -> Result<()> {
             }
         }
         if let Some(ui) = &mut ui {
-            for event in ui.update(
+            let delivery = ui.update(
                 &renderer.device,
                 frame + 1,
                 (width, height),
                 pending_patch.take(),
-            )? {
-                game.ui_event(&event)?;
+            )?;
+            for note in &delivery.notes {
+                log(&log_file, note)?;
+            }
+            if delivery.events.is_some() || delivery.dropped > 0 {
+                game.ui_events(
+                    delivery.events.unwrap_or_else(|| "[]".into()),
+                    delivery.dropped,
+                )?;
             }
         }
         let record = options

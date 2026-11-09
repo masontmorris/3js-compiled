@@ -2,11 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod reply;
+
 use anyhow::{Context, Result, bail};
 use std::{
     collections::VecDeque,
-    fs::File,
-    io::BufReader,
+    fs::{File, OpenOptions},
+    io::{BufReader, Write},
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     process::{Child, Command, Stdio},
     sync::mpsc,
@@ -53,15 +55,22 @@ struct Published {
     id: u64,
     ready: u64,
 }
+/// A message from ui-host. The pipe reader parses replies so the game thread does not.
+enum Incoming {
+    Msg(Msg),
+    Reply(u64, reply::Reply),
+}
 struct Link {
     child: Child,
     tx: mpsc::Sender<Msg>,
-    rx: mpsc::Receiver<Msg>,
+    rx: mpsc::Receiver<Incoming>,
     slots: Vec<Slot>,
     published: Vec<Published>,
     current: Option<(usize, u64)>,
-    size: (u32, u32),
+    /// The size ui-host was last asked to render at.
+    requested: (u32, u32),
     awaiting_resize: bool,
+    shown: bool,
     sent_patches: VecDeque<(u64, Instant)>,
     rtt_ms: Vec<f64>,
     last_report: Instant,
@@ -71,6 +80,24 @@ enum Connection {
     Launching(mpsc::Receiver<Result<Link>>),
     Running(Box<Link>),
     Backoff(Instant),
+}
+
+/// Largest UI state, as JSON text, that the game may send.
+pub const MAX_STATE_BYTES: usize = proto::MAX_JSON;
+/// Most page events the game receives in one frame.
+pub const MAX_EVENTS_PER_FRAME: usize = 256;
+/// Most page events waiting for the game; events past it count as dropped.
+pub const MAX_QUEUED_EVENTS: usize = 4096;
+
+/// What the game receives from the UI this frame.
+#[derive(Debug, Default, PartialEq)]
+pub struct Delivery {
+    /// Page events as a JSON array, when there are any.
+    pub events: Option<String>,
+    /// Page events dropped since the last delivery.
+    pub dropped: u64,
+    /// Diagnostics for the host log.
+    pub notes: Vec<String>,
 }
 
 fn retry_delay(failures: u32) -> Duration {
@@ -168,6 +195,7 @@ fn launch(
     base: u64,
     size: (u32, u32),
     page: String,
+    log: File,
 ) -> Result<Link> {
     let mut nonce = [0u8; 16];
     getrandom::fill(&mut nonce).map_err(|error| anyhow::anyhow!("pipe name: {error}"))?;
@@ -178,7 +206,6 @@ fn launch(
     let down = create_pipe(&format!("{name}-down"))?;
     let up = create_pipe(&format!("{name}-up"))?;
     let exe = std::env::current_exe()?.with_file_name("ui-host.exe");
-    let log = File::create("ui-host.log")?;
     let mut child = Command::new(exe)
         .args([
             "--pipe",
@@ -239,6 +266,10 @@ fn launch(
     std::thread::spawn(move || {
         let mut pipe = BufReader::new(up);
         while let Ok(message) = proto::read_msg(&mut pipe) {
+            let message = match message {
+                Msg::Events { seq, json } => Incoming::Reply(seq, reply::parse(&json)),
+                message => Incoming::Msg(message),
+            };
             if incoming.send(message).is_err() {
                 break;
             }
@@ -251,8 +282,9 @@ fn launch(
         slots: Vec::new(),
         published: Vec::new(),
         current: None,
-        size,
+        requested: size,
         awaiting_resize: false,
+        shown: false,
         sent_patches: VecDeque::new(),
         rtt_ms: Vec::new(),
         last_report: Instant::now(),
@@ -279,9 +311,16 @@ pub struct Ui {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    pending_patch: Option<String>,
+    /// The game's latest state, resent to each new ui-host.
+    state: Option<String>,
+    state_sent: bool,
     can_send: bool,
     rects: Vec<[f64; 4]>,
+    events: VecDeque<String>,
+    dropped: u64,
+    notes: Vec<String>,
+    launches: u32,
+    last_failure: Option<String>,
 }
 impl Ui {
     pub fn new(
@@ -389,18 +428,52 @@ impl Ui {
             pipeline,
             layout,
             sampler,
-            pending_patch: None,
+            state: None,
+            state_sent: false,
             can_send: false,
             rects: Vec::new(),
+            events: VecDeque::new(),
+            dropped: 0,
+            notes: Vec::new(),
+            launches: 0,
+            last_failure: None,
         };
         ui.start();
         Ok(ui)
     }
-    fn retry(&mut self) -> Connection {
+    fn retry(&mut self, failure: String) -> Connection {
+        self.notes.push(failure.clone());
+        self.last_failure = Some(failure);
         self.failures = self.failures.saturating_add(1);
         Connection::Backoff(Instant::now() + retry_delay(self.failures))
     }
+    /// Opens ui-host.log for the next ui-host: truncated for the first, appended to after,
+    /// so a relaunch keeps the earlier instances' records.
+    fn open_log(&mut self) -> Result<File> {
+        self.launches += 1;
+        if self.launches == 1 {
+            return Ok(File::create("ui-host.log")?);
+        }
+        let mut log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("ui-host.log")?;
+        writeln!(
+            log,
+            "[host] ui-host launch {} after: {}",
+            self.launches,
+            self.last_failure.as_deref().unwrap_or("unknown")
+        )?;
+        Ok(log)
+    }
     fn start(&mut self) {
+        let log = match self.open_log() {
+            Ok(log) => log,
+            Err(error) => {
+                self.connection = self.retry(format!("ui-host log: {error:#}"));
+                return;
+            }
+        };
         let (tx, rx) = mpsc::channel();
         let (luid, ready, done, base, size, page) = (
             self.d3d.luid,
@@ -414,7 +487,7 @@ impl Ui {
         );
         std::thread::spawn(move || {
             if let Err(mpsc::SendError(Ok(link))) =
-                tx.send(launch(luid, ready, done, base, size, page))
+                tx.send(launch(luid, ready, done, base, size, page, log))
             {
                 retire(link, true);
             }
@@ -430,8 +503,18 @@ impl Ui {
     ) -> Result<Slot> {
         let mut resource: Option<ID3D12Resource> = None;
         unsafe {
-            self.d3d.device.OpenSharedHandle(handle, &mut resource)?;
+            let opened = self.d3d.device.OpenSharedHandle(handle, &mut resource);
             let _ = CloseHandle(handle);
+            opened?;
+        }
+        let resource = resource.context("shared UI texture")?;
+        let desc = unsafe { resource.GetDesc() };
+        if (desc.Width, desc.Height) != (u64::from(width), height) {
+            bail!(
+                "shared UI texture is {}x{}, expected {width}x{height}",
+                desc.Width,
+                desc.Height
+            );
         }
         let extent = wgpu::Extent3d {
             width,
@@ -440,7 +523,7 @@ impl Ui {
         };
         let texture = unsafe {
             let hal = wgpu_hal::dx12::Device::texture_from_raw(
-                resource.context("shared UI texture")?,
+                resource,
                 wgpu::TextureFormat::Rgba8Unorm,
                 wgpu::TextureDimension::D2,
                 extent,
@@ -488,24 +571,13 @@ impl Ui {
         frame: u64,
         size: (u32, u32),
         patch: Option<String>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Delivery> {
         if let Some(patch) = patch {
-            self.pending_patch = Some(patch);
+            self.state = Some(patch);
+            self.state_sent = false;
         }
-        if size.0 > 0 && size.1 > 0 && size != self.size {
+        if size.0 > 0 && size.1 > 0 {
             self.size = size;
-            if let Connection::Running(link) = &mut self.connection
-                && !link.slots.is_empty()
-            {
-                let _ = link.tx.send(Msg::Resize {
-                    width: size.0,
-                    height: size.1,
-                });
-                link.size = size;
-                link.awaiting_resize = true;
-                link.current = None;
-                link.published.clear();
-            }
         }
         if let Connection::Launching(rx) = &self.connection {
             match rx.try_recv() {
@@ -513,10 +585,11 @@ impl Ui {
                     self.connection = Connection::Running(Box::new(link));
                 }
                 Ok(Err(error)) => {
-                    eprintln!("ui-host launch: {error:#}");
-                    self.connection = self.retry();
+                    self.connection = self.retry(format!("ui-host launch: {error:#}"))
                 }
-                Err(mpsc::TryRecvError::Disconnected) => self.connection = self.retry(),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.connection = self.retry("ui-host launch thread stopped".into())
+                }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -527,92 +600,94 @@ impl Ui {
             &mut self.connection,
             Connection::Backoff(Instant::now() + Duration::from_millis(500)),
         );
-        let mut events = Vec::new();
         self.connection = if let Connection::Running(mut link) = state {
-            let mut disconnected = matches!(link.child.try_wait(), Ok(Some(_)) | Err(_));
-            while !disconnected {
+            if link.requested != self.size {
+                let _ = link.tx.send(Msg::Resize {
+                    width: self.size.0,
+                    height: self.size.1,
+                });
+                link.requested = self.size;
+                link.awaiting_resize = true;
+                link.current = None;
+                link.published.clear();
+            }
+            let mut failure = match link.child.try_wait() {
+                Ok(Some(status)) => Some(format!("ui-host exited: {status}")),
+                Ok(None) => None,
+                Err(error) => Some(format!("ui-host status: {error}")),
+            };
+            while failure.is_none() {
                 match link.rx.try_recv() {
-                    Ok(Msg::Slots {
+                    Ok(Incoming::Msg(Msg::Slots {
+                        generation,
                         handles,
                         width,
                         height,
-                    }) => {
-                        let child = HANDLE(link.child.as_raw_handle());
-                        let imported = handles
-                            .into_iter()
-                            .map(|handle| {
-                                self.import(device, dup_from(child, handle)?, width, height)
-                            })
-                            .collect::<Result<_>>();
-                        match imported {
-                            Ok(slots) => link.slots = slots,
-                            Err(error) => {
-                                eprintln!("ui-host slot import: {error:#}");
-                                disconnected = true;
-                                break;
+                    })) => {
+                        if (width, height) == link.requested {
+                            let child = HANDLE(link.child.as_raw_handle());
+                            let imported = handles
+                                .into_iter()
+                                .map(|handle| {
+                                    self.import(device, dup_from(child, handle)?, width, height)
+                                })
+                                .collect::<Result<_>>();
+                            match imported {
+                                Ok(slots) => {
+                                    link.slots = slots;
+                                    link.current = None;
+                                    link.published.clear();
+                                    link.awaiting_resize = false;
+                                }
+                                Err(error) => {
+                                    failure = Some(format!("ui-host slot import: {error:#}"))
+                                }
                             }
+                        } else {
+                            link.awaiting_resize = true;
                         }
-                        link.current = None;
-                        link.published.clear();
-                        link.awaiting_resize = (width, height) != self.size;
-                        if link.size != self.size {
-                            link.size = self.size;
-                            let _ = link.tx.send(Msg::Resize {
-                                width: self.size.0,
-                                height: self.size.1,
-                            });
-                        }
+                        let _ = link.tx.send(Msg::SlotsImported { generation });
                     }
-                    Ok(Msg::FrameReady {
+                    Ok(Incoming::Msg(Msg::FrameReady {
                         slot,
                         pub_id,
                         ready_value,
-                    }) => {
+                    })) => {
                         self.max_ready = self.max_ready.max(ready_value);
-                        if link.awaiting_resize {
-                            continue;
+                        if !link.awaiting_resize {
+                            link.published.push(Published {
+                                slot: slot as usize,
+                                id: pub_id,
+                                ready: ready_value,
+                            });
                         }
-                        link.published.push(Published {
-                            slot: slot as usize,
-                            id: pub_id,
-                            ready: ready_value,
-                        });
                     }
-                    Ok(Msg::Events { seq, json }) => {
-                        self.can_send = true;
+                    Ok(Incoming::Msg(Msg::Ready)) => self.can_send = true,
+                    Ok(Incoming::Reply(seq, reply)) => {
                         if let Some((_, sent)) = link.sent_patches.iter().find(|(id, _)| *id == seq)
                         {
                             link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
                         }
                         link.sent_patches.retain(|(id, _)| *id > seq);
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
-                            if let Some(rects) = value.get("rects")
-                                && let Ok(new_rects) = serde_json::from_value(rects.clone())
-                            {
-                                self.rects = new_rects;
-                            }
-                            if let Some(items) = value.get("events").and_then(|v| v.as_array()) {
-                                events.extend(items.iter().map(ToString::to_string));
-                            }
-                        }
+                        self.receive(seq, reply);
                     }
-                    Ok(Msg::Report { text }) => eprintln!("{text}"),
-                    Ok(_) => {}
+                    Ok(Incoming::Msg(Msg::Report { text })) => self.notes.push(text),
+                    Ok(Incoming::Msg(_)) => {}
                     Err(mpsc::TryRecvError::Empty) => break,
                     Err(mpsc::TryRecvError::Disconnected) => {
-                        disconnected = true;
-                        break;
+                        failure = Some("ui-host closed its pipe".into())
                     }
                 }
             }
-            if disconnected {
+            if let Some(failure) = failure {
                 self.rects.clear();
                 self.can_send = false;
+                self.state_sent = false;
                 if link.connected_at.elapsed() >= Duration::from_secs(5) {
                     self.failures = 0;
                 }
                 retire(*link, true);
-                self.retry()
+                self.retry(failure)
             } else {
                 let ready = unsafe { self.d3d.ready.GetCompletedValue() };
                 let current = link.current.map_or(0, |(_, id)| id);
@@ -623,6 +698,11 @@ impl Ui {
                     .max_by_key(|p| p.id)
                 {
                     let pick = (candidate.slot, candidate.id);
+                    if !link.shown {
+                        link.shown = true;
+                        self.notes
+                            .push(format!("ui-host first frame shown at game frame {frame}"));
+                    }
                     link.current = Some(pick);
                     link.published.retain(|p| p.id > pick.1);
                     let _ = link.tx.send(Msg::Picked {
@@ -631,15 +711,24 @@ impl Ui {
                     });
                 }
                 if self.can_send
-                    && let Some(json) = self.pending_patch.take()
+                    && !self.state_sent
+                    && let Some(json) = &self.state
                 {
-                    if link.tx.send(Msg::Patch { seq: frame, json }).is_ok() {
+                    if link
+                        .tx
+                        .send(Msg::Patch {
+                            seq: frame,
+                            json: json.clone(),
+                        })
+                        .is_ok()
+                    {
                         link.sent_patches.push_back((frame, Instant::now()));
                         if link.sent_patches.len() > 256 {
                             link.sent_patches.pop_front();
                         }
                     }
                     self.can_send = false;
+                    self.state_sent = true;
                 }
                 if link.last_report.elapsed() >= Duration::from_secs(5) {
                     if !link.rtt_ms.is_empty() {
@@ -660,7 +749,35 @@ impl Ui {
         } else {
             state
         };
-        Ok(events)
+        Ok(self.deliver())
+    }
+    fn receive(&mut self, seq: u64, reply: reply::Reply) {
+        self.notes.extend(
+            reply
+                .rejected
+                .into_iter()
+                .map(|item| format!("UI reply {seq} rejected: {item}")),
+        );
+        if let Some(rects) = reply.rects {
+            self.rects = rects;
+        }
+        self.dropped += reply.dropped as u64;
+        for event in reply.events {
+            if self.events.len() < MAX_QUEUED_EVENTS {
+                self.events.push_back(event);
+            } else {
+                self.dropped += 1;
+            }
+        }
+    }
+    fn deliver(&mut self) -> Delivery {
+        let n = self.events.len().min(MAX_EVENTS_PER_FRAME);
+        Delivery {
+            events: (n > 0)
+                .then(|| format!("[{}]", self.events.drain(..n).collect::<Vec<_>>().join(","))),
+            dropped: std::mem::take(&mut self.dropped),
+            notes: std::mem::take(&mut self.notes),
+        }
     }
     pub fn pointer(&self, action: u8, x: f64, y: f64, button: i16) -> bool {
         if !self
@@ -795,5 +912,99 @@ mod tests {
                 .to_string()
                 .contains("unexpected ui-host pipe client")
         );
+    }
+
+    fn device() -> (wgpu::Device, wgpu::Queue) {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12,
+            flags: wgpu::InstanceFlags::default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::default(),
+            display: None,
+        });
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            ..Default::default()
+        }))
+        .expect("DX12 adapter");
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("DX12 device")
+    }
+
+    /// Copies ui-host.exe and ANGLE from the release build beside this test binary, where
+    /// `launch` looks for them.
+    fn install_ui_host() {
+        let exe = std::env::current_exe().unwrap();
+        let deps = exe.parent().unwrap();
+        for file in ["ui-host.exe", "libEGL.dll", "libGLESv2.dll"] {
+            let built = deps.parent().unwrap().join(file);
+            let bytes = std::fs::read(&built).unwrap_or_else(|_| panic!("build {file} first"));
+            if std::fs::read(deps.join(file)).ok() != Some(bytes.clone()) {
+                std::fs::write(deps.join(file), bytes).unwrap();
+            }
+        }
+    }
+
+    fn next_slots(link: &Link) -> (u64, Vec<u64>, (u32, u32)) {
+        loop {
+            if let Incoming::Msg(Msg::Slots {
+                generation,
+                handles,
+                width,
+                height,
+            }) = link.rx.recv_timeout(Duration::from_secs(10)).unwrap()
+            {
+                return (generation, handles, (width, height));
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a DX12 GPU and a release ui-host.exe with ANGLE"]
+    fn a_replaced_ring_stays_importable_until_the_host_answers() {
+        install_ui_host();
+        let (device, queue) = device();
+        let page =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/hud/index.html");
+        let page = std::fs::canonicalize(page).unwrap();
+        let mut ui = Ui::new(
+            &device,
+            &queue,
+            wgpu::TextureFormat::Bgra8Unorm,
+            page.to_string_lossy().into_owned(),
+            (640, 360),
+        )
+        .unwrap();
+        let Connection::Launching(rx) =
+            std::mem::replace(&mut ui.connection, Connection::Backoff(Instant::now()))
+        else {
+            panic!("ui-host is not launching");
+        };
+        let mut link = rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        assert_eq!(next_slots(&link).2, (640, 360));
+        link.tx
+            .send(Msg::Resize {
+                width: 800,
+                height: 450,
+            })
+            .unwrap();
+        let (_, replaced, size) = next_slots(&link);
+        assert_eq!(size, (800, 450));
+        link.tx
+            .send(Msg::Resize {
+                width: 960,
+                height: 540,
+            })
+            .unwrap();
+        let (newest, _, _) = next_slots(&link);
+        let child = HANDLE(link.child.as_raw_handle());
+        let imported: Result<Vec<_>> = replaced
+            .into_iter()
+            .map(|handle| ui.import(&device, dup_from(child, handle)?, 800, 450))
+            .collect();
+        let _ = link.tx.send(Msg::SlotsImported { generation: newest });
+        let _ = link.child.kill();
+        let _ = link.child.wait();
+        assert_eq!(imported.unwrap().len(), 4);
     }
 }

@@ -43,11 +43,20 @@ const uiListeners = new Set();
 let uiState = {};
 globalThis.__nativeBridge = {
   open: path => ops.op_ui_page(path),
-  send: patch => { Object.assign(uiState, patch); ops.op_ui_patch(JSON.stringify(uiState)); },
+  send: patch => {
+    const next = { ...uiState, ...patch };
+    ops.op_ui_patch(JSON.stringify(next));
+    uiState = next;
+  },
   onEvent: callback => { uiListeners.add(callback); return () => uiListeners.delete(callback); },
 };
-globalThis.__hostUiEvent = event => {
-  for (const callback of uiListeners) {
-    try { callback(event); } catch (error) { report(error); }
+globalThis.__hostUiEvents = () => {
+  const events = JSON.parse(ops.op_ui_events());
+  const dropped = ops.op_ui_dropped();
+  if (dropped > 0) events.push({ type: "bridge:dropped", count: dropped });
+  for (const event of events) {
+    for (const callback of uiListeners) {
+      try { callback(event); } catch (error) { report(error); }
+    }
   }
 };
