@@ -1,0 +1,12 @@
+[package]
+name = "threejsc-host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "host"
+path = "src/main.rs"
+
+[dependencies]
+sdl3 = { version = "0.22.1", features = ["build-from-source-static", "raw-window-handle"] }
