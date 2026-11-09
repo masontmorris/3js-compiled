@@ -69,7 +69,7 @@ struct Link {
 }
 enum Connection {
     Launching(mpsc::Receiver<Result<Link>>),
-    Running(Link),
+    Running(Box<Link>),
     Backoff(Instant),
 }
 
@@ -510,7 +510,7 @@ impl Ui {
         if let Connection::Launching(rx) = &self.connection {
             match rx.try_recv() {
                 Ok(Ok(link)) => {
-                    self.connection = Connection::Running(link);
+                    self.connection = Connection::Running(Box::new(link));
                     self.can_send = true;
                 }
                 Ok(Err(error)) => {
@@ -612,7 +612,7 @@ impl Ui {
                 if link.connected_at.elapsed() >= Duration::from_secs(5) {
                     self.failures = 0;
                 }
-                retire(link, true);
+                retire(*link, true);
                 self.retry()
             } else {
                 let ready = unsafe { self.d3d.ready.GetCompletedValue() };
@@ -721,7 +721,7 @@ impl Drop for Ui {
         if let Connection::Running(link) =
             std::mem::replace(&mut self.connection, Connection::Backoff(Instant::now()))
         {
-            retire(link, false);
+            retire(*link, false);
         }
     }
 }
