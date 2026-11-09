@@ -43,6 +43,11 @@ def gpu_replay():
 
 
 @app.function(image=gate_image, cpu=2, memory=4096, timeout=1200)
+def js_tests():
+    subprocess.run(["npm", "test", "-w", "packages/three-native"], cwd="/src", check=True)
+
+
+@app.function(image=gate_image, cpu=2, memory=4096, timeout=1200)
 def wgsl_gate():
     subprocess.run(["dxc", "--version"], check=True)
     subprocess.run(["node", "tools/wgsl-gate/gate.mjs", "/tmp/wgsl-gate"], cwd="/src", check=True)

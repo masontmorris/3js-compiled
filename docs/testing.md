@@ -51,4 +51,15 @@ A stream the host cannot decode produces one error with only a `message`, becaus
 
 `node tools/scenes/record.mjs <name> <dir> [frames]` runs a scene against the recording device in Node and saves each frame's command stream. It needs no GPU. `cargo run -p threejsc-gpu --features wgpu/static-dxc --example replay -- 1280 720 <out.png> <frames...>` replays those streams on a software adapter and saves the last frame. Set `WGPU_BACKEND=dx12` to use WARP on Windows.
 
-`node tools/wgsl-gate/gate.mjs [dir]` records every scene, validates each unique shader with naga, and compiles each entry point's HLSL with DXC at shader model 6.0. It expects only the `invalid-wgsl` fragment shader to fail. `NAGA` and `DXC` name the executables. `modal run tools/modal/lanes.py::wgsl_gate` runs it on Linux, and `modal run tools/modal/lanes.py::gpu_replay` runs the replay tests on llvmpipe. Replay tests run locally with `WGPU_BACKEND=dx12 cargo test -p threejsc-gpu --test replay -- --ignored`. After a scene or recorder change, regenerate the replay fixtures with `node crates/gpu/tests/fixtures/generate.mjs` and `node crates/gpu/tests/fixtures/scenes.mjs`.
+`node tools/wgsl-gate/gate.mjs [dir]` records every scene, validates each unique shader with naga, and compiles each entry point's HLSL with DXC at shader model 6.0. It expects only the `invalid-wgsl` fragment shader to fail. `NAGA` and `DXC` name the executables. `modal run tools/modal/lanes.py::wgsl_gate` runs it on Linux, `modal run tools/modal/lanes.py::gpu_replay` runs the replay tests on llvmpipe, and `modal run tools/modal/lanes.py::js_tests` runs `npm test -w packages/three-native`. On Windows, set `PYTHONUTF8=1` before `modal run`, because the Modal CLI otherwise fails with a `UnicodeEncodeError` while it prints progress. Replay tests run locally with `WGPU_BACKEND=dx12 cargo test -p threejsc-gpu --test replay -- --ignored`. After a scene or recorder change, regenerate the replay fixtures with `node crates/gpu/tests/fixtures/generate.mjs` and `node crates/gpu/tests/fixtures/scenes.mjs`.
+
+The replay parity test compares `basic-cube`, `standard-shadow`, and `invalid-wgsl` with their Edge captures as the mean RGB difference, a fraction of full scale. `standard-shadow` is also compared inside the cube's shadow, the pixel box from (557, 384) to (830, 465), because the shadow covers 3 percent of the frame. Each bound sits just above the difference both software adapters measured:
+
+| Scene | llvmpipe | WARP | Bound |
+| --- | --- | --- | --- |
+| `basic-cube` | 0 | 0 | 0.00001 |
+| `standard-shadow`, frame | 0.0000670 | 0.0000668 | 0.0001 |
+| `standard-shadow`, shadow | 0.0000869 | 0.0000896 | 0.00015 |
+| `invalid-wgsl` | 0 | 0 | 0.00001 |
+
+`standard-shadow-off` records `standard-shadow` with the shadow map disabled (`tools/scenes/record.mjs --no-shadows`). It scores 0.00278 over the frame and 0.111 inside the shadow on both adapters, and the test asserts that it fails both bounds. Regenerate the Edge references with `tools/parity` after a scene change, and remeasure the bounds when the references or the software adapters change.

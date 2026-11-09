@@ -98,7 +98,8 @@ impl Renderer {
             ),
         ))
     }
-    /// Replays JS commands into `frame`. Returns whether they drew to the surface.
+    /// Replays JS commands into `frame`. Returns whether a command acquired the surface at its
+    /// current size; the host clears the frame only when none did.
     pub fn replay(
         &mut self,
         commands: &[u8],
