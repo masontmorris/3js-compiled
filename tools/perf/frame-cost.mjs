@@ -162,8 +162,11 @@ async function native(run) {
   const result = await measure(mark, [child.pid], async () => []);
   const code = await exit;
   if (code !== 0) throw new Error(`Host exited with code ${code}; see ${dir}/host.log`);
-  const rows = (await readFile(resolve(dir, 'frames.csv'), 'utf8')).trim().split(/\r?\n/).slice(1 + options.warmup, 1 + options.warmup + options.frames).map(row => row.split(',').map(Number));
-  return { side: 'native', run, ...result, hostCpuMsP50: median(rows.map(row => row[1])), hostIntervalMsP50: median(rows.map(row => row[2])) };
+  const [header, ...lines] = (await readFile(resolve(dir, 'frames.csv'), 'utf8')).trim().split(/\r?\n/);
+  const columns = header.split(',');
+  const rows = lines.slice(options.warmup, options.warmup + options.frames).map(row => row.split(',').map(Number));
+  const p50 = name => median(rows.map(row => row[columns.indexOf(name)]));
+  return { side: 'native', run, ...result, hostCpuMsP50: p50('cpu_ms'), renderCpuMsP50: p50('render_cpu_ms'), hostIntervalMsP50: p50('interval_ms') };
 }
 
 const results = [];
@@ -172,7 +175,7 @@ try {
     for (const side of [edge, native]) {
       const result = await side(run);
       results.push(result);
-      console.log(`${result.side} run ${run}: ${result.fps.toFixed(0)} fps, ${result.cpuMsPerFrame.toFixed(3)} CPU ms per frame over ${result.processes} processes, callback p50 ${result.callbackP50.toFixed(3)} ms, drawing buffer ${result.drawingBuffer}${result.side === 'native' ? `, host frame CPU p50 ${result.hostCpuMsP50.toFixed(3)} ms, interval p50 ${result.hostIntervalMsP50.toFixed(3)} ms` : ''}`);
+      console.log(`${result.side} run ${run}: ${result.fps.toFixed(0)} fps, ${result.cpuMsPerFrame.toFixed(3)} CPU ms per frame over ${result.processes} processes, callback p50 ${result.callbackP50.toFixed(3)} ms, drawing buffer ${result.drawingBuffer}${result.side === 'native' ? `, game thread CPU p50 ${result.hostCpuMsP50.toFixed(3)} ms, render thread CPU p50 ${result.renderCpuMsP50.toFixed(3)} ms, interval p50 ${result.hostIntervalMsP50.toFixed(3)} ms` : ''}`);
     }
   }
 } finally {
