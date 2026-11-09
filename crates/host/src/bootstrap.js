@@ -14,6 +14,9 @@ globalThis.removeEventListener = (type, callback) => listeners.get(type)?.delete
 globalThis.requestAnimationFrame = callback => { const id = nextFrame++; callbacks.set(id, callback); return id; };
 globalThis.cancelAnimationFrame = id => callbacks.delete(id);
 globalThis.setClearColor = (r, g, b, a = 1) => ops.op_clear(r, g, b, a);
+globalThis.submitGpuCommands = bytes => {
+  if (!ops.op_gpu_submit(bytes)) throw new Error("Only one GPU command stream is allowed per frame");
+};
 const gamepads = [];
 globalThis.navigator = { getGamepads: () => gamepads };
 function report(error) { console.error(error?.stack ?? String(error)); }

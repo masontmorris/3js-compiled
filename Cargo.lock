@@ -2126,6 +2126,7 @@ dependencies = [
  "sdl3",
  "serde",
  "serde_json",
+ "threejsc-gpu",
  "tokio",
  "wgpu",
 ]

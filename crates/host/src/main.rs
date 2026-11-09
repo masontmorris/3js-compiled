@@ -174,6 +174,29 @@ fn main() -> Result<()> {
         let (width, height) = window.size_in_pixels();
         renderer.resize(width, height);
         let color = game.frame()?;
+        if let Some(commands) = game.take_commands() {
+            let responses = match renderer.replay(&commands) {
+                Ok(responses) => responses.into_iter().map(|response| match response {
+                    threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
+                    threejsc_gpu::Response::Error { command, request, message } => json!({"type": "error", "command": command, "request": request, "message": message}),
+                }).collect::<Vec<_>>(),
+                Err(error) => vec![json!({"type": "error", "message": error.to_string()})],
+            };
+            for response in &responses {
+                if response["type"] == "error" {
+                    log(
+                        &log_file,
+                        &format!(
+                            "GPU error: {}",
+                            response["message"].as_str().unwrap_or("unknown error")
+                        ),
+                    )?;
+                }
+            }
+            if !responses.is_empty() {
+                game.event(&json!({"type": "gpu-response", "responses": responses}))?;
+            }
+        }
         let record = options
             .record
             .as_ref()

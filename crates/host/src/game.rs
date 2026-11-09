@@ -5,6 +5,7 @@ use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::Instant};
 pub type Log = Rc<RefCell<File>>;
 struct State {
     color: [f64; 4],
+    commands: Option<Vec<u8>>,
     start: Instant,
     log: Log,
 }
@@ -12,6 +13,15 @@ struct State {
 #[op2(fast)]
 fn op_clear(state: &mut OpState, r: f64, g: f64, b: f64, a: f64) {
     state.borrow_mut::<State>().color = [r, g, b, a];
+}
+#[op2(fast)]
+fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
+    let state = state.borrow_mut::<State>();
+    if state.commands.is_some() {
+        return false;
+    }
+    state.commands = Some(bytes.to_vec());
+    true
 }
 #[op2(fast)]
 fn op_now(state: &mut OpState) -> f64 {
@@ -23,7 +33,7 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
     let _ = writeln!(state.log.borrow_mut(), "{message}");
     eprintln!("{message}");
 }
-extension!(host_ext, ops = [op_clear, op_now, op_log]);
+extension!(host_ext, ops = [op_clear, op_gpu_submit, op_now, op_log]);
 
 pub struct Game<'a> {
     js: JsRuntime,
@@ -38,6 +48,7 @@ impl<'a> Game<'a> {
         });
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
+            commands: None,
             start: Instant::now(),
             log,
         });
@@ -63,6 +74,14 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    pub fn take_commands(&mut self) -> Option<Vec<u8>> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .commands
+            .take()
     }
     fn tick(&mut self) -> Result<()> {
         self.runtime.block_on(async {

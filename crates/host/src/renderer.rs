@@ -7,6 +7,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    executor: threejsc_gpu::Executor,
 }
 impl Renderer {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -87,18 +88,23 @@ impl Renderer {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
+        let executor = threejsc_gpu::Executor::new(device.clone(), queue.clone());
         Ok((
             Self {
                 surface,
                 device,
                 queue,
                 config,
+                executor,
             },
             format!(
                 "adapter: {} ({:?}, {:?})",
                 info.name, info.backend, info.device_type
             ),
         ))
+    }
+    pub fn replay(&mut self, commands: &[u8]) -> Result<Vec<threejsc_gpu::Response>> {
+        Ok(self.executor.replay(commands)?)
     }
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 && (width != self.config.width || height != self.config.height) {

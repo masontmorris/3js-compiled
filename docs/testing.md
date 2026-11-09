@@ -30,3 +30,7 @@ On the shared Windows machine, wrap every host run with the GPU lease. Do not ho
 ```powershell
 python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted host test" -- C:\3jsc\target\debug\host.exe --entry examples/input.js --script path/to/steps.json
 ```
+
+## GPU command responses
+
+An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it, and dispatches a `gpu-response` event when responses are available. The event's `responses` array contains readback objects with `request` and `bytes`, or error objects with a command index, optional request, and message. The host also writes errors to `host.log`. A second submission before the host consumes the first throws an error.
