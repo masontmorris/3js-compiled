@@ -73,11 +73,20 @@ struct Link {
     sent_patches: VecDeque<(u64, Instant)>,
     rtt_ms: Vec<f64>,
     last_report: Instant,
+    connected_at: Instant,
 }
 enum Connection {
     Launching(mpsc::Receiver<Result<Link>>),
     Running(Link),
     Backoff(Instant),
+}
+
+fn retry_delay(failures: u32) -> Duration {
+    if failures <= 1 {
+        Duration::ZERO
+    } else {
+        Duration::from_millis(500)
+    }
 }
 
 fn create_pipe(name: &str) -> Result<File> {
@@ -255,6 +264,7 @@ fn launch(
         sent_patches: VecDeque::new(),
         rtt_ms: Vec::new(),
         last_report: Instant::now(),
+        connected_at: Instant::now(),
     })
 }
 fn retire(mut link: Link, kill: bool) {
@@ -273,6 +283,7 @@ pub struct Ui {
     page: String,
     size: (u32, u32),
     max_ready: u64,
+    failures: u32,
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -377,6 +388,7 @@ impl Ui {
             page,
             size,
             max_ready: 0,
+            failures: 0,
             pipeline,
             layout,
             sampler,
@@ -386,6 +398,10 @@ impl Ui {
         };
         ui.start();
         Ok(ui)
+    }
+    fn retry(&mut self) -> Connection {
+        self.failures = self.failures.saturating_add(1);
+        Connection::Backoff(Instant::now() + retry_delay(self.failures))
     }
     fn start(&mut self) {
         let (tx, rx) = mpsc::channel();
@@ -502,13 +518,9 @@ impl Ui {
                 }
                 Ok(Err(error)) => {
                     eprintln!("ui-host launch: {error:#}");
-                    self.connection =
-                        Connection::Backoff(Instant::now() + Duration::from_millis(500));
+                    self.connection = self.retry();
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.connection =
-                        Connection::Backoff(Instant::now() + Duration::from_millis(500))
-                }
+                Err(mpsc::TryRecvError::Disconnected) => self.connection = self.retry(),
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -600,8 +612,11 @@ impl Ui {
             if disconnected {
                 self.rects.clear();
                 self.can_send = false;
+                if link.connected_at.elapsed() >= Duration::from_secs(5) {
+                    self.failures = 0;
+                }
                 retire(link, true);
-                Connection::Backoff(Instant::now() + Duration::from_millis(500))
+                self.retry()
             } else {
                 let ready = unsafe { self.d3d.ready.GetCompletedValue() };
                 let current = link.current.map_or(0, |(_, id)| id);
@@ -743,6 +758,12 @@ mod tests {
             r"\\.\pipe\threejsc-test-{:032x}",
             u128::from_le_bytes(bytes)
         )
+    }
+
+    #[test]
+    fn isolated_failure_retries_immediately_but_repeated_failures_wait() {
+        assert_eq!(retry_delay(1), Duration::ZERO);
+        assert_eq!(retry_delay(2), Duration::from_millis(500));
     }
 
     #[test]

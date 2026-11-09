@@ -143,7 +143,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 **Build.**
 
 - [ ] Port `spikes/xproc` into `crates/ui-host` and `crates/ui/`. Use a 4-slot ring of NT-handle textures, two shared fences, a non-blocking fence poll, and two named pipes.
-- [ ] Launch `ui-host` off the render thread. Relaunch it after a broken pipe with a 500 ms backoff.
+- [ ] Launch `ui-host` off the render thread. Relaunch it immediately after one failure and wait 500 ms after repeated failures.
 - [ ] Composite the UI texture with premultiplied alpha in sRGB space. Flip the texture in the shader.
 - [ ] Forward a pointer event to `ui-host` when it lands inside an interactive rect the page reported. Send every other pointer event to the game.
 - [ ] Expose `bridge.send(patch)` and `bridge.onEvent(fn)` in JS. Send at most one patch per Servo frame.
