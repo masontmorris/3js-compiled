@@ -21,7 +21,19 @@ The host reads a JSON array with `--script <path>`. It processes steps in order 
 
 The host sends key, pointer, wheel, gamepad, and resize events to `addEventListener` on the global object. `innerWidth` and `innerHeight` hold the window size in pixels and change before each resize event. `self` and `window` refer to the global object, and `TextDecoder` decodes UTF-8. `AbortController` exists because three's loaders construct one. It only records the abort and cancels nothing. Real and scripted key events use DOM `code` values and the same event fields. Printable `key` values use a US keyboard layout; real keys account for Shift and Caps Lock. Scripted keys use the unmodified values. Real wheel deltas use DOM directions, with positive X to the right and positive Y down. Gamepad button 0 is A. `navigator.getGamepads()` exposes the injected button state. `setClearColor(r, g, b, a)` sets the next frame's color with normalized values. `requestAnimationFrame`, `cancelAnimationFrame`, `performance.now()`, and `console` are available to entry modules. A frame callback error is logged and does not stop later callbacks. After each frame callback batch and event dispatch, the host runs promise jobs and polls ready asynchronous operations without waiting for pending operations.
 
-`--record <directory>` saves every rendered frame as a PNG, starting at `000000.png`. The directory must be empty. `--vsync on` is the default. Use `--vsync off` or its alias `--novsync` for uncapped runs. The host writes `host.log` and `frames.csv` in the working directory. The CSV contains the zero-based frame number, CPU-side frame duration in milliseconds, and frame-start interval in milliseconds. CPU-side duration uses a monotonic clock from the start of the frame through submission and any capture, before presentation. It excludes the wait to acquire a surface frame. It includes scheduling delays and waits during the remaining operations.
+`--record <directory>` saves every rendered frame as a PNG, starting at `000000.png`. The directory must be empty. `--vsync on` is the default. Use `--vsync off` or its alias `--novsync` for uncapped runs. The host writes `host.log` and `frames.csv` in the working directory.
+
+The host runs two threads. The game thread owns the window, input, the script, and JavaScript. The render thread owns the surface and the GPU device, and it replays, captures, and presents each frame. JavaScript records frame N+1 while the render thread draws frame N. Before the game thread hands frame N+1 over, it waits for frame N to finish, so at most one recorded frame is ahead of the screen. Input therefore reaches the screen one frame later than it would on a single thread. Each frame carries the window size JavaScript saw, and the render thread resizes the surface to it before drawing, so the first frame after a resize draws at the new size. `capture` and `--record` save exactly the frame JavaScript produced at that step, in order.
+
+`frames.csv` has one row per frame with these columns, in milliseconds after the frame number:
+
+- `frame` is the zero-based frame number.
+- `cpu_ms` is the game thread's time for the frame: input, script steps, JavaScript, and dispatching the previous frame's GPU responses. It excludes the wait for the render thread to finish the previous frame. It includes scheduling delays.
+- `interval_ms` is the time between the starts of this frame and the previous one on the game thread.
+- `render_cpu_ms` is the render thread's time for the frame, through replay, any capture, and present. It excludes the wait to acquire a surface texture.
+- `latency_ms` runs from the start of the frame, where the game thread polls input, to the return of the frame's present call. The swap chain can hold the frame for up to two more refreshes after that.
+
+Closing the window or a `close` step finishes the frame on the render thread, writes its row, and joins the thread. When the render thread fails or panics, the host writes `host failed: render thread ...` to `host.log` and exits with code 1.
 
 ## Frame cost against Edge
 
@@ -37,15 +49,15 @@ python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted
 
 ## GPU command responses
 
-An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it against that frame's surface texture, and dispatches one `gpu-response` event when the replay produced responses. The event's `responses` array holds three kinds of object:
+An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it on the render thread against that frame's surface texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
 
 - `{type: "validation", request}` reports that a shader or render pipeline created with a nonzero request ID compiled.
 - `{type: "readback", request, bytes}` carries a buffer or texture readback. `bytes` is an `ArrayBuffer` that crosses from Rust as one binary buffer.
 - `{type: "error", frame, command, request, label, message}` reports a failed command. `frame` is the stream's frame index, `command` its zero-based index in the stream, `request` the readback or validation ID or `null`, and `label` the label of the resource the command names or `null`.
 
-A stream the host cannot decode produces one error with only a `message`, because no command or frame in it can be trusted. The host writes every error to `host.log` as `GPU error: frame <f>, command <c>, label <l>, request <r>: <message>`, and a stream it cannot decode as `GPU stream rejected in host frame <n>: <message>`. A second submission before the host consumes the first throws an error. The host clears the frame to the `setClearColor` color only when no command acquired the window surface at its current size.
+A stream the host cannot decode produces one error with only a `message`, because no command or frame in it can be trusted. The host writes every error to `host.log` as `GPU error: frame <f>, command <c>, label <l>, request <r>: <message>`, and a stream it cannot decode as `GPU stream rejected in host frame <n>: <message>`, where `<n>` is the host frame that submitted it. A second submission before the host consumes the first throws an error. The host clears the frame to the `setClearColor` color only when no command acquired the window surface at its current size.
 
-`crates/host/tests/gpu.rs` runs the host on the hardware GPU: a binary 1280x720 readback with a shader error, a stream that tries to destroy the surface, and the first frame after a resize. Run it under the lease with `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
+`crates/host/tests/gpu.rs` runs the host on the hardware GPU: a binary 1280x720 readback with a shader error, a stream that tries to destroy the surface, the first frame after a resize, responses from six consecutive frames that each match the frame that requested them, recorded frames and a capture across a resize, identical captures from two runs, a render-thread failure that exits with code 1, and closing the window. Run it under the lease with `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
 
 ## Example scenes
 

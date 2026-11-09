@@ -1,7 +1,38 @@
 use anyhow::{Context, Result, bail};
 use sdl3::video::Window;
-use std::{path::Path, sync::mpsc};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
+/// One frame the game thread recorded, handed to the render thread.
+pub struct Frame {
+    pub index: u64,
+    pub started: Instant,
+    pub size: (u32, u32),
+    pub clear: [f64; 4],
+    pub commands: Option<Vec<u8>>,
+    pub captures: Vec<PathBuf>,
+}
+pub struct Rendered {
+    pub index: u64,
+    pub replay: Option<Result<Vec<threejsc_gpu::Response>, threejsc_gpu::DecodeError>>,
+    /// Render-thread time for the frame, excluding the wait to acquire a surface texture.
+    pub cpu: Duration,
+    /// From the frame's start on the game thread, where it polls input, to the return of present.
+    pub latency: Duration,
+}
+
+/// The window surface and its device. The main thread creates it from the window, and the render
+/// thread owns it.
+pub struct Target {
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+}
+/// Lives on the render thread, because wgpu error scopes belong to the thread that pushes them.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -9,7 +40,7 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
 }
-impl Renderer {
+impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::DX12,
@@ -83,14 +114,12 @@ impl Renderer {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
-        let executor = threejsc_gpu::Executor::new(device.clone(), queue.clone());
         Ok((
             Self {
                 surface,
                 device,
                 queue,
                 config,
-                executor,
             },
             format!(
                 "adapter: {} ({:?}, {:?})",
@@ -98,39 +127,62 @@ impl Renderer {
             ),
         ))
     }
-    /// Replays JS commands into `frame`. Returns whether a command acquired the surface at its
-    /// current size; the host clears the frame only when none did.
-    pub fn replay(
-        &mut self,
-        commands: &[u8],
-        frame: &wgpu::SurfaceTexture,
-    ) -> Result<(Vec<threejsc_gpu::Response>, bool)> {
-        let responses = self.executor.replay(commands, Some(&frame.texture))?;
-        Ok((responses, self.executor.surface_used()))
+}
+impl Renderer {
+    pub fn new(target: Target) -> Self {
+        Self {
+            executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
+            surface: target.surface,
+            device: target.device,
+            queue: target.queue,
+            config: target.config,
+        }
     }
-    pub fn resize(&mut self, width: u32, height: u32) -> bool {
-        let changed =
-            width > 0 && height > 0 && (width != self.config.width || height != self.config.height);
-        if changed {
+    /// Draws `frame` into a surface texture at the frame's size and presents it. The surface is
+    /// cleared to the frame's color only when no command acquired the surface at its current size.
+    pub fn frame(&mut self, frame: Frame) -> Result<Rendered> {
+        let started = Instant::now();
+        self.resize(frame.size);
+        let acquire_started = Instant::now();
+        let surface = self.acquire()?;
+        let acquire_wait = acquire_started.elapsed();
+        let replay = frame
+            .commands
+            .map(|commands| self.executor.replay(&commands, Some(&surface.texture)));
+        let drew = matches!(replay, Some(Ok(_))) && self.executor.surface_used();
+        let captures: Vec<_> = frame.captures.iter().map(PathBuf::as_path).collect();
+        let surface = self.render(surface, (!drew).then_some(frame.clear), &captures)?;
+        self.queue.present(surface);
+        Ok(Rendered {
+            index: frame.index,
+            replay,
+            cpu: started.elapsed() - acquire_wait,
+            latency: frame.started.elapsed(),
+        })
+    }
+    fn resize(&mut self, (width, height): (u32, u32)) {
+        if width != self.config.width || height != self.config.height {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
         }
-        changed
     }
-    pub fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
+    fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(frame),
             other => bail!("surface texture unavailable: {other:?}"),
         }
     }
-    pub fn render(
+    fn render(
         &self,
         frame: wgpu::SurfaceTexture,
         clear: Option<[f64; 4]>,
         captures: &[&Path],
     ) -> Result<wgpu::SurfaceTexture> {
+        if clear.is_none() && captures.is_empty() {
+            return Ok(frame);
+        }
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self
@@ -161,6 +213,8 @@ impl Renderer {
                 multiview_mask: None,
             });
         }
+        // Overlays that composite over the game frame, such as E2's UI, draw here so captures
+        // include them.
         let stride = (self.config.width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = if captures.is_empty() {
@@ -234,8 +288,5 @@ impl Renderer {
             buffer.unmap();
         }
         Ok(frame)
-    }
-    pub fn present(&self, frame: wgpu::SurfaceTexture) {
-        self.queue.present(frame);
     }
 }

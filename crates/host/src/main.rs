@@ -4,7 +4,7 @@ mod renderer;
 
 use anyhow::{Context, Result, bail};
 use game::{Game, Log};
-use renderer::Renderer;
+use renderer::{Frame, Rendered, Renderer, Target};
 use sdl3::event::Event;
 use serde_json::{Value, json};
 use std::{
@@ -14,9 +14,12 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
     rc::Rc,
-    time::Instant,
+    time::{Duration, Instant},
 };
-use threejsc_host::script::{PointerAction, Step};
+use threejsc_host::{
+    script::{PointerAction, Step},
+    worker::Worker,
+};
 
 struct Options {
     entry: String,
@@ -65,6 +68,66 @@ fn log(log: &Log, message: &str) -> Result<()> {
 fn pointer(action: PointerAction, x: f64, y: f64, button: i16) -> Value {
     json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button})
 }
+/// The game thread's share of a frame whose render-thread result has not arrived yet.
+struct Row {
+    cpu: Duration,
+    interval: Duration,
+}
+/// Logs `rendered`'s errors, dispatches its responses to JavaScript, and writes its CSV row.
+fn finish(
+    game: &mut Game<'_>,
+    log_file: &Log,
+    csv: &mut impl Write,
+    row: Row,
+    rendered: Rendered,
+) -> Result<()> {
+    let mut readbacks = HashMap::new();
+    let responses = match rendered.replay {
+        None => Vec::new(),
+        Some(Ok(responses)) => {
+            let mut values = Vec::with_capacity(responses.len());
+            for response in responses {
+                values.push(match response {
+                    threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
+                    threejsc_gpu::Response::Readback { request, bytes } => {
+                        readbacks.insert(request, bytes);
+                        json!({"type": "readback", "request": request})
+                    }
+                    threejsc_gpu::Response::Error { frame, command, request, label, message } => {
+                        let request_text = request.map_or("none".into(), |request| request.to_string());
+                        log(log_file, &format!("GPU error: frame {frame}, command {command}, label {}, request {request_text}: {message}", label.as_deref().unwrap_or("none")))?;
+                        json!({"type": "error", "frame": frame, "command": command, "request": request, "label": label, "message": message})
+                    }
+                });
+            }
+            values
+        }
+        Some(Err(error)) => {
+            log(
+                log_file,
+                &format!(
+                    "GPU stream rejected in host frame {}: {error}",
+                    rendered.index
+                ),
+            )?;
+            vec![json!({"type": "error", "message": error.to_string()})]
+        }
+    };
+    if !responses.is_empty() {
+        game.gpu_responses(responses, readbacks)?;
+    }
+    let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
+    writeln!(
+        csv,
+        "{},{:.4},{:.4},{:.4},{:.4}",
+        rendered.index,
+        ms(row.cpu),
+        ms(row.interval),
+        ms(rendered.cpu),
+        ms(rendered.latency)
+    )?;
+    Ok(())
+}
 fn main() -> Result<()> {
     let options = options()?;
     let steps = if let Some(path) = &options.script {
@@ -81,8 +144,13 @@ fn main() -> Result<()> {
         }
     }
     let log_file = Rc::new(RefCell::new(File::create("host.log")?));
+    run(&options, &steps, &log_file).inspect_err(|error| {
+        let _ = log(&log_file, &format!("host failed: {error:#}"));
+    })
+}
+fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut csv = BufWriter::new(File::create("frames.csv")?);
-    writeln!(csv, "frame,cpu_ms,interval_ms")?;
+    writeln!(csv, "frame,cpu_ms,interval_ms,render_cpu_ms,latency_ms")?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -94,20 +162,24 @@ fn main() -> Result<()> {
         .resizable()
         .position_centered()
         .build()?;
-    let (mut renderer, adapter) = pollster::block_on(Renderer::new(&window, options.vsync))?;
-    log(&log_file, &adapter)?;
+    let (target, adapter) = pollster::block_on(Target::new(&window, options.vsync))?;
+    log(log_file, &adapter)?;
+    let (width, height) = window.size_in_pixels();
+    let mut size = (width.max(1), height.max(1));
     let mut game = Game::new(
         &options.entry,
         log_file.clone(),
         &runtime,
         options.scene.as_deref(),
-        window.size_in_pixels(),
+        size,
     )?;
+    let mut render = Worker::spawn("render", || Ok(Renderer::new(target)), Renderer::frame)?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
     let mut frame = 0u64;
     let mut last = Instant::now();
+    let mut row = None;
     'running: loop {
         let started = Instant::now();
         for event in events.poll_iter() {
@@ -183,69 +255,47 @@ fn main() -> Result<()> {
             }
         }
         let (width, height) = window.size_in_pixels();
-        if renderer.resize(width, height) {
+        if width > 0 && height > 0 && (width, height) != size {
+            size = (width, height);
             game.event(&json!({"type": "resize", "width": width, "height": height}))?;
         }
-        let color = game.frame()?;
-        let acquire_started = Instant::now();
-        let surface_frame = renderer.acquire()?;
-        let acquire_wait = acquire_started.elapsed();
-        let mut clear = Some(color);
-        if let Some(commands) = game.take_commands() {
-            let mut readbacks = HashMap::new();
-            let responses = match renderer.replay(&commands, &surface_frame) {
-                Ok((responses, drew)) => {
-                    if drew {
-                        clear = None;
-                    }
-                    let mut values = Vec::with_capacity(responses.len());
-                    for response in responses {
-                        values.push(match response {
-                            threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
-                            threejsc_gpu::Response::Readback { request, bytes } => {
-                                readbacks.insert(request, bytes);
-                                json!({"type": "readback", "request": request})
-                            }
-                            threejsc_gpu::Response::Error { frame, command, request, label, message } => {
-                                let request_text = request.map_or("none".into(), |request| request.to_string());
-                                log(&log_file, &format!("GPU error: frame {frame}, command {command}, label {}, request {request_text}: {message}", label.as_deref().unwrap_or("none")))?;
-                                json!({"type": "error", "frame": frame, "command": command, "request": request, "label": label, "message": message})
-                            }
-                        });
-                    }
-                    values
-                }
-                Err(error) => {
-                    log(
-                        &log_file,
-                        &format!("GPU stream rejected in host frame {frame}: {error}"),
-                    )?;
-                    vec![json!({"type": "error", "message": error.to_string()})]
-                }
-            };
-            if !responses.is_empty() {
-                game.gpu_responses(responses, readbacks)?;
-            }
-        }
-        let record = options
-            .record
-            .as_ref()
-            .map(|dir| dir.join(format!("{frame:06}.png")));
-        let captures: Vec<_> = capture
-            .as_deref()
+        let clear = game.frame()?;
+        let captures = capture
             .into_iter()
-            .chain(record.as_deref())
+            .chain(
+                options
+                    .record
+                    .as_ref()
+                    .map(|dir| dir.join(format!("{frame:06}.png"))),
+            )
             .collect();
-        let surface_frame = renderer.render(surface_frame, clear, &captures)?;
-        let elapsed_cpu = (started.elapsed() - acquire_wait).as_secs_f64() * 1000.0;
-        renderer.present(surface_frame);
-        let interval = started.duration_since(last).as_secs_f64() * 1000.0;
-        writeln!(csv, "{frame},{elapsed_cpu:.4},{interval:.4}")?;
+        let submitted = Instant::now();
+        let rendered = render.submit(Frame {
+            index: frame,
+            started,
+            size,
+            clear,
+            commands: game.take_commands(),
+            captures,
+        })?;
+        let render_wait = submitted.elapsed();
+        if let Some(rendered) = rendered {
+            let row = row.take().expect("a rendered frame has a game-thread row");
+            finish(&mut game, log_file, &mut csv, row, rendered)?;
+        }
+        row = Some(Row {
+            cpu: started.elapsed() - render_wait,
+            interval: started.duration_since(last),
+        });
         last = started;
         frame += 1;
         wait = wait.saturating_sub(1);
     }
+    if let Some(rendered) = render.close()? {
+        let row = row.take().expect("a rendered frame has a game-thread row");
+        finish(&mut game, log_file, &mut csv, row, rendered)?;
+    }
     csv.flush()?;
-    log(&log_file, &format!("closed after {frame} frames"))?;
+    log(log_file, &format!("closed after {frame} frames"))?;
     Ok(())
 }
