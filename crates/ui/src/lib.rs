@@ -7,7 +7,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::BufReader,
-    os::windows::io::{AsRawHandle, FromRawHandle},
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     process::{Child, Command, Stdio},
     sync::mpsc,
     time::{Duration, Instant},
@@ -40,17 +40,9 @@ struct D3d {
     queue: ID3D12CommandQueue,
     ready: ID3D12Fence,
     done: ID3D12Fence,
-    ready_handle: HANDLE,
-    done_handle: HANDLE,
+    ready_handle: OwnedHandle,
+    done_handle: OwnedHandle,
     luid: (i32, u32),
-}
-impl Drop for D3d {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.ready_handle);
-            let _ = CloseHandle(self.done_handle);
-        }
-    }
 }
 struct Slot {
     _texture: wgpu::Texture,
@@ -312,9 +304,14 @@ impl Ui {
                 .clone();
             let ready = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
             let done = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
-            let ready_handle =
-                raw.CreateSharedHandle(&ready, None, GENERIC_ALL.0, PCWSTR::null())?;
-            let done_handle = raw.CreateSharedHandle(&done, None, GENERIC_ALL.0, PCWSTR::null())?;
+            let ready_handle = OwnedHandle::from_raw_handle(
+                raw.CreateSharedHandle(&ready, None, GENERIC_ALL.0, PCWSTR::null())?
+                    .0,
+            );
+            let done_handle = OwnedHandle::from_raw_handle(
+                raw.CreateSharedHandle(&done, None, GENERIC_ALL.0, PCWSTR::null())?
+                    .0,
+            );
             let luid = raw.GetAdapterLuid();
             D3d {
                 device: raw,
@@ -407,8 +404,8 @@ impl Ui {
         let (tx, rx) = mpsc::channel();
         let (luid, ready, done, base, size, page) = (
             self.d3d.luid,
-            self.d3d.ready_handle.0 as usize,
-            self.d3d.done_handle.0 as usize,
+            self.d3d.ready_handle.as_raw_handle() as usize,
+            self.d3d.done_handle.as_raw_handle() as usize,
             self.max_ready
                 .max(unsafe { self.d3d.ready.GetCompletedValue() })
                 + 1,

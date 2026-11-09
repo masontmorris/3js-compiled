@@ -14,6 +14,7 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
     rc::Rc,
+    sync::mpsc,
     time::Instant,
 };
 use threejsc_host::script::{PointerAction, Step};
@@ -115,20 +116,17 @@ fn main() -> Result<()> {
     let (mut renderer, adapter) = pollster::block_on(Renderer::new(&window, options.vsync))?;
     log(&log_file, &adapter)?;
     let mut game = Game::new(&options.entry, log_file.clone(), &runtime)?;
-    let mut ui = if options.no_ui {
+    let page = if options.no_ui {
         None
-    } else if let Some(page) = game.page() {
-        let page = std::fs::canonicalize(page)?.to_string_lossy().into_owned();
-        Some(ui::Ui::new(
-            &renderer.device,
-            &renderer.queue,
-            renderer.config.format,
-            page,
-            window.size_in_pixels(),
-        )?)
     } else {
-        None
+        game.page()
+            .map(std::fs::canonicalize)
+            .transpose()?
+            .map(|path| path.to_string_lossy().into_owned())
     };
+    let mut ui = None;
+    let mut ui_launch: Option<mpsc::Receiver<Result<ui::Ui>>> = None;
+    let mut pending_patch = None;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
@@ -220,9 +218,26 @@ fn main() -> Result<()> {
         let (width, height) = window.size_in_pixels();
         renderer.resize(width, height);
         let color = game.frame()?;
-        let patch = game.patch();
+        if let Some(patch) = game.patch() {
+            pending_patch = Some(patch);
+        }
+        if let Some(rx) = &ui_launch {
+            match rx.try_recv() {
+                Ok(result) => {
+                    ui = Some(result?);
+                    ui_launch = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => bail!("UI initialization thread stopped"),
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(ui) = &mut ui {
-            for event in ui.update(&renderer.device, frame + 1, (width, height), patch)? {
+            for event in ui.update(
+                &renderer.device,
+                frame + 1,
+                (width, height),
+                pending_patch.take(),
+            )? {
                 game.ui_event(&event)?;
             }
         }
@@ -242,6 +257,18 @@ fn main() -> Result<()> {
             renderer.render(surface_frame, color, &captures, ui.as_ref(), frame + 1)?;
         let elapsed_cpu = (preparation + render_started.elapsed()).as_secs_f64() * 1000.0;
         renderer.present(surface_frame);
+        if frame == 0
+            && let Some(page) = page.clone()
+        {
+            let device = renderer.device.clone();
+            let queue = renderer.queue.clone();
+            let format = renderer.config.format;
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(ui::Ui::new(&device, &queue, format, page, (width, height)));
+            });
+            ui_launch = Some(rx);
+        }
         let interval = started.duration_since(last).as_secs_f64() * 1000.0;
         writeln!(csv, "{frame},{elapsed_cpu:.4},{interval:.4}")?;
         last = started;
