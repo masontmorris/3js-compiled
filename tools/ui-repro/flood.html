@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; }
+  #box { position: absolute; left: 40px; top: 0; width: 200px; height: 100px; background: rgba(255,0,0,.5); }
+</style>
+</head>
+<body>
+<div id="box"></div>
+<script>
+window.__bridge = {
+  tick(p) {
+    const events = [];
+    for (let i = 0; i < 5000; i++) events.push({ type: "flood", i: i, seq: p.seq });
+    return JSON.stringify({ events: events, rects: [[40, 0, 200, 100]] });
+  }
+};
+</script>
+</body>
+</html>

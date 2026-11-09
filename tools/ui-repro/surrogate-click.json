@@ -1,0 +1,9 @@
+[
+  {"type":"wait","frames":300},
+  {"type":"pointer","action":"move","x":560,"y":330},
+  {"type":"pointer","action":"down","x":560,"y":330,"button":0},
+  {"type":"pointer","action":"up","x":560,"y":330,"button":0},
+  {"type":"wait","frames":60},
+  {"type":"capture","path":"tools/ui-repro/out/surrogate.png"},
+  {"type":"close"}
+]

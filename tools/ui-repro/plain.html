@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; font-family: sans-serif; }
+  #box { position: absolute; left: 40px; top: 0; width: 200px; height: 100px; background: rgba(255,0,0,.5); }
+  #btn { position: absolute; left: 40px; top: 130px; width: 120px; height: 40px; }
+  #txt { position: absolute; left: 200px; top: 130px; width: 600px; color: white; font: 12px sans-serif; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="box"></div><button id="btn">go</button><div id="txt"></div>
+<script>
+const events = [];
+document.getElementById("btn").addEventListener("click", () => events.push({ type: "click" }));
+window.__bridge = {
+  tick(p) {
+    const text = String(p.text ?? "");
+    if (p.seq % 60 === 0) events.push({ type: "echo", seq: p.seq, len: text.length, tail: text.slice(-2), cjk: "世界😀" });
+    document.getElementById("txt").textContent = "len " + text.length;
+    const box = document.getElementById("box");
+    box.style.background = p.seq % 120 < 60 ? "rgba(255,0,0,.5)" : "rgba(0,255,0,.5)";
+    const r = document.getElementById("btn").getBoundingClientRect();
+    return JSON.stringify({ events: events.splice(0), rects: [[r.x, r.y, r.width, r.height], [40, 0, 200, 100]] });
+  }
+};
+</script>
+</body>
+</html>

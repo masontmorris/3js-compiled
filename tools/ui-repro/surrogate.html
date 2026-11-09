@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; }
+  #btn { position: absolute; left: 500px; top: 300px; width: 160px; height: 60px; }
+</style>
+</head>
+<body>
+<button id="btn">press</button>
+<script>
+const events = [];
+let fired = false;
+document.getElementById("btn").addEventListener("click", () => events.push({ type: "click" }));
+window.__bridge = {
+  tick(p) {
+    const now = p.seq >= 120 && !fired;
+    if (now) fired = true;
+    if (now) events.push({ type: "echo", tail: "\uD83D" });
+    if (now) events.push({ type: "after", tail: "plain" });
+    const out = { events: events.splice(0) };
+    if (now) {
+      const r = document.getElementById("btn").getBoundingClientRect();
+      out.rects = [[r.x, r.y, r.width, r.height]];
+    }
+    return JSON.stringify(out);
+  }
+};
+</script>
+</body>
+</html>

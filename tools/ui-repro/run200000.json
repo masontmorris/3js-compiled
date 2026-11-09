@@ -1,0 +1,4 @@
+[
+  {"type":"wait","frames":200000},
+  {"type":"close"}
+]
