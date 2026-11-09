@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result, bail};
 use std::{
+    collections::VecDeque,
     fs::File,
     io::BufReader,
     os::windows::io::{AsRawHandle, FromRawHandle},
@@ -69,6 +70,9 @@ struct Link {
     current: Option<(usize, u64)>,
     size: (u32, u32),
     awaiting_resize: bool,
+    sent_patches: VecDeque<(u64, Instant)>,
+    rtt_ms: Vec<f64>,
+    last_report: Instant,
 }
 enum Connection {
     Launching(mpsc::Receiver<Result<Link>>),
@@ -248,6 +252,9 @@ fn launch(
         current: None,
         size,
         awaiting_resize: false,
+        sent_patches: VecDeque::new(),
+        rtt_ms: Vec::new(),
+        last_report: Instant::now(),
     })
 }
 fn retire(mut link: Link, kill: bool) {
@@ -564,7 +571,12 @@ impl Ui {
                         });
                         self.can_send = true;
                     }
-                    Ok(Msg::Events { json, .. }) => {
+                    Ok(Msg::Events { seq, json }) => {
+                        if let Some((_, sent)) = link.sent_patches.iter().find(|(id, _)| *id == seq)
+                        {
+                            link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
+                        }
+                        link.sent_patches.retain(|(id, _)| *id > seq);
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
                             if let Some(rects) = value.get("rects")
                                 && let Ok(new_rects) = serde_json::from_value(rects.clone())
@@ -610,8 +622,27 @@ impl Ui {
                 if self.can_send
                     && let Some(json) = self.pending_patch.take()
                 {
-                    let _ = link.tx.send(Msg::Patch { seq: frame, json });
+                    if link.tx.send(Msg::Patch { seq: frame, json }).is_ok() {
+                        link.sent_patches.push_back((frame, Instant::now()));
+                        if link.sent_patches.len() > 256 {
+                            link.sent_patches.pop_front();
+                        }
+                    }
                     self.can_send = false;
+                }
+                if link.last_report.elapsed() >= Duration::from_secs(5) {
+                    if !link.rtt_ms.is_empty() {
+                        link.rtt_ms.sort_by(f64::total_cmp);
+                        let n = link.rtt_ms.len();
+                        let text = format!(
+                            "ui-host patch round trip ms: n={n} p50={:.3} p95={:.3}",
+                            link.rtt_ms[(n - 1) / 2],
+                            link.rtt_ms[((n - 1) * 95) / 100]
+                        );
+                        let _ = link.tx.send(Msg::Report { text });
+                        link.rtt_ms.clear();
+                    }
+                    link.last_report = Instant::now();
                 }
                 Connection::Running(link)
             }

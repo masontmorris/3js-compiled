@@ -6,6 +6,7 @@ use threejsc_ipc as proto;
 
 use std::{
     cell::{Cell, RefCell},
+    collections::VecDeque,
     fs::File,
     io::BufReader,
     os::windows::io::FromRawHandle,
@@ -97,17 +98,20 @@ impl Drop for Slot {
 }
 
 #[derive(Default)]
-struct Samples(Vec<f64>);
+struct Samples(VecDeque<f64>);
 
 impl Samples {
     fn push(&mut self, d: Duration) {
-        self.0.push(d.as_secs_f64() * 1000.0);
+        if self.0.len() == 1024 {
+            self.0.pop_front();
+        }
+        self.0.push_back(d.as_secs_f64() * 1000.0);
     }
     fn summary(&self) -> String {
         if self.0.is_empty() {
             return "n=0".into();
         }
-        let mut v = self.0.clone();
+        let mut v: Vec<_> = self.0.iter().copied().collect();
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let pct = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize];
         format!(
@@ -128,6 +132,7 @@ struct Stats {
     export: Samples,
     swap: Samples,
     total: Samples,
+    round_trip: Samples,
     published: u64,
     skipped_no_free_slot: u64,
     patches_received: u64,
@@ -310,6 +315,7 @@ fn main() {
     let mut picked: u64 = 0;
     let mut shutting_down = false;
     let mut last_paint = Instant::now();
+    let mut last_report = Instant::now();
 
     loop {
         let mut events = Vec::new();
@@ -385,8 +391,9 @@ fn main() {
                         height,
                     });
                 }
+                Event::Msg(Msg::Report { text }) => eprintln!("{text}"),
                 Event::Msg(Msg::Shutdown) => shutting_down = true,
-                Event::Disconnected => std::process::exit(0),
+                Event::Disconnected => shutting_down = true,
                 Event::Msg(_) | Event::Wake => {}
             }
         }
@@ -395,19 +402,25 @@ fn main() {
         }
 
         if let Some((seq, json)) = newest_patch {
+            let received = Instant::now();
             stats.borrow_mut().patches_evaluated += 1;
             let send = send.clone();
             let stats = stats.clone();
-            webview.evaluate_javascript(
-                format!("__bridge.tick({json})"),
-                move |result| match result {
+            webview.evaluate_javascript(format!("__bridge.tick({json})"), move |result| {
+                stats.borrow_mut().round_trip.push(received.elapsed());
+                match result {
                     Ok(JSValue::String(events)) => send(&Msg::Events { seq, json: events }),
                     _ => stats.borrow_mut().eval_errors += 1,
-                },
-            );
+                }
+            });
         }
 
         servo.spin_event_loop();
+
+        if last_report.elapsed() >= Duration::from_secs(5) {
+            report_stats(&stats.borrow());
+            last_report = Instant::now();
+        }
 
         if new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100) {
             let done_completed = unsafe { done_fence.GetCompletedValue() };
@@ -463,7 +476,10 @@ fn main() {
         }
     }
 
-    let s = stats.borrow();
+    report_stats(&stats.borrow());
+}
+
+fn report_stats(s: &Stats) {
     let mut report = String::new();
     report += &format!("ui-host first painted frame after {:?}\n", s.first_paint);
     report += &format!(
@@ -490,9 +506,9 @@ fn main() {
         "ui-host per published frame ms: total {}\n",
         s.total.summary()
     );
+    report += &format!("ui-host patch evaluation ms: {}\n", s.round_trip.summary());
     report += &memory_line();
-    send(&Msg::Report { text: report });
-    std::process::exit(0);
+    eprint!("{report}");
 }
 
 fn memory_line() -> String {
@@ -630,4 +646,19 @@ fn export_into(
     device
         .destroy_surface(&mut context, &mut surface)
         .expect("destroy pbuffer");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timing_samples_remain_bounded() {
+        let mut samples = Samples::default();
+        for i in 0..10_000 {
+            samples.push(Duration::from_millis(i));
+        }
+        assert_eq!(samples.0.len(), 1024);
+        assert_eq!(samples.0.front(), Some(&8976.0));
+    }
 }
