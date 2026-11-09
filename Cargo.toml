@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/host"]
+exclude = ["spikes/host", "spikes/host/grafting-servo"]
+resolver = "3"
