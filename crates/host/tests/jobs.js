@@ -7,3 +7,6 @@ addEventListener("keydown", () => {
 addEventListener("keyup", () => {
   queueMicrotask(() => setClearColor(0, 0, 1));
 });
+addEventListener("asyncop", () => {
+  Deno.core.ops.op_void_async_deferred().then(() => setClearColor(1, 1, 0));
+});

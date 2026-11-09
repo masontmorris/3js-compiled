@@ -107,6 +107,71 @@ mod tests {
             game.js.op_state().borrow().borrow::<State>().color,
             [0.0, 0.0, 1.0, 1.0]
         );
+        game.event(&serde_json::json!({"type": "asyncop"}))?;
+        let mut color = [0.0; 4];
+        for _ in 0..4 {
+            color = game.frame()?;
+        }
+        assert_eq!(color, [1.0, 1.0, 0.0, 1.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn pending_ops_do_not_block_frames_and_resume_when_ready() -> Result<()> {
+        use std::{
+            cell::Cell,
+            task::{Poll, Waker},
+        };
+
+        struct ReadGate {
+            ready: Cell<bool>,
+            waker: RefCell<Option<Waker>>,
+        }
+        impl deno_core::Resource for ReadGate {
+            fn read(self: Rc<Self>, _limit: usize) -> deno_core::AsyncResult<deno_core::BufView> {
+                Box::pin(std::future::poll_fn(move |cx| {
+                    if self.ready.get() {
+                        Poll::Ready(Ok(Vec::new().into()))
+                    } else {
+                        *self.waker.borrow_mut() = Some(cx.waker().clone());
+                        Poll::Pending
+                    }
+                }))
+            }
+        }
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-ops-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
+        let mut game = Game::new(entry, log, &runtime)?;
+        let gate = Rc::new(ReadGate {
+            ready: Cell::new(false),
+            waker: RefCell::new(None),
+        });
+        let rid = game
+            .js
+            .op_state()
+            .borrow_mut()
+            .resource_table
+            .add_rc(gate.clone());
+        game.js.execute_script("test:pending", format!(
+            "requestAnimationFrame(() => Deno.core.read({rid}, new Uint8Array(1)).then(() => setClearColor(1, 0, 1)))"
+        ))?;
+        game.frame()?;
+        game.frame()?;
+        assert!(gate.waker.borrow().is_some());
+        gate.ready.set(true);
+        gate.waker.borrow_mut().take().unwrap().wake();
+        let mut color = [0.0; 4];
+        for _ in 0..4 {
+            color = game.frame()?;
+        }
+        assert_eq!(color, [1.0, 0.0, 1.0, 1.0]);
         Ok(())
     }
 }
