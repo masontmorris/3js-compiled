@@ -313,3 +313,90 @@ fn recorded_multisample_pass_resolves_with_depth() {
         }]
     );
 }
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        flags: wgpu::InstanceFlags::default(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::default(),
+        display: None,
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .expect("a software Vulkan adapter is required");
+    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut executor = Executor::new(device, queue);
+    assert_eq!(
+        executor
+            .replay(include_bytes!("fixtures/pipeline.bin"))
+            .unwrap(),
+        vec![
+            Response::Validation { request: 3 },
+            Response::Validation { request: 5 },
+            Response::Validation { request: 7 },
+            Response::Readback {
+                request: 100,
+                bytes: vec![4, 3, 2, 1]
+            },
+        ]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn invalid_shader_and_pipeline_report_requests_and_leave_other_work_usable() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        flags: wgpu::InstanceFlags::default(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::default(),
+        display: None,
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .expect("a software Vulkan adapter is required");
+    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut executor = Executor::new(device, queue);
+    let responses = executor
+        .replay(include_bytes!("fixtures/pipeline-errors.bin"))
+        .unwrap();
+    assert_eq!(responses.len(), 6);
+    match &responses[0] {
+        Response::Error {
+            request, message, ..
+        } => {
+            assert_eq!(*request, Some(3));
+            assert!(message.contains("broken material"), "{message}");
+            assert!(message.contains(":2:"), "{message}");
+        }
+        response => panic!("expected shader diagnostic, got {response:?}"),
+    }
+    assert_eq!(responses[1], Response::Validation { request: 5 });
+    assert_eq!(responses[2], Response::Validation { request: 7 });
+    match &responses[3] {
+        Response::Error {
+            request, message, ..
+        } => {
+            assert_eq!(*request, Some(9));
+            assert!(message.contains("broken material pipeline"), "{message}");
+        }
+        response => panic!("expected pipeline error, got {response:?}"),
+    }
+    assert_eq!(responses[4], Response::Validation { request: 11 });
+    assert_eq!(
+        responses[5],
+        Response::Readback {
+            request: 100,
+            bytes: vec![9, 8, 7, 6]
+        }
+    );
+}

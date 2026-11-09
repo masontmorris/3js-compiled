@@ -105,3 +105,39 @@ msaaEncoder.beginRenderPass({
 msaaDevice.queue.submit([msaaEncoder.finish()]);
 msaaDevice.commands.readTexture(100, resolved.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 });
 writeFileSync(new URL('./msaa-pass.bin', import.meta.url), msaaDevice.takeFrame());
+
+const renderDevice = new RecordingDevice();
+const renderLayout = renderDevice.createPipelineLayout({ bindGroupLayouts: [] });
+const vertex = renderDevice.createShaderModule({ label: 'triangle vertex', code: '@vertex fn main(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }' });
+const fragment = renderDevice.createShaderModule({ label: 'triangle fragment', code: '@fragment fn main() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }' });
+renderDevice.pushErrorScope('validation');
+const pipeline = renderDevice.createRenderPipeline({
+  label: 'triangle material', layout: renderLayout,
+  vertex: { module: vertex, entryPoint: 'main', buffers: [{ arrayStride: 8, stepMode: 'vertex', attributes: [{ format: 'float32x2', offset: 0, shaderLocation: 0 }] }] },
+  fragment: { module: fragment, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+  depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+});
+renderDevice.popErrorScope();
+const marker = renderDevice.createBuffer({ size: 4, usage: 12 });
+renderDevice.queue.writeBuffer(marker, 0, new Uint8Array([4, 3, 2, 1]));
+renderDevice.commands.readBuffer(100, marker.handle, 0, 4);
+renderDevice.releaseRenderPipeline(pipeline);
+renderDevice.releasePipelineLayout(renderLayout);
+writeFileSync(new URL('./pipeline.bin', import.meta.url), renderDevice.takeFrame());
+
+const diagnosticDevice = new RecordingDevice();
+const diagnosticLayout = diagnosticDevice.createPipelineLayout({ bindGroupLayouts: [] });
+const bad = diagnosticDevice.createShaderModule({ label: 'broken material', code: '@vertex fn main() -> @builtin(position) vec4f {\n return vec4f(;\n}' });
+const good = diagnosticDevice.createShaderModule({ label: 'good vertex', code: '@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }' });
+const pixel = diagnosticDevice.createShaderModule({ label: 'good fragment', code: '@fragment fn main() -> @location(0) vec4f { return vec4f(1.0); }' });
+const makePipeline = (shader, label) => ({ label, layout: diagnosticLayout, vertex: { module: shader, buffers: [] }, fragment: { module: pixel, targets: [{ format: 'rgba8unorm' }] } });
+diagnosticDevice.pushErrorScope('validation');
+diagnosticDevice.createRenderPipeline(makePipeline(bad, 'broken material pipeline'));
+diagnosticDevice.popErrorScope();
+diagnosticDevice.pushErrorScope('validation');
+diagnosticDevice.createRenderPipeline(makePipeline(good, 'good material pipeline'));
+diagnosticDevice.popErrorScope();
+const diagnosticMarker = diagnosticDevice.createBuffer({ size: 4, usage: 12 });
+diagnosticDevice.queue.writeBuffer(diagnosticMarker, 0, new Uint8Array([9, 8, 7, 6]));
+diagnosticDevice.commands.readBuffer(100, diagnosticMarker.handle, 0, 4);
+writeFileSync(new URL('./pipeline-errors.bin', import.meta.url), diagnosticDevice.takeFrame());

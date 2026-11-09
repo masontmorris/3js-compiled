@@ -172,6 +172,8 @@ export class RecordingDevice {
     this.bindGroupLayouts = new Set();
     this.bindGroups = new Set();
     this.pipelineLayouts = new Set();
+    this.renderPipelines = new Set();
+    this.errorScopes = [];
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -218,9 +220,13 @@ export class RecordingDevice {
   createShaderModule(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
     const handle = this.handles.allocate();
+    const request = this.handles.allocate();
     const code = descriptor.code.replace(/^[\t ]*enable[\t ]+subgroups[\t ]*;[\t ]*(?:\/\/[^\r\n]*)?(?=\r?$)/gm, '');
-    this.commands.createShader(handle, descriptor.label ?? '', code);
-    const shader = { handle, label: descriptor.label ?? '' };
+    const compilationInfo = new Promise(resolve => {
+      this.pending.set(request, { shader: true, resolve, reject: error => resolve({ messages: [{ type: 'error', message: error.message, lineNum: 0, linePos: 0 }] }) });
+    });
+    this.commands.createShader(handle, descriptor.label ?? '', code, request);
+    const shader = { handle, label: descriptor.label ?? '', getCompilationInfo: () => compilationInfo };
     this.shaders.add(shader);
     return shader;
   }
@@ -228,6 +234,17 @@ export class RecordingDevice {
   createCommandEncoder() {
     if (this.destroyed) throw new Error('Device is destroyed');
     return new RecordingCommandEncoder(this);
+  }
+
+  pushErrorScope(filter) {
+    if (filter !== 'validation') throw new Error('Unsupported error scope');
+    this.errorScopes.push([]);
+  }
+
+  popErrorScope() {
+    const scope = this.errorScopes.pop();
+    if (!scope) return Promise.reject(new Error('No error scope'));
+    return Promise.all(scope).then(results => results.find(result => result !== null) ?? null);
   }
 
   readBuffer(buffer, offset, size) {
@@ -242,7 +259,11 @@ export class RecordingDevice {
       const pending = this.pending.get(response.request);
       if (pending) {
         this.pending.delete(response.request);
-        if (response.type === 'readback') pending.resolve(Uint8Array.from(response.bytes).buffer);
+        if (pending.shader) {
+          const location = response.message?.match(/:(\d+):(\d+)/);
+          pending.resolve({ messages: response.type === 'error' ? [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] : [] });
+        } else if (pending.validation) pending.resolve(response.type === 'error' ? { message: response.message } : null);
+        else if (response.type === 'readback') pending.resolve(Uint8Array.from(response.bytes).buffer);
         else pending.reject(new Error(response.message));
       } else if (response.type === 'error' && response.request == null) {
         this.onuncapturederror?.({ error: new Error(response.message) });
@@ -360,6 +381,62 @@ export class RecordingDevice {
     this.commands.destroyResource(layout.handle);
   }
 
+  createRenderPipeline(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    if (!this.pipelineLayouts.has(descriptor.layout)) throw new Error('Invalid pipeline layout');
+    const stage = value => {
+      if (!value || !this.shaders.has(value.module)) throw new Error('Invalid shader module');
+      if (value.constants && Object.keys(value.constants).length) throw new Error('Shader constants are not implemented');
+      return { module: value.module.handle, entryPoint: value.entryPoint ?? 'main' };
+    };
+    const face = (value = {}) => ({
+      compare: value.compare ?? 'always', failOp: value.failOp ?? 'keep',
+      depthFailOp: value.depthFailOp ?? 'keep', passOp: value.passOp ?? 'keep',
+    });
+    const component = (value = {}) => ({
+      srcFactor: value.srcFactor ?? 'one', dstFactor: value.dstFactor ?? 'zero', operation: value.operation ?? 'add',
+    });
+    const primitive = descriptor.primitive ?? {};
+    const samples = descriptor.multisample ?? {};
+    const depth = descriptor.depthStencil;
+    const spec = {
+      label: descriptor.label ?? '', layout: descriptor.layout.handle,
+      vertex: stage(descriptor.vertex), fragment: descriptor.fragment ? stage(descriptor.fragment) : null,
+      buffers: (descriptor.vertex.buffers ?? []).map(buffer => ({
+        arrayStride: buffer.arrayStride, stepMode: buffer.stepMode ?? 'vertex',
+        attributes: buffer.attributes.map(attribute => ({ format: attribute.format, offset: attribute.offset, shaderLocation: attribute.shaderLocation })),
+      })),
+      targets: (descriptor.fragment?.targets ?? []).map(target => target === null ? null : ({
+        format: target.format, writeMask: target.writeMask ?? 15,
+        blend: target.blend ? { color: component(target.blend.color), alpha: component(target.blend.alpha) } : null,
+      })),
+      primitive: {
+        topology: primitive.topology ?? 'triangle-list', stripIndexFormat: primitive.stripIndexFormat ?? null,
+        frontFace: primitive.frontFace ?? 'ccw', cullMode: !primitive.cullMode || primitive.cullMode === 'none' ? null : primitive.cullMode,
+        unclippedDepth: primitive.unclippedDepth ?? false,
+      },
+      depth: depth ? {
+        format: depth.format, depthWriteEnabled: depth.depthWriteEnabled ?? false, depthCompare: depth.depthCompare ?? 'always',
+        stencilFront: face(depth.stencilFront), stencilBack: face(depth.stencilBack),
+        stencilReadMask: depth.stencilReadMask ?? 0xffffffff, stencilWriteMask: depth.stencilWriteMask ?? 0xffffffff,
+        depthBias: depth.depthBias ?? 0, depthBiasSlopeScale: depth.depthBiasSlopeScale ?? 0, depthBiasClamp: depth.depthBiasClamp ?? 0,
+      } : null,
+      samples: { count: samples.count ?? 1, mask: samples.mask ?? 0xffffffff, alphaToCoverageEnabled: samples.alphaToCoverageEnabled ?? false },
+    };
+    const pipeline = { handle: this.handles.allocate(), layout: descriptor.layout };
+    const scope = this.errorScopes.at(-1);
+    const request = scope ? this.handles.allocate() : 0;
+    if (scope) scope.push(new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, validation: true })));
+    this.commands.createRenderPipeline(pipeline.handle, request, spec);
+    this.renderPipelines.add(pipeline);
+    return pipeline;
+  }
+
+  releaseRenderPipeline(pipeline) {
+    if (!this.renderPipelines.delete(pipeline)) return;
+    this.commands.destroyResource(pipeline.handle);
+  }
+
   releaseSampler(sampler) {
     if (!this.samplers.delete(sampler)) return;
     this.commands.destroyResource(sampler.handle);
@@ -392,6 +469,7 @@ export class RecordingDevice {
     for (const texture of this.textures) texture.destroy();
     for (const sampler of this.samplers) this.releaseSampler(sampler);
     for (const group of this.bindGroups) this.releaseBindGroup(group);
+    for (const pipeline of this.renderPipelines) this.releaseRenderPipeline(pipeline);
     for (const layout of this.pipelineLayouts) this.releasePipelineLayout(layout);
     for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
@@ -468,5 +546,14 @@ export class NativeBackend extends WebGPUBackend {
     const shader = this.get(program).module?.module;
     if (shader) this.recordingDevice.releaseShader(shader);
     super.destroyProgram(program);
+  }
+
+  destroyPipeline(pipeline) {
+    const gpu = this.get(pipeline).pipeline;
+    if (gpu) {
+      this.recordingDevice.releaseRenderPipeline(gpu);
+      this.recordingDevice.releasePipelineLayout(gpu.layout);
+    }
+    super.destroyPipeline(pipeline);
   }
 }

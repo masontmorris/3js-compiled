@@ -86,4 +86,5 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Record<'_>>, DecodeError> {
     Ok(records)
 }
 mod executor;
+mod pipeline;
 pub use executor::{Executor, Response};

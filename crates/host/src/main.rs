@@ -186,6 +186,7 @@ fn main() -> Result<()> {
         if let Some(commands) = game.take_commands() {
             let responses = match renderer.replay(&commands) {
                 Ok(responses) => responses.into_iter().map(|response| match response {
+                    threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
                     threejsc_gpu::Response::Readback { request, bytes } => json!({"type": "readback", "request": request, "bytes": bytes}),
                     threejsc_gpu::Response::Error { command, request, message } => json!({"type": "error", "command": command, "request": request, "message": message}),
                 }).collect::<Vec<_>>(),

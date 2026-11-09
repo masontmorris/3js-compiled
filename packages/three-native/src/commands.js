@@ -51,6 +51,19 @@ function u64(value, name) {
   return result;
 }
 
+function encodeUtf8(value) {
+  const bytes = [];
+  for (const character of value) {
+    let point = character.codePointAt(0);
+    if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
+    if (point < 0x80) bytes.push(point);
+    else if (point < 0x800) bytes.push(0xc0 | (point >> 6), 0x80 | (point & 63));
+    else if (point < 0x10000) bytes.push(0xe0 | (point >> 12), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
+    else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 63), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
+  }
+  return new Uint8Array(bytes);
+}
+
 export class Handles {
   #next = 1;
 
@@ -73,29 +86,18 @@ export class CommandEncoder {
     this.#size = size;
   }
 
-  createShader(handle, label, code) {
-    const encode = value => {
-      const bytes = [];
-      for (const character of value) {
-        let point = character.codePointAt(0);
-        if (point >= 0xd800 && point <= 0xdfff) point = 0xfffd;
-        if (point < 0x80) bytes.push(point);
-        else if (point < 0x800) bytes.push(0xc0 | (point >> 6), 0x80 | (point & 63));
-        else if (point < 0x10000) bytes.push(0xe0 | (point >> 12), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
-        else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 63), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
-      }
-      return new Uint8Array(bytes);
-    };
+  createShader(handle, label, code, request = 0) {
     if (typeof label !== 'string' || typeof code !== 'string') throw new TypeError('Shader label and code must be strings');
-    const name = encode(label);
-    const source = encode(code);
-    const payload = new Uint8Array(12 + name.length + source.length);
+    const name = encodeUtf8(label);
+    const source = encodeUtf8(code);
+    const payload = new Uint8Array(16 + name.length + source.length);
     const view = new DataView(payload.buffer);
     view.setUint32(0, u32(handle, 'handle', true), true);
     view.setUint32(4, name.length, true);
     view.setUint32(8, source.length, true);
-    payload.set(name, 12);
-    payload.set(source, 12 + name.length);
+    view.setUint32(12, u32(request, 'request'), true);
+    payload.set(name, 16);
+    payload.set(source, 16 + name.length);
     this.append(Opcode.CREATE_SHADER, payload);
   }
 
@@ -161,6 +163,15 @@ export class CommandEncoder {
     view.setUint32(4, u32(layouts.length, 'layout count'), true);
     layouts.forEach((layout, index) => view.setUint32(8 + index * 4, u32(layout, 'layout handle', true), true));
     this.append(Opcode.CREATE_PIPELINE_LAYOUT, payload);
+  }
+
+  createRenderPipeline(handle, request, descriptor) {
+    const bytes = encodeUtf8(JSON.stringify(descriptor));
+    const payload = new Uint8Array(8 + bytes.length);
+    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
+    new DataView(payload.buffer).setUint32(4, u32(request, 'request'), true);
+    payload.set(bytes, 8);
+    this.append(Opcode.CREATE_RENDER_PIPELINE, payload);
   }
 
   beginRenderPass(colors, depth) {

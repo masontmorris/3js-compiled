@@ -40,8 +40,20 @@ test('shader modules remove the subgroup directive and retain labels', () => {
   const decoder = new TextDecoder();
   assert.equal(record.opcode, Opcode.CREATE_SHADER);
   assert.equal(view.getUint32(0, true), shader.handle);
-  assert.equal(decoder.decode(record.payload.slice(12, 12 + labelLength)), 'material-\u2603');
-  assert.equal(decoder.decode(record.payload.slice(12 + labelLength)), '\n@fragment fn main() {}');
+  assert.equal(decoder.decode(record.payload.slice(16, 16 + labelLength)), 'material-\u2603');
+  assert.equal(decoder.decode(record.payload.slice(16 + labelLength)), '\n@fragment fn main() {}');
+});
+
+test('shader compilation information arrives on the response channel', async () => {
+  const device = new RecordingDevice();
+  const shader = device.createShaderModule({ label: 'broken', code: '@fragment fn main() {}' });
+  const [record] = decodeCommands(device.takeFrame());
+  const request = new DataView(record.payload.buffer).getUint32(12, true);
+  device.receiveResponses([{ type: 'error', request, message: 'shader broken: wgsl:2:7 invalid expression' }]);
+  const info = await shader.getCompilationInfo();
+  assert.equal(info.messages[0].lineNum, 2);
+  assert.equal(info.messages[0].linePos, 7);
+  assert.match(info.messages[0].message, /invalid expression/);
 });
 
 test('program disposal records shader release', async () => {
@@ -259,4 +271,46 @@ test('render pass records depth and multisample resolve attachments', () => {
   assert.equal(view.getUint32(56, true), depthView.handle);
   assert.equal(view.getUint32(60, true), 1);
   assert.equal(view.getFloat32(72, true), 0.5);
+});
+
+test('render pipeline snapshots its shader and vertex descriptors', () => {
+  const device = new RecordingDevice();
+  const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
+  const vertex = device.createShaderModule({ code: '@vertex fn main() {}' });
+  const fragment = device.createShaderModule({ code: '@fragment fn main() {}' });
+  const attribute = { format: 'float32x2', offset: 0, shaderLocation: 0 };
+  const pipeline = device.createRenderPipeline({
+    label: 'material', layout,
+    vertex: { module: vertex, entryPoint: 'main', buffers: [{ arrayStride: 8, attributes: [attribute] }] },
+    fragment: { module: fragment, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+    depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+  });
+  attribute.offset = 4;
+  const record = decodeCommands(device.takeFrame()).find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE);
+  const spec = JSON.parse(new TextDecoder().decode(record.payload.slice(8)));
+  assert.equal(new DataView(record.payload.buffer).getUint32(0, true), pipeline.handle);
+  assert.equal(spec.layout, layout.handle);
+  assert.equal(spec.vertex.module, vertex.handle);
+  assert.equal(spec.buffers[0].attributes[0].offset, 0);
+  assert.equal(spec.depth.depthCompare, 'less');
+  assert.equal(spec.targets[0].writeMask, 15);
+});
+
+test('pipeline validation scopes resolve from the separate response channel', async () => {
+  const device = new RecordingDevice();
+  const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
+  const vertex = device.createShaderModule({ code: '@vertex fn main() {}' });
+  const descriptor = { layout, vertex: { module: vertex, buffers: [] } };
+  device.pushErrorScope('validation');
+  device.createRenderPipeline(descriptor);
+  const first = device.popErrorScope();
+  device.pushErrorScope('validation');
+  device.createRenderPipeline(descriptor);
+  const second = device.popErrorScope();
+  const records = decodeCommands(device.takeFrame()).filter(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE);
+  const request = item => new DataView(item.payload.buffer).getUint32(4, true);
+  device.receiveResponses([{ type: 'error', request: request(records[1]), message: 'bad pipeline' }]);
+  device.receiveResponses([{ type: 'validation', request: request(records[0]) }]);
+  assert.equal(await first, null);
+  assert.equal((await second).message, 'bad pipeline');
 });

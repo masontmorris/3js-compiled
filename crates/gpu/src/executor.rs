@@ -21,6 +21,9 @@ struct Texture {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Response {
+    Validation {
+        request: u32,
+    },
     Readback {
         request: u32,
         bytes: Vec<u8>,
@@ -43,6 +46,7 @@ pub struct Executor {
     bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
     bind_groups: HashMap<u32, wgpu::BindGroup>,
     pipeline_layouts: HashMap<u32, wgpu::PipelineLayout>,
+    render_pipelines: HashMap<u32, Option<wgpu::RenderPipeline>>,
     encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
 }
@@ -76,6 +80,7 @@ impl Executor {
             bind_group_layouts: HashMap::new(),
             bind_groups: HashMap::new(),
             pipeline_layouts: HashMap::new(),
+            render_pipelines: HashMap::new(),
             encoder: None,
             render_pass: None,
         }
@@ -91,6 +96,7 @@ impl Executor {
             || self.bind_group_layouts.contains_key(&handle)
             || self.bind_groups.contains_key(&handle)
             || self.pipeline_layouts.contains_key(&handle)
+            || self.render_pipelines.contains_key(&handle)
     }
 
     pub fn replay(&mut self, frame: &[u8]) -> Result<Vec<Response>, crate::DecodeError> {
@@ -102,9 +108,23 @@ impl Executor {
                 Ok(None) => {}
                 Err(message) => responses.push(Response::Error {
                     command,
-                    request: ((record.opcode == 27 || record.opcode == 28)
-                        && record.payload.len() >= 4)
-                        .then(|| u32_at(record.payload, 0)),
+                    request: if (record.opcode == 27 || record.opcode == 28)
+                        && record.payload.len() >= 4
+                    {
+                        Some(u32_at(record.payload, 0))
+                    } else if record.opcode == 9
+                        && record.payload.len() >= 16
+                        && u32_at(record.payload, 12) != 0
+                    {
+                        Some(u32_at(record.payload, 12))
+                    } else if record.opcode == 13
+                        && record.payload.len() >= 8
+                        && u32_at(record.payload, 4) != 0
+                    {
+                        Some(u32_at(record.payload, 4))
+                    } else {
+                        None
+                    },
                     message,
                 }),
             }
@@ -567,13 +587,14 @@ impl Executor {
                 Ok(None)
             }
             9 => {
-                if payload.len() < 12 {
+                if payload.len() < 16 {
                     return Err("truncated shader".into());
                 }
                 let handle = u32_at(payload, 0);
                 let label_len = u32_at(payload, 4) as usize;
                 let code_len = u32_at(payload, 8) as usize;
-                let label_end = 12usize
+                let request = u32_at(payload, 12);
+                let label_end = 16usize
                     .checked_add(label_len)
                     .ok_or("invalid shader length")?;
                 let code_end = label_end
@@ -585,7 +606,7 @@ impl Executor {
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate shader handle".into());
                 }
-                let label = std::str::from_utf8(&payload[12..label_end])
+                let label = std::str::from_utf8(&payload[16..label_end])
                     .map_err(|_| "invalid shader label")?;
                 let code = std::str::from_utf8(&payload[label_end..code_end])
                     .map_err(|_| "invalid shader source")?;
@@ -601,7 +622,7 @@ impl Executor {
                     return Err(format!("shader {label}: {error}"));
                 }
                 self.shaders.insert(handle, Some(shader));
-                Ok(None)
+                Ok((request != 0).then_some(Response::Validation { request }))
             }
             10 => {
                 if payload.len() < 8 || !(payload.len() - 8).is_multiple_of(32) {
@@ -783,6 +804,59 @@ impl Executor {
                 self.pipeline_layouts.insert(handle, layout);
                 Ok(None)
             }
+            13 => {
+                if payload.len() < 9 {
+                    return Err("invalid render pipeline length".into());
+                }
+                let handle = u32_at(payload, 0);
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate render pipeline handle".into());
+                }
+                let request = u32_at(payload, 4);
+                let spec: crate::pipeline::Pipeline = serde_json::from_slice(&payload[8..])
+                    .map_err(|error| format!("invalid render pipeline descriptor: {error}"))?;
+                let layout = self
+                    .pipeline_layouts
+                    .get(&spec.layout)
+                    .ok_or("unknown pipeline layout handle")?;
+                let vertex = self
+                    .shaders
+                    .get(&spec.vertex.module)
+                    .ok_or("unknown vertex shader handle")?;
+                let fragment = match &spec.fragment {
+                    Some(stage) => Some(
+                        self.shaders
+                            .get(&stage.module)
+                            .ok_or("unknown fragment shader handle")?,
+                    ),
+                    None => None,
+                };
+                if vertex.is_none() || fragment.is_some_and(Option::is_none) {
+                    self.render_pipelines.insert(handle, None);
+                    return Err(format!("pipeline {} uses an invalid shader", spec.label));
+                }
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let result = spec.create(
+                    &self.device,
+                    layout,
+                    vertex.as_ref().unwrap(),
+                    fragment.and_then(Option::as_ref),
+                );
+                let validation_error = pollster::block_on(scope.pop());
+                let pipeline = match (result, validation_error) {
+                    (Ok(pipeline), None) => pipeline,
+                    (Err(error), _) => {
+                        self.render_pipelines.insert(handle, None);
+                        return Err(format!("pipeline {}: {error}", spec.label));
+                    }
+                    (_, Some(error)) => {
+                        self.render_pipelines.insert(handle, None);
+                        return Err(format!("pipeline {}: {error}", spec.label));
+                    }
+                };
+                self.render_pipelines.insert(handle, Some(pipeline));
+                Ok((request != 0).then_some(Response::Validation { request }))
+            }
             14 => {
                 if self.render_pass.is_some() {
                     return Err("render pass already active".into());
@@ -938,6 +1012,7 @@ impl Executor {
                     && self.views.remove(&handle).is_none()
                     && self.samplers.remove(&handle).is_none()
                     && self.bind_groups.remove(&handle).is_none()
+                    && self.render_pipelines.remove(&handle).is_none()
                     && self.pipeline_layouts.remove(&handle).is_none()
                     && self.bind_group_layouts.remove(&handle).is_none()
                 {
