@@ -152,11 +152,7 @@ impl Renderer {
             });
         }
         if let Some(ui) = ui {
-            let srgb_view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
-                format: Some(self.config.format.add_srgb_suffix()),
-                ..Default::default()
-            });
-            ui.draw(&mut encoder, &srgb_view);
+            ui.draw(&mut encoder, &view);
         }
         let stride = (self.config.width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;

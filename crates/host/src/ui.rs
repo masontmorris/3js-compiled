@@ -308,7 +308,7 @@ impl Ui {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: format.add_srgb_suffix(),
+                    format,
                     blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -650,12 +650,7 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 }
 @group(0) @binding(0) var hud: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
-fn to_linear(c: vec3f) -> vec3f {
-    return select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045));
-}
 @fragment fn fs_main(v: VO) -> @location(0) vec4f {
-    let c = textureSample(hud, samp, v.uv);
-    if (c.a <= 0.0) { return vec4f(0.0); }
-    return vec4f(to_linear(c.rgb / c.a) * c.a, c.a);
+    return textureSample(hud, samp, v.uv);
 }
 "#;
