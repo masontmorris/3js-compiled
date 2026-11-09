@@ -1,4 +1,4 @@
-//! Host runs on the hardware GPU. They open a window, so run them under the GPU lease:
+//! These tests run the release host on the hardware GPU and open a window, so run them under the GPU lease:
 //! `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
 
 use std::{
