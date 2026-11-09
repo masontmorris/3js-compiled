@@ -357,10 +357,12 @@ pub(crate) fn maybe_associate_with_script(
             None,
         ));
 
+        // The private value's add-ref hook takes its own reference; the source object
+        // releases it when finalized.
         unsafe {
             SetScriptPrivate(
                 script.get(),
-                &PrivateValue(Rc::into_raw(module_script_data) as *const _),
+                &PrivateValue(Rc::as_ptr(&module_script_data) as *const _),
             );
         }
     }

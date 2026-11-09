@@ -507,6 +507,10 @@ impl ShapingOptions {
     }
 }
 
+/// The most entries the shape cache of one font holds. Text that changes on every
+/// rendering update, such as a frame counter, would otherwise add an entry each time.
+const SHAPED_TEXT_CACHE_LIMIT: usize = 4096;
+
 /// An entry in the shape cache.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ShapeCacheEntry {
@@ -553,6 +557,9 @@ impl Font {
 
         let shaped_text = Arc::new(glyphs);
         let mut cache = self.cached_shape_data.write();
+        if cache.shaped_text.len() >= SHAPED_TEXT_CACHE_LIMIT {
+            cache.shaped_text.clear();
+        }
         cache.shaped_text.insert(lookup_key, shaped_text.clone());
 
         shaped_text
