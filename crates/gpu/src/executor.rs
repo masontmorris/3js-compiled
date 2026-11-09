@@ -43,6 +43,8 @@ pub struct Executor {
     bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
     bind_groups: HashMap<u32, wgpu::BindGroup>,
     pipeline_layouts: HashMap<u32, wgpu::PipelineLayout>,
+    encoder: Option<wgpu::CommandEncoder>,
+    render_pass: Option<wgpu::RenderPass<'static>>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -74,6 +76,8 @@ impl Executor {
             bind_group_layouts: HashMap::new(),
             bind_groups: HashMap::new(),
             pipeline_layouts: HashMap::new(),
+            encoder: None,
+            render_pass: None,
         }
     }
 
@@ -104,6 +108,15 @@ impl Executor {
                     message,
                 }),
             }
+        }
+        if self.render_pass.is_some() || self.encoder.is_some() {
+            self.render_pass = None;
+            self.encoder = None;
+            responses.push(Response::Error {
+                command: records.len(),
+                request: None,
+                message: "incomplete command submission".into(),
+            });
         }
         Ok(responses)
     }
@@ -770,6 +783,99 @@ impl Executor {
                 self.pipeline_layouts.insert(handle, layout);
                 Ok(None)
             }
+            14 => {
+                if self.render_pass.is_some() {
+                    return Err("render pass already active".into());
+                }
+                if payload.len() < 4 || !(payload.len() - 4).is_multiple_of(52) {
+                    return Err("invalid render pass length".into());
+                }
+                if u32_at(payload, 0) as usize != (payload.len() - 4) / 52 {
+                    return Err("invalid color attachment count".into());
+                }
+                let mut colors = Vec::new();
+                for entry in payload[4..].as_chunks::<52>().0 {
+                    let flags = u32_at(entry, 0);
+                    if flags == 0 {
+                        colors.push(None);
+                        continue;
+                    }
+                    if flags != 1 && flags != 3 {
+                        return Err("invalid color attachment flags".into());
+                    }
+                    let view = &self
+                        .views
+                        .get(&u32_at(entry, 4))
+                        .ok_or("unknown color view handle")?
+                        .1;
+                    let resolve_target = if flags & 2 != 0 {
+                        Some(
+                            &self
+                                .views
+                                .get(&u32_at(entry, 8))
+                                .ok_or("unknown resolve view handle")?
+                                .1,
+                        )
+                    } else {
+                        None
+                    };
+                    let component = |offset| f64::from_bits(u64_at(entry, offset));
+                    let clear = wgpu::Color {
+                        r: component(20),
+                        g: component(28),
+                        b: component(36),
+                        a: component(44),
+                    };
+                    if ![clear.r, clear.g, clear.b, clear.a]
+                        .iter()
+                        .all(|value| value.is_finite())
+                    {
+                        return Err("invalid clear color".into());
+                    }
+                    let load = match u32_at(entry, 12) {
+                        0 => wgpu::LoadOp::Load,
+                        1 => wgpu::LoadOp::Clear(clear),
+                        _ => return Err("invalid color load operation".into()),
+                    };
+                    let store = match u32_at(entry, 16) {
+                        0 => wgpu::StoreOp::Discard,
+                        1 => wgpu::StoreOp::Store,
+                        _ => return Err("invalid color store operation".into()),
+                    };
+                    colors.push(Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        depth_slice: None,
+                        resolve_target,
+                        ops: wgpu::Operations { load, store },
+                    }));
+                }
+                let encoder = self
+                    .encoder
+                    .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let pass = encoder
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &colors,
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    })
+                    .forget_lifetime();
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    drop(pass);
+                    self.encoder = None;
+                    return Err(error.to_string());
+                }
+                self.render_pass = Some(pass);
+                Ok(None)
+            }
+            25 => {
+                size(payload, 0)?;
+                drop(self.render_pass.take().ok_or("no active render pass")?);
+                Ok(None)
+            }
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
@@ -786,7 +892,19 @@ impl Executor {
             }
             26 => {
                 size(payload, 0)?;
-                self.queue.submit([]);
+                if self.render_pass.is_some() {
+                    return Err("cannot submit an active render pass".into());
+                }
+                if let Some(encoder) = self.encoder.take() {
+                    let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                    let commands = encoder.finish();
+                    self.queue.submit([commands]);
+                    if let Some(error) = pollster::block_on(scope.pop()) {
+                        return Err(error.to_string());
+                    }
+                } else {
+                    self.queue.submit([]);
+                }
                 Ok(None)
             }
             _ => Err(format!("GPU opcode {opcode} is not implemented")),

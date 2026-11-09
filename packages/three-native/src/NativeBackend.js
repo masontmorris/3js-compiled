@@ -92,6 +92,54 @@ function origin(value = {}) {
     : { x: value.x ?? 0, y: value.y ?? 0, layer: value.z ?? 0 };
 }
 
+class RecordingCommandEncoder {
+  constructor(device) {
+    this.device = device;
+    this.commands = new CommandEncoder();
+    this.activePass = null;
+    this.finished = false;
+  }
+
+  beginRenderPass(descriptor) {
+    if (this.finished || this.activePass) throw new Error('Command encoder is not available');
+    if (descriptor.depthStencilAttachment || descriptor.occlusionQuerySet || descriptor.timestampWrites) throw new Error('Render pass option is not implemented');
+    const viewHandle = view => {
+      if (!(view?.texture instanceof RecordingTexture) || !this.device.textures.has(view.texture) || view.texture.destroyed) throw new Error('Invalid render attachment');
+      return view.handle;
+    };
+    const colors = descriptor.colorAttachments.map(attachment => {
+      if (attachment === null) return null;
+      if (attachment.depthSlice !== undefined) throw new Error('Depth slices are not implemented');
+      const load = { load: 0, clear: 1 }[attachment.loadOp];
+      const store = { discard: 0, store: 1 }[attachment.storeOp];
+      if (load === undefined || store === undefined) throw new Error('Invalid render attachment operation');
+      const clear = attachment.clearValue ?? [0, 0, 0, 0];
+      return {
+        view: viewHandle(attachment.view),
+        resolve: attachment.resolveTarget == null ? null : viewHandle(attachment.resolveTarget),
+        load, store,
+        clear: Array.isArray(clear) ? clear : [clear.r, clear.g, clear.b, clear.a],
+      };
+    });
+    this.commands.beginRenderPass(colors);
+    const pass = {
+      end: () => {
+        if (this.activePass !== pass) throw new Error('Render pass has ended');
+        this.commands.append(Opcode.END_RENDER_PASS);
+        this.activePass = null;
+      },
+    };
+    this.activePass = pass;
+    return pass;
+  }
+
+  finish() {
+    if (this.finished || this.activePass) throw new Error('Command encoder is not complete');
+    this.finished = true;
+    return { device: this.device, commands: this.commands, submitted: false };
+  }
+}
+
 export class RecordingDevice {
   constructor({ features = [], limits = {} } = {}) {
     this.handles = new Handles();
@@ -136,7 +184,11 @@ export class RecordingDevice {
         }, bytes.subarray(offset));
       },
       submit: commands => {
-        if (commands.length !== 0) throw new Error('Command buffer submission is not implemented');
+        if (new Set(commands).size !== commands.length || commands.some(command => command.device !== this || command.submitted)) throw new Error('Invalid command buffer');
+        for (const command of commands) {
+          command.submitted = true;
+          command.commands.drainTo(this.commands);
+        }
         this.commands.append(Opcode.SUBMIT);
       },
     };
@@ -150,6 +202,11 @@ export class RecordingDevice {
     const shader = { handle, label: descriptor.label ?? '' };
     this.shaders.add(shader);
     return shader;
+  }
+
+  createCommandEncoder() {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    return new RecordingCommandEncoder(this);
   }
 
   readBuffer(buffer, offset, size) {

@@ -83,3 +83,12 @@ pipelineDevice.releaseBindGroupLayout(groupLayout);
 pipelineDevice.commands.createBuffer(pipelineLayout.handle, 16, 12);
 pipelineDevice.releasePipelineLayout(pipelineLayout);
 writeFileSync(new URL('./pipeline-layouts.bin', import.meta.url), pipelineDevice.takeFrame());
+
+const clearDevice = new RecordingDevice();
+const colorTexture = clearDevice.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 17 });
+const colorView = colorTexture.createView();
+const encoder = clearDevice.createCommandEncoder();
+encoder.beginRenderPass({ colorAttachments: [{ view: colorView, loadOp: 'clear', storeOp: 'store', clearValue: [1, 0, 0, 1] }] }).end();
+clearDevice.queue.submit([encoder.finish()]);
+clearDevice.commands.readTexture(100, colorTexture.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 });
+writeFileSync(new URL('./clear-pass.bin', import.meta.url), clearDevice.takeFrame());

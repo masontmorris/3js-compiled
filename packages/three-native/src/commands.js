@@ -163,6 +163,33 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_PIPELINE_LAYOUT, payload);
   }
 
+  beginRenderPass(colors) {
+    const payload = new Uint8Array(4 + colors.length * 52);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(colors.length, 'color attachment count'), true);
+    colors.forEach((color, index) => {
+      const offset = 4 + index * 52;
+      if (color === null) return;
+      view.setUint32(offset, 1 | (color.resolve === null ? 0 : 2), true);
+      view.setUint32(offset + 4, u32(color.view, 'view handle'), true);
+      view.setUint32(offset + 8, u32(color.resolve ?? 0, 'resolve handle'), true);
+      view.setUint32(offset + 12, u32(color.load, 'load operation'), true);
+      view.setUint32(offset + 16, u32(color.store, 'store operation'), true);
+      if (color.clear.length !== 4) throw new RangeError('Invalid clear color');
+      color.clear.forEach((component, i) => {
+        if (!Number.isFinite(component)) throw new RangeError('Invalid clear color');
+        view.setFloat64(offset + 20 + i * 8, component, true);
+      });
+    });
+    this.append(Opcode.BEGIN_RENDER_PASS, payload);
+  }
+
+  drainTo(destination) {
+    for (const { opcode, payload } of this.#records) destination.append(opcode, payload);
+    this.#records = [];
+    this.#size = HEADER_SIZE;
+  }
+
   createTextureView(handle, texture, descriptor) {
     const payload = new Uint8Array(36);
     const view = new DataView(payload.buffer);

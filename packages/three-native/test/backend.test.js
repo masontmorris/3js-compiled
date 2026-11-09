@@ -218,3 +218,22 @@ test('pipeline layouts retain their ordered bind group layouts', () => {
   assert.equal(records[3].opcode, Opcode.DESTROY_RESOURCE);
   assert.throws(() => device.createPipelineLayout({ bindGroupLayouts: [{}] }), /Invalid bind group layout/);
 });
+
+test('render passes record attachments at submission and reject resubmission', () => {
+  const device = new RecordingDevice();
+  const texture = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 17 });
+  const view = texture.createView();
+  const encoder = device.createCommandEncoder();
+  const color = { r: 1, g: 0, b: 0, a: 1 };
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view, clearValue: color, loadOp: 'clear', storeOp: 'store' }] });
+  color.r = 0;
+  assert.throws(() => encoder.finish(), /not complete/);
+  pass.end();
+  const buffer = encoder.finish();
+  assert.deepEqual(decodeCommands(device.takeFrame()).map(item => item.opcode), [Opcode.CREATE_TEXTURE, Opcode.CREATE_TEXTURE_VIEW]);
+  device.queue.submit([buffer]);
+  const records = decodeCommands(device.takeFrame());
+  assert.deepEqual(records.map(item => item.opcode), [Opcode.BEGIN_RENDER_PASS, Opcode.END_RENDER_PASS, Opcode.SUBMIT]);
+  assert.equal(new DataView(records[0].payload.buffer).getFloat64(24, true), 1);
+  assert.throws(() => device.queue.submit([buffer]), /Invalid command buffer/);
+});
