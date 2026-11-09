@@ -260,10 +260,19 @@ class RecordingCanvasContext {
   }
 }
 
+// The handle space, frame count and command stream that devices recording for one executor share.
+function stream() {
+  return { handles: new Handles(), commands: new CommandEncoder(), frame: 0 };
+}
+
+// The host replays every NativeBackend in the realm with one executor, and it has one window surface.
+const host = { ...stream(), device: null };
+
 export class RecordingDevice {
-  constructor({ features = [], limits = {} } = {}) {
-    this.handles = new Handles();
-    this.commands = new CommandEncoder();
+  constructor({ features = [], limits = {} } = {}, output = stream()) {
+    this.output = output;
+    this.handles = output.handles;
+    this.commands = output.commands;
     this.buffers = new Set();
     this.textures = new Set();
     this.shaders = new Set();
@@ -273,7 +282,6 @@ export class RecordingDevice {
     this.pipelineLayouts = new Set();
     this.renderPipelines = new Set();
     this.surface = null;
-    this.frame = 0;
     this.errorScopes = [];
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
@@ -609,21 +617,28 @@ export class RecordingDevice {
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
-    for (const pending of this.pending.values()) pending.reject(new Error('Device is destroyed'));
+    // A lost WebGPU device resolves its error scopes with no error and rejects its readbacks.
+    for (const pending of this.pending.values()) {
+      if (pending.validation) pending.resolve(null);
+      else pending.reject(new Error('Device is destroyed'));
+    }
     this.pending.clear();
     this.resolveLost({ reason: 'destroyed', message: '' });
   }
 
   takeFrame() {
+    if (this.destroyed) throw new Error('Device is destroyed');
     this.surface?.destroy();
     this.surface = null;
-    return this.commands.finish(this.frame++);
+    return this.commands.finish(this.output.frame++);
   }
 }
 
 export class NativeBackend extends WebGPUBackend {
   constructor(parameters = {}, capabilities = {}) {
-    const device = new RecordingDevice(capabilities);
+    if (host.device && !host.device.destroyed) throw new Error('Only one live NativeBackend is supported, because the native host has one window surface. Dispose the current renderer first.');
+    const device = new RecordingDevice(capabilities, host);
+    host.device = device;
     super({ outputType: UnsignedByteType, ...parameters, device, context: new RecordingCanvasContext(parameters.canvas) });
     this.recordingDevice = device;
     this.isNativeBackend = true;
@@ -631,6 +646,12 @@ export class NativeBackend extends WebGPUBackend {
 
   takeFrame() {
     return this.recordingDevice.takeFrame();
+  }
+
+  // three does not destroy a device it did not create; this backend created its device.
+  async dispose() {
+    await super.dispose();
+    this.recordingDevice.destroy();
   }
 
   async copyTextureToBuffer(texture, x, y, width, height, faceIndex = 0) {
