@@ -25,11 +25,12 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
 }
 extension!(host_ext, ops = [op_clear, op_now, op_log]);
 
-pub struct Game {
+pub struct Game<'a> {
     js: JsRuntime,
+    runtime: &'a tokio::runtime::Runtime,
 }
-impl Game {
-    pub fn new(entry: &str, log: Log, runtime: &tokio::runtime::Runtime) -> Result<Self> {
+impl<'a> Game<'a> {
+    pub fn new(entry: &str, log: Log, runtime: &'a tokio::runtime::Runtime) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(FsModuleLoader)),
             extensions: vec![host_ext::init()],
@@ -51,16 +52,30 @@ impl Game {
                 Ok::<(), anyhow::Error>(())
             })
             .context("load entry module")?;
-        Ok(Self { js })
+        Ok(Self { js, runtime })
     }
     pub fn event(&mut self, event: &serde_json::Value) -> Result<()> {
         self.js
             .execute_script("host:event", format!("__hostDispatch({event})"))?;
-        Ok(())
+        self.tick()
     }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
+        self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    fn tick(&mut self) -> Result<()> {
+        self.runtime.block_on(async {
+            tokio::task::yield_now().await;
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(match self.js.poll_event_loop(cx, Default::default()) {
+                    std::task::Poll::Ready(result) => result,
+                    std::task::Poll::Pending => Ok(()),
+                })
+            })
+            .await?;
+            Ok(())
+        })
     }
 }
 
@@ -70,9 +85,12 @@ mod tests {
 
     #[test]
     fn promise_jobs_run_after_frames_and_events() -> Result<()> {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
         let _entered = runtime.enter();
-        let log_path = std::env::temp_dir().join(format!("threejsc-jobs-{}.log", std::process::id()));
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-jobs-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
         let mut game = Game::new(entry, log, &runtime)?;
@@ -80,7 +98,15 @@ mod tests {
         game.frame()?;
         assert_eq!(game.frame()?, [0.0, 1.0, 0.0, 1.0]);
         game.event(&serde_json::json!({"type": "keydown"}))?;
-        assert_eq!(game.frame()?, [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(
+            game.js.op_state().borrow().borrow::<State>().color,
+            [1.0, 0.0, 0.0, 1.0]
+        );
+        game.event(&serde_json::json!({"type": "keyup"}))?;
+        assert_eq!(
+            game.js.op_state().borrow().borrow::<State>().color,
+            [0.0, 0.0, 1.0, 1.0]
+        );
         Ok(())
     }
 }
