@@ -63,3 +63,24 @@ impl Game {
         Ok(self.js.op_state().borrow().borrow::<State>().color)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn promise_jobs_run_after_frames_and_events() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let _entered = runtime.enter();
+        let log_path = std::env::temp_dir().join(format!("threejsc-jobs-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
+        let mut game = Game::new(entry, log, &runtime)?;
+
+        game.frame()?;
+        assert_eq!(game.frame()?, [0.0, 1.0, 0.0, 1.0]);
+        game.event(&serde_json::json!({"type": "keydown"}))?;
+        assert_eq!(game.frame()?, [1.0, 0.0, 0.0, 1.0]);
+        Ok(())
+    }
+}
