@@ -23,6 +23,10 @@ The host sends key, pointer, wheel, gamepad, and resize events to `addEventListe
 
 `--record <directory>` saves every rendered frame as a PNG, starting at `000000.png`. The directory must be empty. `--vsync on` is the default. Use `--vsync off` or its alias `--novsync` for uncapped runs. The host writes `host.log` and `frames.csv` in the working directory. The CSV contains the zero-based frame number, CPU-side frame duration in milliseconds, and frame-start interval in milliseconds. CPU-side duration uses a monotonic clock from the start of the frame through submission and any capture, before presentation. It excludes the wait to acquire a surface frame. It includes scheduling delays and waits during the remaining operations.
 
+## Frame cost against Edge
+
+`node tools/perf/frame-cost.mjs` measures E3's perf rule. It alternates Edge and native runs of the `instancing` scene at 1920x1080 with vsync off, three of each by default. Each run skips a 300-frame warm-up and measures the next 1,500 frames. For each run it reports uncapped frames per second and CPU milliseconds per frame. CPU time is summed over `host.exe` natively and over every `msedge` process in Edge, from the processes' CPU counters at the start and end of the measured frames. A probe script wraps `requestAnimationFrame` on both sides, counts frames by callback timestamp, and reports the JavaScript callback time per frame for information. Edge runs in a window by default, so both sides present every frame. `--edge headless` measures headless Edge instead. The tool prints the medians and the rule's verdict and writes `frame-cost.json` to `--out`. It drives the GPU, so run it under the lease after building the release host and the scene bundle.
+
 ## GPU lease
 
 On the shared Windows machine, wrap every host run with the GPU lease. Do not hold a lease while waiting for review.

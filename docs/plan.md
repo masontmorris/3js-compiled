@@ -236,10 +236,10 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. Frame CPU time, JS plus native, p50 and p95, for the 2,000-mesh scene at 1920x1080.
-- [ ] Probe. Run the same camera script in Edge and in the host, interleaved, three runs each, vsync off.
-- [ ] Baseline. Trunk has no backend. Record that, then record Edge's p50 first.
-- [ ] Rule. E3 fails when the native p50 exceeds Edge's p50.
+- [ ] Metric. Uncapped frames per second, and total CPU time per frame summed over every process involved: `host.exe` natively, and every `msedge` process in Edge, including the GPU process, measured from process CPU counters over the run. The 2,000-mesh `instancing` scene at 1920x1080 with vsync off.
+- [ ] Probe. `node tools/perf/frame-cost.mjs` under the GPU lease. Three runs each, interleaved, each run at least 1,500 frames after a 300-frame warm-up.
+- [ ] Baseline. Trunk has no backend. Record that, then use Edge as the baseline.
+- [ ] Rule. E3 fails when native is worse than Edge by more than 10 percent on either number. JavaScript render-call time stays in the report as information.
 
 **Review gate.** None. E3 is not review-gated.
 
