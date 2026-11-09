@@ -68,3 +68,18 @@ test('readbacks resolve by request ID and errors reject separately', async () =>
   assert.deepEqual([...new Uint8Array(await first)], [1, 2, 3, 4]);
   await assert.rejects(second, /read failed/);
 });
+
+test('texture uploads copy the specified source bytes and readbacks use a request ID', async () => {
+  const device = new RecordingDevice();
+  const texture = device.createTexture({ size: [2, 1], format: 'rgba8unorm', usage: 3 });
+  device.queue.writeTexture({ texture }, new Uint8Array([99, 1, 2, 3, 4, 5, 6, 7, 8]), { offset: 1 }, [2, 1]);
+  const pending = device.readTexture(texture, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 1 });
+  const records = decodeCommands(device.takeFrame());
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_TEXTURE, Opcode.WRITE_TEXTURE, Opcode.READ_TEXTURE]);
+  assert.deepEqual([...records[1].payload.slice(40)], [1, 2, 3, 4, 5, 6, 7, 8]);
+  const request = new DataView(records[2].payload.buffer).getUint32(0, true);
+  device.receiveResponses([{ type: 'readback', request, bytes: [1, 2, 3, 4, 5, 6, 7, 8] }]);
+  assert.deepEqual([...new Uint8Array(await pending)], [1, 2, 3, 4, 5, 6, 7, 8]);
+  texture.destroy();
+  assert.equal(decodeCommands(device.takeFrame())[0].opcode, Opcode.DESTROY_TEXTURE);
+});

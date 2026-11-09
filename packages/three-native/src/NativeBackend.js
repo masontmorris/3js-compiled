@@ -33,11 +33,53 @@ class RecordingBuffer {
   }
 }
 
+class RecordingTexture {
+  constructor(device, descriptor) {
+    if ((descriptor.dimension ?? '2d') !== '2d') throw new Error('Only 2D textures are implemented');
+    if (descriptor.viewFormats?.length || descriptor.textureBindingViewDimension) throw new Error('Texture view formats and binding dimensions are not implemented');
+    const size = descriptor.size;
+    this.width = Array.isArray(size) ? size[0] : size.width;
+    this.height = (Array.isArray(size) ? size[1] : size.height) ?? 1;
+    this.depthOrArrayLayers = (Array.isArray(size) ? size[2] : size.depthOrArrayLayers) ?? 1;
+    this.mipLevelCount = descriptor.mipLevelCount ?? 1;
+    this.sampleCount = descriptor.sampleCount ?? 1;
+    this.format = descriptor.format;
+    this.usage = descriptor.usage;
+    this.device = device;
+    this.handle = device.handles.allocate();
+    this.destroyed = false;
+    device.commands.createTexture(this.handle, {
+      width: this.width, height: this.height, layers: this.depthOrArrayLayers,
+      mips: this.mipLevelCount, samples: this.sampleCount, usage: this.usage, format: this.format,
+    });
+  }
+
+  destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.device.commands.destroyTexture(this.handle);
+    this.device.textures.delete(this);
+  }
+}
+
+function extent(value) {
+  return Array.isArray(value)
+    ? { width: value[0], height: value[1] ?? 1, layers: value[2] ?? 1 }
+    : { width: value.width, height: value.height ?? 1, layers: value.depthOrArrayLayers ?? 1 };
+}
+
+function origin(value = {}) {
+  return Array.isArray(value)
+    ? { x: value[0] ?? 0, y: value[1] ?? 0, layer: value[2] ?? 0 }
+    : { x: value.x ?? 0, y: value.y ?? 0, layer: value.z ?? 0 };
+}
+
 export class RecordingDevice {
   constructor({ features = [], limits = {} } = {}) {
     this.handles = new Handles();
     this.commands = new CommandEncoder();
     this.buffers = new Set();
+    this.textures = new Set();
     this.shaders = new Set();
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
@@ -57,6 +99,19 @@ export class RecordingDevice {
         const length = size === undefined ? bytes.byteLength - start : size * elementSize;
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 0 || start + length > bytes.byteLength) throw new RangeError('Invalid buffer data range');
         this.commands.writeBuffer(buffer.handle, offset, bytes.subarray(start, start + length));
+      },
+      writeTexture: (destination, data, layout, size) => {
+        const texture = destination.texture;
+        if (!(texture instanceof RecordingTexture) || texture.device !== this || texture.destroyed) throw new Error('Invalid texture');
+        if (destination.aspect && destination.aspect !== 'all') throw new Error('Texture aspects are not implemented');
+        if (!ArrayBuffer.isView(data) && !(data instanceof ArrayBuffer)) throw new TypeError('Expected texture data');
+        const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+        const offset = layout.offset ?? 0;
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.length) throw new RangeError('Invalid texture data offset');
+        this.commands.writeTexture(texture.handle, {
+          mip: destination.mipLevel ?? 0, ...origin(destination.origin), ...extent(size),
+          bytesPerRow: layout.bytesPerRow ?? 0, rowsPerImage: layout.rowsPerImage ?? 0,
+        }, bytes.subarray(offset));
       },
       submit: commands => {
         if (commands.length !== 0) throw new Error('Command buffer submission is not implemented');
@@ -100,6 +155,20 @@ export class RecordingDevice {
     this.commands.destroyResource(shader.handle);
   }
 
+  createTexture(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    const texture = new RecordingTexture(this, descriptor);
+    this.textures.add(texture);
+    return texture;
+  }
+
+  readTexture(texture, descriptor) {
+    if (!(texture instanceof RecordingTexture) || texture.device !== this || texture.destroyed) throw new Error('Invalid texture');
+    const request = this.handles.allocate();
+    this.commands.readTexture(request, texture.handle, descriptor);
+    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject }));
+  }
+
   createBuffer(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
     const buffer = new RecordingBuffer(this, descriptor);
@@ -110,6 +179,7 @@ export class RecordingDevice {
   destroy() {
     if (this.destroyed) return;
     for (const buffer of this.buffers) buffer.destroy();
+    for (const texture of this.textures) texture.destroy();
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
@@ -133,6 +203,12 @@ export class NativeBackend extends WebGPUBackend {
 
   takeFrame() {
     return this.recordingDevice.takeFrame();
+  }
+
+  async copyTextureToBuffer(texture, x, y, width, height, faceIndex = 0) {
+    const gpuTexture = this.get(texture).texture;
+    const bytes = await this.recordingDevice.readTexture(gpuTexture, { mip: 0, x, y, layer: faceIndex, width, height });
+    return new Uint8Array(bytes);
   }
 
   async getArrayBufferAsync(attribute, target = null, offset = 0, count = -1) {

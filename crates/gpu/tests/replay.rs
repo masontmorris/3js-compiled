@@ -108,8 +108,12 @@ fn texture_upload_and_readback_preserve_rows() {
                     255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255
                 ]
             },
+            Response::Readback {
+                request: 13,
+                bytes: vec![4, 3, 2, 1, 8, 7, 6, 5],
+            },
             Response::Error {
-                command: 4,
+                command: 6,
                 request: Some(12),
                 message: "unknown texture handle".into()
             },

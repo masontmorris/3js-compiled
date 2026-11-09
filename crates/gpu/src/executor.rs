@@ -312,8 +312,8 @@ impl Executor {
                     &payload[40..],
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(bytes_per_row),
-                        rows_per_image: Some(rows_per_image),
+                        bytes_per_row: (bytes_per_row != 0).then_some(bytes_per_row),
+                        rows_per_image: (rows_per_image != 0).then_some(rows_per_image),
                     },
                     extent,
                 );
