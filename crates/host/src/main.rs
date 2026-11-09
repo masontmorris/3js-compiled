@@ -1,4 +1,5 @@
 mod game;
+mod input;
 mod renderer;
 
 use anyhow::{Context, Result, bail};
@@ -56,9 +57,6 @@ fn log(log: &Log, message: &str) -> Result<()> {
     println!("{message}");
     Ok(())
 }
-fn keyboard(code: String, down: bool) -> Value {
-    json!({"type": if down { "keydown" } else { "keyup" }, "code": code, "key": code, "repeat": false})
-}
 fn pointer(action: PointerAction, x: f64, y: f64, button: u8) -> Value {
     json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button})
 }
@@ -111,21 +109,32 @@ fn main() -> Result<()> {
                 Event::KeyDown {
                     scancode: Some(code),
                     ..
-                } => game.event(&keyboard(format!("Key{code:?}"), true))?,
+                } => game.event(&input::keyboard(&input::scancode_code(code), true, false))?,
                 Event::KeyUp {
                     scancode: Some(code),
                     ..
-                } => game.event(&keyboard(format!("Key{code:?}"), false))?,
+                } => game.event(&input::keyboard(&input::scancode_code(code), false, false))?,
                 Event::MouseMotion { x, y, .. } => {
                     game.event(&pointer(PointerAction::Move, x.into(), y.into(), 0))?
                 }
-                Event::MouseButtonDown { x, y, .. } => {
-                    game.event(&pointer(PointerAction::Down, x.into(), y.into(), 0))?
-                }
-                Event::MouseButtonUp { x, y, .. } => {
-                    game.event(&pointer(PointerAction::Up, x.into(), y.into(), 0))?
-                }
+                Event::MouseButtonDown {
+                    x, y, mouse_btn, ..
+                } => game.event(&pointer(
+                    PointerAction::Down,
+                    x.into(),
+                    y.into(),
+                    input::mouse_button(mouse_btn),
+                ))?,
+                Event::MouseButtonUp {
+                    x, y, mouse_btn, ..
+                } => game.event(&pointer(
+                    PointerAction::Up,
+                    x.into(),
+                    y.into(),
+                    input::mouse_button(mouse_btn),
+                ))?,
                 Event::MouseWheel { x, y, .. } => {
+                    let (x, y) = input::wheel(x, y);
                     game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?
                 }
                 _ => {}
@@ -138,7 +147,7 @@ fn main() -> Result<()> {
                 match step {
                     Step::Wait { frames } if *frames > 0 => { wait = *frames; break; }
                     Step::Wait { .. } => {},
-                    Step::Key { code, down } => game.event(&keyboard(code.clone(), *down))?,
+                    Step::Key { code, down } => game.event(&input::keyboard(code, *down, false))?,
                     Step::Pointer { action, x, y, button } => game.event(&pointer(*action, *x, *y, *button))?,
                     Step::Wheel { x, y } => game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?,
                     Step::Gamepad { button, down, index } => game.event(&json!({"type":"gamepadbutton", "button":button, "down":down, "index":index}))?,
