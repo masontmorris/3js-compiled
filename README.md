@@ -22,3 +22,5 @@ You can use this project under either of these licenses, at your option:
 The spike crates in `spikes/host` and `spikes/xproc` contain code adapted from [wgpu-graft](https://github.com/mark-ik/wgpu-graft). Those crates are under the Mozilla Public License 2.0, as their `Cargo.toml` files state.
 
 Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in this project, as defined in the Apache-2.0 license, is dual licensed as above, without any additional terms or conditions.
+
+The ported bridge protocol in `crates/ipc`, the Servo process in `crates/ui-host`, and `crates/host/src/ui.rs` contain code adapted from that spike and are under MPL-2.0. The vendored adapter in `crates/ui-host/grafting-servo` retains its MPL-2.0 headers.

@@ -1,0 +1,6 @@
+[
+  {"type":"wait","frames":600},
+  {"type":"capture","path":"e2-hud.png"},
+  {"type":"wait","frames":1},
+  {"type":"close"}
+]

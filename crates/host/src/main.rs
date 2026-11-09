@@ -1,6 +1,7 @@
 mod game;
 mod input;
 mod renderer;
+mod ui;
 
 use anyhow::{Context, Result, bail};
 use game::{Game, Log};
@@ -22,6 +23,7 @@ struct Options {
     script: Option<PathBuf>,
     record: Option<PathBuf>,
     vsync: bool,
+    no_ui: bool,
 }
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
@@ -29,6 +31,7 @@ fn options() -> Result<Options> {
     let mut script = None;
     let mut record = None;
     let mut vsync = true;
+    let mut no_ui = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
@@ -42,6 +45,7 @@ fn options() -> Result<Options> {
                 }
             }
             "--novsync" => vsync = false,
+            "--no-ui" => no_ui = true,
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -50,6 +54,7 @@ fn options() -> Result<Options> {
         script,
         record,
         vsync,
+        no_ui,
     })
 }
 fn log(log: &Log, message: &str) -> Result<()> {
@@ -59,6 +64,24 @@ fn log(log: &Log, message: &str) -> Result<()> {
 }
 fn pointer(action: PointerAction, x: f64, y: f64, button: i16) -> Value {
     json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button})
+}
+fn route_pointer(
+    game: &mut Game<'_>,
+    ui: Option<&ui::Ui>,
+    action: PointerAction,
+    x: f64,
+    y: f64,
+    button: i16,
+) -> Result<()> {
+    let code = match action {
+        PointerAction::Move => 0,
+        PointerAction::Down => 1,
+        PointerAction::Up => 2,
+    };
+    if !ui.is_some_and(|ui| ui.pointer(code, x, y, button)) {
+        game.event(&pointer(action, x, y, button))?;
+    }
+    Ok(())
 }
 fn main() -> Result<()> {
     let options = options()?;
@@ -92,6 +115,20 @@ fn main() -> Result<()> {
     let (mut renderer, adapter) = pollster::block_on(Renderer::new(&window, options.vsync))?;
     log(&log_file, &adapter)?;
     let mut game = Game::new(&options.entry, log_file.clone(), &runtime)?;
+    let mut ui = if options.no_ui {
+        None
+    } else if let Some(page) = game.page() {
+        let page = std::fs::canonicalize(page)?.to_string_lossy().into_owned();
+        Some(ui::Ui::new(
+            &renderer.device,
+            &renderer.queue,
+            renderer.config.format,
+            page,
+            window.size_in_pixels(),
+        )?)
+    } else {
+        None
+    };
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
@@ -128,25 +165,34 @@ fn main() -> Result<()> {
                     repeat,
                     keymod,
                 ))?,
-                Event::MouseMotion { x, y, .. } => {
-                    game.event(&pointer(PointerAction::Move, x.into(), y.into(), 0))?
-                }
+                Event::MouseMotion { x, y, .. } => route_pointer(
+                    &mut game,
+                    ui.as_ref(),
+                    PointerAction::Move,
+                    x.into(),
+                    y.into(),
+                    0,
+                )?,
                 Event::MouseButtonDown {
                     x, y, mouse_btn, ..
-                } => game.event(&pointer(
+                } => route_pointer(
+                    &mut game,
+                    ui.as_ref(),
                     PointerAction::Down,
                     x.into(),
                     y.into(),
                     input::mouse_button(mouse_btn),
-                ))?,
+                )?,
                 Event::MouseButtonUp {
                     x, y, mouse_btn, ..
-                } => game.event(&pointer(
+                } => route_pointer(
+                    &mut game,
+                    ui.as_ref(),
                     PointerAction::Up,
                     x.into(),
                     y.into(),
                     input::mouse_button(mouse_btn),
-                ))?,
+                )?,
                 Event::MouseWheel { x, y, .. } => {
                     let (x, y) = input::wheel(x, y);
                     game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?
@@ -162,7 +208,7 @@ fn main() -> Result<()> {
                     Step::Wait { frames } if *frames > 0 => { wait = *frames; break; }
                     Step::Wait { .. } => {},
                     Step::Key { code, down } => game.event(&input::keyboard(code, *down, false, sdl3::keyboard::Mod::NOMOD))?,
-                    Step::Pointer { action, x, y, button } => game.event(&pointer(*action, *x, *y, i16::from(*button)))?,
+                    Step::Pointer { action, x, y, button } => route_pointer(&mut game, ui.as_ref(), *action, *x, *y, i16::from(*button))?,
                     Step::Wheel { x, y } => game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?,
                     Step::Gamepad { button, down, index } => game.event(&json!({"type":"gamepadbutton", "button":button, "down":down, "index":index}))?,
                     Step::Resize { width, height } => { if *width == 0 || *height == 0 { bail!("resize dimensions must be nonzero"); } window.set_size(*width, *height)?; },
@@ -174,6 +220,12 @@ fn main() -> Result<()> {
         let (width, height) = window.size_in_pixels();
         renderer.resize(width, height);
         let color = game.frame()?;
+        let patch = game.patch();
+        if let Some(ui) = &mut ui {
+            for event in ui.update(&renderer.device, frame + 1, (width, height), patch)? {
+                game.ui_event(&event)?;
+            }
+        }
         let record = options
             .record
             .as_ref()
@@ -186,7 +238,8 @@ fn main() -> Result<()> {
         let preparation = started.elapsed();
         let surface_frame = renderer.acquire()?;
         let render_started = Instant::now();
-        let surface_frame = renderer.render(surface_frame, color, &captures)?;
+        let surface_frame =
+            renderer.render(surface_frame, color, &captures, ui.as_ref(), frame + 1)?;
         let elapsed_cpu = (preparation + render_started.elapsed()).as_secs_f64() * 1000.0;
         renderer.present(surface_frame);
         let interval = started.duration_since(last).as_secs_f64() * 1000.0;

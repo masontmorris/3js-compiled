@@ -38,3 +38,16 @@ globalThis.__hostFrame = () => {
     try { callback(now); } catch (error) { report(error); }
   }
 };
+
+const uiListeners = new Set();
+let uiState = {};
+globalThis.__nativeBridge = {
+  open: path => ops.op_ui_page(path),
+  send: patch => { Object.assign(uiState, patch); ops.op_ui_patch(JSON.stringify(uiState)); },
+  onEvent: callback => { uiListeners.add(callback); return () => uiListeners.delete(callback); },
+};
+globalThis.__hostUiEvent = event => {
+  for (const callback of uiListeners) {
+    try { callback(event); } catch (error) { report(error); }
+  }
+};

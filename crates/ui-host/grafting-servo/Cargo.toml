@@ -1,0 +1,47 @@
+[package]
+rust-version = "1.97.1"
+name = "grafting-servo"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+repository = "https://github.com/merely-made/wgpu-graft"
+description = "Servo-specific offscreen rendering adapter built on grafting"
+
+[lib]
+name = "servo_wgpu_interop_adapter"
+
+[features]
+default = ["wgpu-29"]
+# Select the wgpu version to match the host; forwarded to grafting.
+# The newest enabled version takes precedence.
+wgpu-30 = ["dep:wgpu_30", "grafting/wgpu-30"]
+wgpu-29 = ["dep:wgpu_29", "grafting/wgpu-29"]
+wgpu-28 = ["dep:wgpu_28", "grafting/wgpu-28"]
+servo = ["dep:servo"]
+
+[dependencies]
+euclid = "0.22.11"
+gleam = "0.15.1"
+# surfman and glow must match whatever the tracked Servo line pins, or the GL
+# producer types (Surface/Connection/Context) fail to unify across the Servo
+# RenderingContext boundary and every trait method reads as a type mismatch.
+# Servo v0.7.0 uses surfman 0.14; glow stays at 0.17. Check Servo's
+# own manifests when bumping the line, not just that the lockfile resolves.
+glow = "0.17.0"
+image = "0.25.8"
+rustls = "0.23.37"
+surfman = "0.14.0"
+dpi = "0.1.2"
+winit = "0.30.13"
+wgpu_30 = { package = "wgpu", version = "30.0.1", features = ["metal"], optional = true }
+wgpu_29 = { package = "wgpu", version = "29.0.1", features = ["metal"], optional = true }
+wgpu_28 = { package = "wgpu", version = "28.0.0", features = ["metal"], optional = true }
+grafting = { version = "0.6.0", default-features = false, features = ["surfman"] }
+# SPIKE: registry release of the same Servo 0.7.0 (the upstream file pins git rev aac43a3f).
+servo = { version = "=0.7.0", optional = true }
+
+
+
+# SPIKE (xproc): LUID-based adapter selection without a local wgpu device.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi"] }

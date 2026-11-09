@@ -6,7 +6,6 @@ use std::io::{self, Read, Write};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
-    // ── game -> ui-host ──
     /// Fence handles are already duplicated into the ui-host's handle table.
     Hello {
         ready_fence: u64,
@@ -36,7 +35,6 @@ pub enum Msg {
         height: u32,
     },
     Shutdown,
-    // ── ui-host -> game ──
     /// Shared NT handles of the ring textures, valid in the ui-host's handle table.
     Slots {
         handles: Vec<u64>,
@@ -214,6 +212,12 @@ impl Msg {
             },
             10 => {
                 let n = c.u32()? as usize;
+                if n > c.0.len().saturating_sub(8) / 8 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid slot count",
+                    ));
+                }
                 let handles = (0..n).map(|_| c.u64()).collect::<io::Result<Vec<_>>>()?;
                 Msg::Slots {
                     handles,

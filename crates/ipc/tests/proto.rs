@@ -54,3 +54,10 @@ fn messages_round_trip_and_truncated_frames_fail() {
         assert!(read_msg(&mut &bytes[..bytes.len() - 1]).is_err());
     }
 }
+
+#[test]
+fn rejects_oversized_and_forged_frames() {
+    assert!(read_msg(&mut &((1024u32 * 1024 + 1).to_le_bytes())[..]).is_err());
+    let frame = [5, 0, 0, 0, 10, 255, 255, 255, 255];
+    assert!(read_msg(&mut &frame[..]).is_err());
+}

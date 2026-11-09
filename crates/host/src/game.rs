@@ -7,6 +7,8 @@ struct State {
     color: [f64; 4],
     start: Instant,
     log: Log,
+    page: Option<String>,
+    patch: Option<String>,
 }
 
 #[op2(fast)]
@@ -23,7 +25,18 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
     let _ = writeln!(state.log.borrow_mut(), "{message}");
     eprintln!("{message}");
 }
-extension!(host_ext, ops = [op_clear, op_now, op_log]);
+#[op2(fast)]
+fn op_ui_page(state: &mut OpState, #[string] page: String) {
+    state.borrow_mut::<State>().page = Some(page);
+}
+#[op2(fast)]
+fn op_ui_patch(state: &mut OpState, #[string] patch: String) {
+    state.borrow_mut::<State>().patch = Some(patch);
+}
+extension!(
+    host_ext,
+    ops = [op_clear, op_now, op_log, op_ui_page, op_ui_patch]
+);
 
 pub struct Game<'a> {
     js: JsRuntime,
@@ -40,6 +53,8 @@ impl<'a> Game<'a> {
             color: [0.0, 0.0, 0.0, 1.0],
             start: Instant::now(),
             log,
+            page: None,
+            patch: None,
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
@@ -63,6 +78,27 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    pub fn page(&mut self) -> Option<String> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .page
+            .take()
+    }
+    pub fn patch(&mut self) -> Option<String> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .patch
+            .take()
+    }
+    pub fn ui_event(&mut self, event: &str) -> Result<()> {
+        self.js
+            .execute_script("host:ui-event", format!("__hostUiEvent({event})"))?;
+        self.tick()
     }
     fn tick(&mut self) -> Result<()> {
         self.runtime.block_on(async {

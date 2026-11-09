@@ -4,9 +4,9 @@ use std::{path::Path, sync::mpsc};
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub config: wgpu::SurfaceConfiguration,
 }
 impl Renderer {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -83,7 +83,7 @@ impl Renderer {
             },
             desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: vec![format.add_srgb_suffix()],
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
@@ -119,6 +119,8 @@ impl Renderer {
         frame: wgpu::SurfaceTexture,
         color: [f64; 4],
         captures: &[&Path],
+        ui: Option<&crate::ui::Ui>,
+        frame_number: u64,
     ) -> Result<wgpu::SurfaceTexture> {
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self
@@ -148,6 +150,13 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+        }
+        if let Some(ui) = ui {
+            let srgb_view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.add_srgb_suffix()),
+                ..Default::default()
+            });
+            ui.draw(&mut encoder, &srgb_view);
         }
         let stride = (self.config.width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -184,6 +193,9 @@ impl Renderer {
             Some(buffer)
         };
         self.queue.submit(Some(encoder.finish()));
+        if let Some(ui) = ui {
+            ui.signal(frame_number)?;
+        }
         if let Some(buffer) = buffer {
             let slice = buffer.slice(..);
             let (tx, rx) = mpsc::channel();
