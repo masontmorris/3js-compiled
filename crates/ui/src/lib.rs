@@ -578,9 +578,9 @@ impl Ui {
                             id: pub_id,
                             ready: ready_value,
                         });
-                        self.can_send = true;
                     }
                     Ok(Msg::Events { seq, json }) => {
+                        self.can_send = true;
                         if let Some((_, sent)) = link.sent_patches.iter().find(|(id, _)| *id == seq)
                         {
                             link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);

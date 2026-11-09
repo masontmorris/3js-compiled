@@ -146,7 +146,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 - [ ] Launch `ui-host` off the render thread. Relaunch it immediately after one failure and wait 500 ms after repeated failures.
 - [ ] Composite the UI texture with premultiplied alpha in sRGB space. Flip the texture in the shader.
 - [ ] Forward a pointer event to `ui-host` when it lands inside an interactive rect the page reported. Send every other pointer event to the game.
-- [ ] Expose `bridge.send(patch)` and `bridge.onEvent(fn)` in JS. Send at most one patch per Servo frame.
+- [ ] Expose `bridge.send(patch)` and `bridge.onEvent(fn)` in JS. Keep at most one patch evaluation in flight and send the latest snapshot after its reply.
 
 **You see.**
 

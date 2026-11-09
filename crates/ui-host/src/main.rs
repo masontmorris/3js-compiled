@@ -409,8 +409,16 @@ fn main() {
             webview.evaluate_javascript(format!("__bridge.tick({json})"), move |result| {
                 stats.borrow_mut().round_trip.push(received.elapsed());
                 match result {
-                    Ok(JSValue::String(events)) => send(&Msg::Events { seq, json: events }),
-                    _ => stats.borrow_mut().eval_errors += 1,
+                    Ok(JSValue::String(events)) => {
+                        send(&Msg::Events { seq, json: events });
+                    }
+                    _ => {
+                        stats.borrow_mut().eval_errors += 1;
+                        send(&Msg::Events {
+                            seq,
+                            json: "{}".into(),
+                        });
+                    }
                 }
             });
         }
