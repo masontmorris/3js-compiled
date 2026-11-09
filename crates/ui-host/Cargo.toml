@@ -41,3 +41,5 @@ resolver = "3"
 
 [patch.crates-io]
 glslopt = { git = "https://github.com/jamienicol/glslopt-rs", rev = "68019f02a1437d785408ebc8ce7fd20341fffb8a" }
+servo-fonts = { path = "vendor/servo-fonts" }
+servo-script = { path = "vendor/servo-script" }
