@@ -125,3 +125,33 @@ fn texture_upload_and_readback_preserve_rows() {
         ]
     );
 }
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn anisotropic_comparison_sampler_is_created_and_released() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        flags: wgpu::InstanceFlags::default(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::default(),
+        display: None,
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .expect("a software Vulkan adapter is required");
+    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut executor = Executor::new(device, queue);
+    assert_eq!(
+        executor
+            .replay(include_bytes!("fixtures/samplers.bin"))
+            .unwrap(),
+        vec![Response::Error {
+            command: 2,
+            request: None,
+            message: "unknown resource handle".into()
+        },]
+    );
+}

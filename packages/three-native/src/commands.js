@@ -110,6 +110,19 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_TEXTURE, payload);
   }
 
+  createSampler(handle, descriptor) {
+    const payload = new Uint8Array(44);
+    const view = new DataView(payload.buffer);
+    const values = [u32(handle, 'handle', true), descriptor.addressU, descriptor.addressV, descriptor.addressW, descriptor.mag, descriptor.min, descriptor.mipmap];
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'sampler field'), true));
+    if (!Number.isFinite(descriptor.lodMin) || !Number.isFinite(descriptor.lodMax)) throw new RangeError('Invalid sampler LOD');
+    view.setFloat32(28, descriptor.lodMin, true);
+    view.setFloat32(32, descriptor.lodMax, true);
+    view.setUint32(36, u32(descriptor.compare, 'sampler compare'), true);
+    view.setUint32(40, u32(descriptor.anisotropy, 'sampler anisotropy'), true);
+    this.append(Opcode.CREATE_SAMPLER, payload);
+  }
+
   createTextureView(handle, texture, descriptor) {
     const payload = new Uint8Array(36);
     const view = new DataView(payload.buffer);

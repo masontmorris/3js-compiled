@@ -36,3 +36,9 @@ textures.destroyTexture(10);
 textures.readTexture(12, 10, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
 textures.destroyResource(14);
 writeFileSync(new URL('./textures.bin', import.meta.url), textures.finish());
+
+const samplers = new CommandEncoder();
+samplers.createSampler(20, { addressU: 1, addressV: 0, addressW: 2, mag: 1, min: 1, mipmap: 1, lodMin: 0, lodMax: 8, compare: 2, anisotropy: 8 });
+samplers.destroyResource(20);
+samplers.destroyResource(20);
+writeFileSync(new URL('./samplers.bin', import.meta.url), samplers.finish());

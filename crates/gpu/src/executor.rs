@@ -39,6 +39,7 @@ pub struct Executor {
     shaders: HashMap<u32, Option<wgpu::ShaderModule>>,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, (u32, wgpu::TextureView)>,
+    samplers: HashMap<u32, wgpu::Sampler>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -66,6 +67,7 @@ impl Executor {
             shaders: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
+            samplers: HashMap::new(),
         }
     }
 
@@ -101,6 +103,7 @@ impl Executor {
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
                     || self.views.contains_key(&handle)
+                    || self.samplers.contains_key(&handle)
                 {
                     return Err("invalid or duplicate buffer handle".into());
                 }
@@ -232,6 +235,7 @@ impl Executor {
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
                     || self.views.contains_key(&handle)
+                    || self.samplers.contains_key(&handle)
                 {
                     return Err("invalid or duplicate texture handle".into());
                 }
@@ -346,6 +350,7 @@ impl Executor {
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
                     || self.views.contains_key(&handle)
+                    || self.samplers.contains_key(&handle)
                 {
                     return Err("invalid or duplicate view handle".into());
                 }
@@ -491,6 +496,69 @@ impl Executor {
                 staging.unmap();
                 Ok(Some(Response::Readback { request, bytes }))
             }
+            8 => {
+                size(payload, 44)?;
+                let handle = u32_at(payload, 0);
+                if handle == 0
+                    || self.buffers.contains_key(&handle)
+                    || self.shaders.contains_key(&handle)
+                    || self.textures.contains_key(&handle)
+                    || self.views.contains_key(&handle)
+                    || self.samplers.contains_key(&handle)
+                {
+                    return Err("invalid or duplicate sampler handle".into());
+                }
+                let address = |value| match value {
+                    0 => Ok(wgpu::AddressMode::ClampToEdge),
+                    1 => Ok(wgpu::AddressMode::Repeat),
+                    2 => Ok(wgpu::AddressMode::MirrorRepeat),
+                    _ => Err("unsupported sampler address mode"),
+                };
+                let filter = |value| match value {
+                    0 => Ok(wgpu::FilterMode::Nearest),
+                    1 => Ok(wgpu::FilterMode::Linear),
+                    _ => Err("unsupported sampler filter"),
+                };
+                let mipmap_filter = match u32_at(payload, 24) {
+                    0 => wgpu::MipmapFilterMode::Nearest,
+                    1 => wgpu::MipmapFilterMode::Linear,
+                    _ => return Err("unsupported sampler mipmap filter".into()),
+                };
+                let compare = match u32_at(payload, 36) {
+                    0 => None,
+                    1 => Some(wgpu::CompareFunction::Never),
+                    2 => Some(wgpu::CompareFunction::Less),
+                    3 => Some(wgpu::CompareFunction::Equal),
+                    4 => Some(wgpu::CompareFunction::LessEqual),
+                    5 => Some(wgpu::CompareFunction::Greater),
+                    6 => Some(wgpu::CompareFunction::NotEqual),
+                    7 => Some(wgpu::CompareFunction::GreaterEqual),
+                    8 => Some(wgpu::CompareFunction::Always),
+                    _ => return Err("unsupported sampler comparison".into()),
+                };
+                let anisotropy_clamp =
+                    u16::try_from(u32_at(payload, 40)).map_err(|_| "invalid sampler anisotropy")?;
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: None,
+                    address_mode_u: address(u32_at(payload, 4))?,
+                    address_mode_v: address(u32_at(payload, 8))?,
+                    address_mode_w: address(u32_at(payload, 12))?,
+                    mag_filter: filter(u32_at(payload, 16))?,
+                    min_filter: filter(u32_at(payload, 20))?,
+                    mipmap_filter,
+                    lod_min_clamp: f32::from_bits(u32_at(payload, 28)),
+                    lod_max_clamp: f32::from_bits(u32_at(payload, 32)),
+                    compare,
+                    anisotropy_clamp,
+                    border_color: None,
+                });
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
+                self.samplers.insert(handle, sampler);
+                Ok(None)
+            }
             9 => {
                 if payload.len() < 12 {
                     return Err("truncated shader".into());
@@ -512,6 +580,7 @@ impl Executor {
                     || self.shaders.contains_key(&handle)
                     || self.textures.contains_key(&handle)
                     || self.views.contains_key(&handle)
+                    || self.samplers.contains_key(&handle)
                 {
                     return Err("invalid or duplicate shader handle".into());
                 }
@@ -536,7 +605,10 @@ impl Executor {
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
-                if self.shaders.remove(&handle).is_none() && self.views.remove(&handle).is_none() {
+                if self.shaders.remove(&handle).is_none()
+                    && self.views.remove(&handle).is_none()
+                    && self.samplers.remove(&handle).is_none()
+                {
                     return Err("unknown resource handle".into());
                 }
                 Ok(None)

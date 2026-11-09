@@ -99,6 +99,7 @@ export class RecordingDevice {
     this.buffers = new Set();
     this.textures = new Set();
     this.shaders = new Set();
+    this.samplers = new Set();
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -173,6 +174,39 @@ export class RecordingDevice {
     this.commands.destroyResource(shader.handle);
   }
 
+  createSampler(descriptor = {}) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    const addresses = { 'clamp-to-edge': 0, repeat: 1, 'mirror-repeat': 2 };
+    const filters = { nearest: 0, linear: 1 };
+    const comparisons = { never: 1, less: 2, equal: 3, 'less-equal': 4, greater: 5, 'not-equal': 6, 'greater-equal': 7, always: 8 };
+    const value = (map, key, fallback) => {
+      const result = map[key ?? fallback];
+      if (result === undefined) throw new Error('Unsupported sampler option');
+      return result;
+    };
+    const handle = this.handles.allocate();
+    this.commands.createSampler(handle, {
+      addressU: value(addresses, descriptor.addressModeU, 'clamp-to-edge'),
+      addressV: value(addresses, descriptor.addressModeV, 'clamp-to-edge'),
+      addressW: value(addresses, descriptor.addressModeW, 'clamp-to-edge'),
+      mag: value(filters, descriptor.magFilter, 'nearest'),
+      min: value(filters, descriptor.minFilter, 'nearest'),
+      mipmap: value(filters, descriptor.mipmapFilter, 'nearest'),
+      lodMin: descriptor.lodMinClamp ?? 0,
+      lodMax: descriptor.lodMaxClamp ?? 32,
+      compare: descriptor.compare === undefined ? 0 : value(comparisons, descriptor.compare),
+      anisotropy: descriptor.maxAnisotropy ?? 1,
+    });
+    const sampler = { handle };
+    this.samplers.add(sampler);
+    return sampler;
+  }
+
+  releaseSampler(sampler) {
+    if (!this.samplers.delete(sampler)) return;
+    this.commands.destroyResource(sampler.handle);
+  }
+
   createTexture(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
     const texture = new RecordingTexture(this, descriptor);
@@ -198,6 +232,7 @@ export class RecordingDevice {
     if (this.destroyed) return;
     for (const buffer of this.buffers) buffer.destroy();
     for (const texture of this.textures) texture.destroy();
+    for (const sampler of this.samplers) this.releaseSampler(sampler);
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
@@ -236,6 +271,19 @@ export class NativeBackend extends WebGPUBackend {
     if (target === null) return bytes;
     new Uint8Array(target).set(new Uint8Array(bytes));
     return target;
+  }
+
+  updateSampler(binding) {
+    const { sampler: previous, samplerKey: key } = this.get(binding);
+    const result = super.updateSampler(binding);
+    if (previous && !this.textureUtils._samplerCache.has(key)) this.recordingDevice.releaseSampler(previous);
+    return result;
+  }
+
+  destroySampler(binding) {
+    const { sampler, samplerKey: key } = this.get(binding);
+    super.destroySampler(binding);
+    if (sampler && !this.textureUtils._samplerCache.has(key)) this.recordingDevice.releaseSampler(sampler);
   }
 
   destroyProgram(program) {

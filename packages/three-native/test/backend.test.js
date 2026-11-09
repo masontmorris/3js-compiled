@@ -97,3 +97,33 @@ test('texture views retain their parent and record selected mip and layer ranges
   texture.destroy();
   assert.throws(() => texture.createView());
 });
+
+test('sampler options and release are recorded', () => {
+  const device = new RecordingDevice();
+  const sampler = device.createSampler({ addressModeU: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: 8, compare: 'less' });
+  device.releaseSampler(sampler);
+  const records = decodeCommands(device.takeFrame());
+  const payload = new DataView(records[0].payload.buffer);
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_SAMPLER, Opcode.DESTROY_RESOURCE]);
+  assert.equal(payload.getUint32(0, true), sampler.handle);
+  assert.equal(payload.getUint32(4, true), 1);
+  assert.equal(payload.getUint32(36, true), 2);
+  assert.equal(payload.getUint32(40, true), 8);
+});
+
+test('shared samplers release only after the last binding', async () => {
+  const { Texture } = await import('three/webgpu');
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const texture = new Texture();
+  const first = { texture, textureNode: {} };
+  const second = { texture, textureNode: {} };
+  backend.updateSampler(first);
+  backend.updateSampler(second);
+  backend.destroySampler(first);
+  backend.destroySampler(second);
+  assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode), [Opcode.CREATE_SAMPLER, Opcode.DESTROY_RESOURCE]);
+  await renderer.dispose();
+});
