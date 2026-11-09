@@ -141,3 +141,39 @@ const diagnosticMarker = diagnosticDevice.createBuffer({ size: 4, usage: 12 });
 diagnosticDevice.queue.writeBuffer(diagnosticMarker, 0, new Uint8Array([9, 8, 7, 6]));
 diagnosticDevice.commands.readBuffer(100, diagnosticMarker.handle, 0, 4);
 writeFileSync(new URL('./pipeline-errors.bin', import.meta.url), diagnosticDevice.takeFrame());
+
+const drawDevice = new RecordingDevice();
+const drawGroupLayout = drawDevice.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, buffer: { minBindingSize: 16 } }] });
+const drawLayout = drawDevice.createPipelineLayout({ bindGroupLayouts: [drawGroupLayout] });
+const drawVertex = drawDevice.createShaderModule({ label: 'draw vertex', code: '@vertex fn main(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }' });
+const drawFragment = drawDevice.createShaderModule({ label: 'draw fragment', code: '@group(0) @binding(0) var<uniform> color: vec4f; @fragment fn main() -> @location(0) vec4f { return color; }' });
+const drawPipeline = drawDevice.createRenderPipeline({
+  label: 'draw material', layout: drawLayout,
+  vertex: { module: drawVertex, buffers: [{ arrayStride: 8, attributes: [{ format: 'float32x2', offset: 0, shaderLocation: 0 }] }] },
+  fragment: { module: drawFragment, targets: [{ format: 'rgba8unorm' }] },
+});
+const vertices = drawDevice.createBuffer({ size: 24, usage: 40 });
+drawDevice.queue.writeBuffer(vertices, 0, new Float32Array([-1, -1, 3, -1, -1, 3]));
+const indices = drawDevice.createBuffer({ size: 8, usage: 24 });
+drawDevice.queue.writeBuffer(indices, 0, new Uint16Array([0, 1, 2, 0]));
+const uniform = drawDevice.createBuffer({ size: 16, usage: 72 });
+drawDevice.queue.writeBuffer(uniform, 0, new Float32Array([1, 0, 0, 1]));
+const drawGroup = drawDevice.createBindGroup({ layout: drawGroupLayout, entries: [{ binding: 0, resource: { buffer: uniform } }] });
+const outputs = [0, 1].map(() => drawDevice.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 17 }));
+const drawEncoder = drawDevice.createCommandEncoder();
+for (const [index, output] of outputs.entries()) {
+  const pass = drawEncoder.beginRenderPass({ colorAttachments: [{ view: output.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+  pass.setPipeline(drawPipeline);
+  pass.setBindGroup(0, drawGroup);
+  pass.setVertexBuffer(0, vertices);
+  pass.setViewport(0, 0, 4, 4, 0, 1);
+  pass.setScissorRect(0, 0, 4, 4);
+  pass.setBlendConstant([0, 0, 0, 0]);
+  pass.setStencilReference(0);
+  if (index === 0) pass.draw(3);
+  else { pass.setIndexBuffer(indices, 'uint16'); pass.drawIndexed(3); }
+  pass.end();
+}
+drawDevice.queue.submit([drawEncoder.finish()]);
+outputs.forEach((output, index) => drawDevice.commands.readTexture(100 + index, output.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 }));
+writeFileSync(new URL('./draw.bin', import.meta.url), drawDevice.takeFrame());

@@ -143,7 +143,40 @@ class RecordingCommandEncoder {
       };
     }
     this.commands.beginRenderPass(colors, depth);
+    const record = (write, ...args) => {
+      if (this.activePass !== pass) throw new Error('Render pass has ended');
+      write(...args);
+    };
+    const bufferHandle = buffer => {
+      if (!(buffer instanceof RecordingBuffer) || !this.device.buffers.has(buffer) || buffer.destroyed) throw new Error('Invalid render buffer');
+      return buffer.handle;
+    };
     const pass = {
+      setPipeline: pipeline => {
+        if (!this.device.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
+        record(() => this.commands.words(Opcode.SET_PIPELINE, [pipeline.handle]));
+      },
+      setBindGroup: (index, group, offsets = []) => {
+        if (!this.device.bindGroups.has(group)) throw new Error('Invalid bind group');
+        record(() => this.commands.words(Opcode.SET_BIND_GROUP, [index, group.handle, offsets.length, ...offsets]));
+      },
+      setVertexBuffer: (slot, buffer, offset = 0, size = 0) => {
+        record(() => this.commands.bufferRange(Opcode.SET_VERTEX_BUFFER, slot, bufferHandle(buffer), offset, size));
+      },
+      setIndexBuffer: (buffer, format, offset = 0, size = 0) => {
+        const formatValue = { uint16: 0, uint32: 1 }[format];
+        if (formatValue === undefined) throw new Error('Invalid index format');
+        record(() => this.commands.bufferRange(Opcode.SET_INDEX_BUFFER, formatValue, bufferHandle(buffer), offset, size));
+      },
+      setViewport: (x, y, width, height, minDepth, maxDepth) => record(() => this.commands.floats(Opcode.SET_VIEWPORT, [x, y, width, height, minDepth, maxDepth], 4)),
+      setScissorRect: (x, y, width, height) => record(() => this.commands.words(Opcode.SET_SCISSOR, [x, y, width, height])),
+      setBlendConstant: color => record(() => this.commands.floats(Opcode.SET_BLEND_CONSTANT, Array.isArray(color) ? color : [color.r, color.g, color.b, color.a], 8)),
+      setStencilReference: reference => record(() => this.commands.words(Opcode.SET_STENCIL_REFERENCE, [reference])),
+      draw: (vertices, instances = 1, firstVertex = 0, firstInstance = 0) => record(() => this.commands.words(Opcode.DRAW, [vertices, instances, firstVertex, firstInstance])),
+      drawIndexed: (indices, instances = 1, firstIndex = 0, baseVertex = 0, firstInstance = 0) => {
+        if (!Number.isInteger(baseVertex) || baseVertex < -0x80000000 || baseVertex > 0x7fffffff) throw new RangeError('Invalid base vertex');
+        record(() => this.commands.words(Opcode.DRAW_INDEXED, [indices, instances, firstIndex, baseVertex >>> 0, firstInstance]));
+      },
       end: () => {
         if (this.activePass !== pass) throw new Error('Render pass has ended');
         this.commands.append(Opcode.END_RENDER_PASS);

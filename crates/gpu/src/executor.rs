@@ -49,6 +49,8 @@ pub struct Executor {
     render_pipelines: HashMap<u32, Option<wgpu::RenderPipeline>>,
     encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
+    render_pass_scope: Option<wgpu::ErrorScopeGuard>,
+    valid_pipeline: Option<bool>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -67,6 +69,28 @@ fn size(bytes: &[u8], expected: usize) -> Result<(), String> {
     Ok(())
 }
 
+fn buffer_slice(
+    buffer: &Buffer,
+    offset: u64,
+    size: u64,
+    usage: wgpu::BufferUsages,
+) -> Result<wgpu::BufferSlice<'_>, String> {
+    if !buffer.usage.contains(usage) || offset >= buffer.size {
+        return Err("invalid render buffer range".into());
+    }
+    let end = if size == 0 {
+        buffer.size
+    } else {
+        offset
+            .checked_add(size)
+            .ok_or("invalid render buffer range")?
+    };
+    if end > buffer.size || end <= offset {
+        return Err("invalid render buffer range".into());
+    }
+    Ok(buffer.raw.slice(offset..end))
+}
+
 impl Executor {
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
         Self {
@@ -83,6 +107,8 @@ impl Executor {
             render_pipelines: HashMap::new(),
             encoder: None,
             render_pass: None,
+            render_pass_scope: None,
+            valid_pipeline: None,
         }
     }
 
@@ -131,6 +157,7 @@ impl Executor {
         }
         if self.render_pass.is_some() || self.encoder.is_some() {
             self.render_pass = None;
+            self.render_pass_scope = None;
             self.encoder = None;
             responses.push(Response::Error {
                 command: records.len(),
@@ -992,17 +1019,161 @@ impl Executor {
                         multiview_mask: None,
                     })
                     .forget_lifetime();
-                if let Some(error) = pollster::block_on(scope.pop()) {
-                    drop(pass);
-                    self.encoder = None;
-                    return Err(error.to_string());
-                }
+                self.render_pass_scope = Some(scope);
+                self.valid_pipeline = None;
                 self.render_pass = Some(pass);
+                Ok(None)
+            }
+            15 => {
+                size(payload, 4)?;
+                let pipeline = self
+                    .render_pipelines
+                    .get(&u32_at(payload, 0))
+                    .ok_or("unknown render pipeline handle")?;
+                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                self.valid_pipeline = Some(pipeline.is_some());
+                if let Some(pipeline) = pipeline {
+                    pass.set_pipeline(pipeline);
+                }
+                Ok(None)
+            }
+            16 => {
+                if payload.len() < 12
+                    || !(payload.len() - 12).is_multiple_of(4)
+                    || u32_at(payload, 8) as usize != (payload.len() - 12) / 4
+                {
+                    return Err("invalid bind group command".into());
+                }
+                let group = self
+                    .bind_groups
+                    .get(&u32_at(payload, 4))
+                    .ok_or("unknown bind group handle")?;
+                let offsets: Vec<_> = payload[12..]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|value| u32::from_le_bytes(*value))
+                    .collect();
+                self.render_pass
+                    .as_mut()
+                    .ok_or("no active render pass")?
+                    .set_bind_group(u32_at(payload, 0), group, &offsets);
+                Ok(None)
+            }
+            17 | 18 => {
+                size(payload, 24)?;
+                let buffer = self
+                    .buffers
+                    .get(&u32_at(payload, 4))
+                    .ok_or("unknown render buffer handle")?;
+                let usage = if opcode == 17 {
+                    wgpu::BufferUsages::VERTEX
+                } else {
+                    wgpu::BufferUsages::INDEX
+                };
+                let slice = buffer_slice(buffer, u64_at(payload, 8), u64_at(payload, 16), usage)?;
+                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                if opcode == 17 {
+                    pass.set_vertex_buffer(u32_at(payload, 0), slice);
+                } else {
+                    let format = match u32_at(payload, 0) {
+                        0 => wgpu::IndexFormat::Uint16,
+                        1 => wgpu::IndexFormat::Uint32,
+                        _ => return Err("invalid index format".into()),
+                    };
+                    pass.set_index_buffer(slice, format);
+                }
+                Ok(None)
+            }
+            19 => {
+                size(payload, 24)?;
+                let values =
+                    [0, 4, 8, 12, 16, 20].map(|offset| f32::from_bits(u32_at(payload, offset)));
+                if !values.iter().all(|value| value.is_finite()) {
+                    return Err("invalid viewport".into());
+                }
+                self.render_pass
+                    .as_mut()
+                    .ok_or("no active render pass")?
+                    .set_viewport(
+                        values[0], values[1], values[2], values[3], values[4], values[5],
+                    );
+                Ok(None)
+            }
+            20 => {
+                size(payload, 16)?;
+                self.render_pass
+                    .as_mut()
+                    .ok_or("no active render pass")?
+                    .set_scissor_rect(
+                        u32_at(payload, 0),
+                        u32_at(payload, 4),
+                        u32_at(payload, 8),
+                        u32_at(payload, 12),
+                    );
+                Ok(None)
+            }
+            21 => {
+                size(payload, 32)?;
+                let values = [0, 8, 16, 24].map(|offset| f64::from_bits(u64_at(payload, offset)));
+                if !values.iter().all(|value| value.is_finite()) {
+                    return Err("invalid blend constant".into());
+                }
+                self.render_pass
+                    .as_mut()
+                    .ok_or("no active render pass")?
+                    .set_blend_constant(wgpu::Color {
+                        r: values[0],
+                        g: values[1],
+                        b: values[2],
+                        a: values[3],
+                    });
+                Ok(None)
+            }
+            22 => {
+                size(payload, 4)?;
+                self.render_pass
+                    .as_mut()
+                    .ok_or("no active render pass")?
+                    .set_stencil_reference(u32_at(payload, 0));
+                Ok(None)
+            }
+            23 | 24 => {
+                size(payload, if opcode == 23 { 16 } else { 20 })?;
+                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                let valid = self.valid_pipeline.ok_or("no render pipeline set")?;
+                let first = u32_at(payload, 8);
+                let end = first
+                    .checked_add(u32_at(payload, 0))
+                    .ok_or("draw range overflow")?;
+                let first_instance = u32_at(payload, if opcode == 23 { 12 } else { 16 });
+                let end_instance = first_instance
+                    .checked_add(u32_at(payload, 4))
+                    .ok_or("instance range overflow")?;
+                if valid {
+                    if opcode == 23 {
+                        pass.draw(first..end, first_instance..end_instance);
+                    } else {
+                        pass.draw_indexed(
+                            first..end,
+                            u32_at(payload, 12) as i32,
+                            first_instance..end_instance,
+                        );
+                    }
+                }
                 Ok(None)
             }
             25 => {
                 size(payload, 0)?;
                 drop(self.render_pass.take().ok_or("no active render pass")?);
+                let scope = self
+                    .render_pass_scope
+                    .take()
+                    .expect("active pass has an error scope");
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    self.encoder = None;
+                    return Err(error.to_string());
+                }
                 Ok(None)
             }
             29 => {

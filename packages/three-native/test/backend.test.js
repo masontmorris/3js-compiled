@@ -273,6 +273,37 @@ test('render pass records depth and multisample resolve attachments', () => {
   assert.equal(view.getFloat32(72, true), 0.5);
 });
 
+test('render pass draw state records typed fields and rejects use after end', () => {
+  const device = new RecordingDevice();
+  const texture = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 16 });
+  const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
+  const shader = device.createShaderModule({ code: '' });
+  const pipeline = device.createRenderPipeline({ layout, vertex: { module: shader }, fragment: { module: shader, targets: [{ format: 'rgba8unorm' }] } });
+  const vertices = device.createBuffer({ size: 64, usage: 32 });
+  const indices = device.createBuffer({ size: 64, usage: 16 });
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: texture.createView(), loadOp: 'load', storeOp: 'store' }] });
+  pass.setPipeline(pipeline);
+  pass.setVertexBuffer(1, vertices, 16);
+  pass.setIndexBuffer(indices, 'uint32', 8, 24);
+  pass.setViewport(0, 0, 2, 2, 0, 1);
+  pass.drawIndexed(6, 2, 0, -3, 1);
+  pass.end();
+  assert.throws(() => pass.draw(3), /ended/);
+  device.queue.submit([encoder.finish()]);
+  const records = decodeCommands(device.takeFrame()).filter(item => item.opcode > Opcode.BEGIN_RENDER_PASS && item.opcode < Opcode.END_RENDER_PASS);
+  assert.deepEqual(records.map(item => item.opcode), [Opcode.SET_PIPELINE, Opcode.SET_VERTEX_BUFFER, Opcode.SET_INDEX_BUFFER, Opcode.SET_VIEWPORT, Opcode.DRAW_INDEXED]);
+  const field = (index, offset, bits = 32) => {
+    const view = new DataView(records[index].payload.buffer);
+    return bits === 64 ? Number(view.getBigUint64(offset, true)) : bits === 'f' ? view.getFloat32(offset, true) : view.getUint32(offset, true);
+  };
+  assert.equal(field(0, 0), pipeline.handle);
+  assert.deepEqual([field(1, 0), field(1, 4), field(1, 8, 64), field(1, 16, 64)], [1, vertices.handle, 16, 0]);
+  assert.deepEqual([field(2, 0), field(2, 4), field(2, 8, 64), field(2, 16, 64)], [1, indices.handle, 8, 24]);
+  assert.equal(field(3, 8, 'f'), 2);
+  assert.deepEqual([0, 4, 8, 12, 16].map(offset => field(4, offset)), [6, 2, 0, 0xfffffffd, 1]);
+});
+
 test('render pipeline snapshots its shader and vertex descriptors', () => {
   const device = new RecordingDevice();
   const layout = device.createPipelineLayout({ bindGroupLayouts: [] });

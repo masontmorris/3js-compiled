@@ -1,10 +1,8 @@
 use threejsc_gpu::{Executor, Response};
 
-#[test]
-#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
-fn recorded_buffers_round_trip_on_vulkan() {
+fn executor() -> Executor {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
+        backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
         flags: wgpu::InstanceFlags::default(),
         memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
         backend_options: wgpu::BackendOptions::default(),
@@ -14,10 +12,16 @@ fn recorded_buffers_round_trip_on_vulkan() {
         force_fallback_adapter: true,
         ..Default::default()
     }))
-    .expect("a software Vulkan adapter is required");
+    .expect("a software adapter is required");
     assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    Executor::new(device, queue)
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn recorded_buffers_round_trip_on_vulkan() {
+    let mut executor = executor();
     let responses = executor
         .replay(include_bytes!("fixtures/buffers.bin"))
         .unwrap();
@@ -40,21 +44,7 @@ fn recorded_buffers_round_trip_on_vulkan() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn invalid_shader_reports_its_label_and_other_commands_continue() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     let responses = executor
         .replay(include_bytes!("fixtures/shaders.bin"))
         .unwrap();
@@ -81,21 +71,7 @@ fn invalid_shader_reports_its_label_and_other_commands_continue() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn texture_upload_and_readback_preserve_rows() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     let responses = executor
         .replay(include_bytes!("fixtures/textures.bin"))
         .unwrap();
@@ -129,21 +105,7 @@ fn texture_upload_and_readback_preserve_rows() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn anisotropic_comparison_sampler_is_created_and_released() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/samplers.bin"))
@@ -159,21 +121,7 @@ fn anisotropic_comparison_sampler_is_created_and_released() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn bind_group_layouts_validate_and_share_the_handle_namespace() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/layouts.bin"))
@@ -196,21 +144,7 @@ fn bind_group_layouts_validate_and_share_the_handle_namespace() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_bind_group_accepts_buffers_samplers_and_views() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/bindings.bin"))
@@ -225,21 +159,7 @@ fn recorded_bind_group_accepts_buffers_samplers_and_views() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn pipeline_layout_keeps_its_bind_group_layout_and_handle() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/pipeline-layouts.bin"))
@@ -255,21 +175,7 @@ fn pipeline_layout_keeps_its_bind_group_layout_and_handle() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_render_pass_clears_and_reads_back_pixels() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/clear-pass.bin"))
@@ -286,21 +192,7 @@ fn recorded_render_pass_clears_and_reads_back_pixels() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_multisample_pass_resolves_with_depth() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/msaa-pass.bin"))
@@ -317,21 +209,7 @@ fn recorded_multisample_pass_resolves_with_depth() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     assert_eq!(
         executor
             .replay(include_bytes!("fixtures/pipeline.bin"))
@@ -351,21 +229,7 @@ fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn invalid_shader_and_pipeline_report_requests_and_leave_other_work_usable() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::default(),
-        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-        backend_options: wgpu::BackendOptions::default(),
-        display: None,
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        force_fallback_adapter: true,
-        ..Default::default()
-    }))
-    .expect("a software Vulkan adapter is required");
-    assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let mut executor = Executor::new(device, queue);
+    let mut executor = executor();
     let responses = executor
         .replay(include_bytes!("fixtures/pipeline-errors.bin"))
         .unwrap();
@@ -398,5 +262,28 @@ fn invalid_shader_and_pipeline_report_requests_and_leave_other_work_usable() {
             request: 100,
             bytes: vec![9, 8, 7, 6]
         }
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn recorded_draws_fill_targets_with_bound_uniform_color() {
+    let red = [255, 0, 0, 255].repeat(16);
+    assert_eq!(
+        executor()
+            .replay(include_bytes!("fixtures/draw.bin"))
+            .unwrap(),
+        vec![
+            Response::Validation { request: 4 },
+            Response::Validation { request: 6 },
+            Response::Readback {
+                request: 100,
+                bytes: red.clone()
+            },
+            Response::Readback {
+                request: 101,
+                bytes: red
+            },
+        ]
     );
 }

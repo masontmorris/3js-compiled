@@ -213,6 +213,34 @@ export class CommandEncoder {
     this.#size = HEADER_SIZE;
   }
 
+  words(opcode, values) {
+    const payload = new Uint8Array(values.length * 4);
+    const view = new DataView(payload.buffer);
+    values.forEach((value, index) => view.setUint32(index * 4, u32(value, 'command field'), true));
+    this.append(opcode, payload);
+  }
+
+  floats(opcode, values, size) {
+    const payload = new Uint8Array(values.length * size);
+    const view = new DataView(payload.buffer);
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) throw new RangeError('Invalid command float');
+      if (size === 4) view.setFloat32(index * size, value, true);
+      else view.setFloat64(index * size, value, true);
+    });
+    this.append(opcode, payload);
+  }
+
+  bufferRange(opcode, first, handle, offset, size) {
+    const payload = new Uint8Array(24);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(first, 'slot or format'), true);
+    view.setUint32(4, u32(handle, 'buffer handle', true), true);
+    view.setBigUint64(8, u64(offset, 'buffer offset'), true);
+    view.setBigUint64(16, u64(size, 'buffer size'), true);
+    this.append(opcode, payload);
+  }
+
   createTextureView(handle, texture, descriptor) {
     const payload = new Uint8Array(36);
     const view = new DataView(payload.buffer);
