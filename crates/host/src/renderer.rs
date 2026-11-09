@@ -39,6 +39,11 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
+    /// The canvas the game draws into. It keeps the last frame the game drew, as a browser canvas
+    /// does, and each frame copies it to the window.
+    game: wgpu::Texture,
+    /// Whether the game has drawn into `game` since it was created at the window's size.
+    drawn: bool,
 }
 impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -88,8 +93,11 @@ impl Target {
             })
             .await?;
         let caps = surface.get_capabilities(&adapter);
-        if !caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
-            bail!("surface does not support capture");
+        if !caps
+            .usages
+            .contains(wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST)
+        {
+            bail!("surface does not support copies");
         }
         let format = caps
             .formats
@@ -99,7 +107,9 @@ impl Target {
             .context("surface does not support bgra8unorm")?;
         let (width, height) = window.size_in_pixels();
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             format,
             width: width.max(1),
             height: height.max(1),
@@ -132,26 +142,30 @@ impl Renderer {
     pub fn new(target: Target) -> Self {
         Self {
             executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
+            game: game_texture(&target.device, &target.config),
+            drawn: false,
             surface: target.surface,
             device: target.device,
             queue: target.queue,
             config: target.config,
         }
     }
-    /// Draws `frame` into a surface texture at the frame's size and presents it. The surface is
-    /// cleared to the frame's color only when no command acquired the surface at its current size.
+    /// Replays `frame` into the game texture, copies the game texture to a surface texture at the
+    /// frame's size, and presents it. A frame whose commands do not acquire the surface at its
+    /// current size keeps the last frame the game drew. Until the game draws at the current size,
+    /// the window shows the frame's clear color.
     pub fn frame(&mut self, frame: Frame) -> Result<Rendered> {
         let started = Instant::now();
         self.resize(frame.size);
+        let replay = frame
+            .commands
+            .map(|commands| self.executor.replay(&commands, Some(&self.game)));
+        self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
         let acquire_started = Instant::now();
         let surface = self.acquire()?;
         let acquire_wait = acquire_started.elapsed();
-        let replay = frame
-            .commands
-            .map(|commands| self.executor.replay(&commands, Some(&surface.texture)));
-        let drew = matches!(replay, Some(Ok(_))) && self.executor.surface_used();
         let captures: Vec<_> = frame.captures.iter().map(PathBuf::as_path).collect();
-        let surface = self.render(surface, (!drew).then_some(frame.clear), &captures)?;
+        let surface = self.render(surface, frame.clear, &captures)?;
         self.queue.present(surface);
         Ok(Rendered {
             index: frame.index,
@@ -165,6 +179,8 @@ impl Renderer {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
+            self.game = game_texture(&self.device, &self.config);
+            self.drawn = false;
         }
     }
     fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
@@ -177,12 +193,9 @@ impl Renderer {
     fn render(
         &self,
         frame: wgpu::SurfaceTexture,
-        clear: Option<[f64; 4]>,
+        clear: [f64; 4],
         captures: &[&Path],
     ) -> Result<wgpu::SurfaceTexture> {
-        if clear.is_none() && captures.is_empty() {
-            return Ok(frame);
-        }
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self
@@ -190,7 +203,18 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
-        if let Some(color) = clear {
+        let size = wgpu::Extent3d {
+            width: self.config.width,
+            height: self.config.height,
+            depth_or_array_layers: 1,
+        };
+        if self.drawn {
+            encoder.copy_texture_to_texture(
+                self.game.as_image_copy(),
+                frame.texture.as_image_copy(),
+                size,
+            );
+        } else {
             let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -199,10 +223,10 @@ impl Renderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: color[0],
-                            g: color[1],
-                            b: color[2],
-                            a: color[3],
+                            r: clear[0],
+                            g: clear[1],
+                            b: clear[2],
+                            a: clear[3],
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -241,11 +265,7 @@ impl Renderer {
                         rows_per_image: Some(self.config.height),
                     },
                 },
-                wgpu::Extent3d {
-                    width: self.config.width,
-                    height: self.config.height,
-                    depth_or_array_layers: 1,
-                },
+                size,
             );
             Some(buffer)
         };
@@ -289,4 +309,22 @@ impl Renderer {
         }
         Ok(frame)
     }
+}
+
+/// A texture with the surface's size, format and the usages a stream sees on the surface.
+fn game_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("game"),
+        size: wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: config.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
 }

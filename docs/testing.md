@@ -30,7 +30,7 @@ The host runs two threads. The game thread owns the window, input, the script, a
 - `frame` is the zero-based frame number.
 - `cpu_ms` is the game thread's time for the frame: input, script steps, JavaScript, and dispatching the previous frame's GPU responses. It excludes the wait for the render thread to finish the previous frame. It includes scheduling delays.
 - `interval_ms` is the time between the starts of this frame and the previous one on the game thread.
-- `render_cpu_ms` is the render thread's time for the frame, through replay, any capture, and present. It excludes the wait to acquire a surface texture.
+- `render_cpu_ms` is the render thread's time for the frame, through replay, the copy to the window, any capture, and present. It excludes the wait to acquire a surface texture.
 - `latency_ms` runs from the start of the frame, where the game thread polls input, to the return of the frame's present call. The swap chain can hold the frame for up to two more refreshes after that.
 
 Closing the window or a `close` step finishes the frame on the render thread, writes its row, and joins the thread. When the render thread fails or panics, the host writes `host failed: render thread ...` to `host.log` and exits with code 1.
@@ -49,15 +49,15 @@ python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted
 
 ## GPU command responses
 
-An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it on the render thread against that frame's surface texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
+An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it on the render thread against the game texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
 
 - `{type: "validation", request}` reports that a shader or render pipeline created with a nonzero request ID compiled.
 - `{type: "readback", request, bytes}` carries a buffer or texture readback. `bytes` is an `ArrayBuffer` that crosses from Rust as one binary buffer.
 - `{type: "error", frame, command, request, label, message}` reports a failed command. `frame` is the stream's frame index, `command` its zero-based index in the stream, `request` the readback or validation ID or `null`, and `label` the label of the resource the command names or `null`.
 
-A stream the host cannot decode produces one error with only a `message`, because no command or frame in it can be trusted. The host writes every error to `host.log` as `GPU error: frame <f>, command <c>, label <l>, request <r>: <message>`, and a stream it cannot decode as `GPU stream rejected in host frame <n>: <message>`, where `<n>` is the host frame that submitted it. A second submission before the host consumes the first throws an error. The host clears the frame to the `setClearColor` color only when no command acquired the window surface at its current size.
+A stream the host cannot decode produces one error with only a `message`, because no command or frame in it can be trusted. The host writes every error to `host.log` as `GPU error: frame <f>, command <c>, label <l>, request <r>: <message>`, and a stream it cannot decode as `GPU stream rejected in host frame <n>: <message>`, where `<n>` is the host frame that submitted it. A second submission before the host consumes the first throws an error. The game draws into a texture that keeps its last frame, and the render thread copies that texture to the window every frame. A frame whose commands do not acquire the surface at its current size therefore shows the last frame the game drew, as a browser canvas does when a page stops drawing. Until the game first draws at the window's current size, at startup and after a resize, the window shows the `setClearColor` color.
 
-`crates/host/tests/gpu.rs` runs the host on the hardware GPU: a binary 1280x720 readback with a shader error, a stream that tries to destroy the surface, a renderer that replaces a disposed one, the first frame after a resize, responses from six consecutive frames that each match the frame that requested them, recorded frames and a capture across a resize, identical captures from two runs, a render-thread failure that exits with code 1, and closing the window. Run it under the lease with `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
+`crates/host/tests/gpu.rs` runs the host on the hardware GPU: a binary 1280x720 readback with a shader error, a stream that tries to destroy the surface, a renderer that replaces a disposed one, idle frames that keep the last frame the game drew, the first frame after a resize, responses from six consecutive frames that each match the frame that requested them, recorded frames and a capture across a resize, identical captures from two runs, a render-thread failure that exits with code 1, and closing the window. Run it under the lease with `cargo test -p threejsc-host --release --test gpu -- --ignored --test-threads 1`.
 
 ## Example scenes
 
