@@ -36,6 +36,21 @@ const HEADER_SIZE = 16;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
 
+function u32(value, name, nonzero = false) {
+  if (!Number.isInteger(value) || value < (nonzero ? 1 : 0) || value > 0xffffffff) {
+    throw new RangeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+function u64(value, name) {
+  if ((typeof value === 'number' && !Number.isSafeInteger(value)) ||
+      (typeof value !== 'number' && typeof value !== 'bigint')) throw new RangeError(`Invalid ${name}`);
+  const result = BigInt(value);
+  if (result < 0n || result > 0xffffffffffffffffn) throw new RangeError(`Invalid ${name}`);
+  return result;
+}
+
 export class Handles {
   #next = 1;
 
@@ -56,6 +71,41 @@ export class CommandEncoder {
     if (size > 0xffffffff) throw new RangeError('Command stream is too large');
     this.#records.push({ opcode, payload: payload.slice() });
     this.#size = size;
+  }
+
+  createBuffer(handle, size, usage) {
+    const payload = new Uint8Array(16);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setBigUint64(4, u64(size, 'size'), true);
+    view.setUint32(12, u32(usage, 'usage'), true);
+    this.append(Opcode.CREATE_BUFFER, payload);
+  }
+
+  writeBuffer(handle, offset, data) {
+    if (!(data instanceof Uint8Array)) throw new TypeError('Buffer data must be a Uint8Array');
+    const payload = new Uint8Array(12 + data.byteLength);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setBigUint64(4, u64(offset, 'offset'), true);
+    payload.set(data, 12);
+    this.append(Opcode.WRITE_BUFFER, payload);
+  }
+
+  readBuffer(request, handle, offset, size) {
+    const payload = new Uint8Array(24);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(request, 'request', true), true);
+    view.setUint32(4, u32(handle, 'handle', true), true);
+    view.setBigUint64(8, u64(offset, 'offset'), true);
+    view.setBigUint64(16, u64(size, 'size'), true);
+    this.append(Opcode.READ_BUFFER, payload);
+  }
+
+  destroyBuffer(handle) {
+    const payload = new Uint8Array(4);
+    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
+    this.append(Opcode.DESTROY_BUFFER, payload);
   }
 
   finish() {

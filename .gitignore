@@ -4,3 +4,4 @@ dist/
 
 host.log
 frames.csv
+__pycache__/

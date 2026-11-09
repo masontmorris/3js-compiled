@@ -37,3 +37,21 @@ test('the installed renderer accepts an injected backend', async () => {
   const renderer = new WebGPURenderer({ canvas, backend });
   assert.equal(renderer.backend, backend);
 });
+
+test('buffer operations preserve their binary fields and reject invalid handles', () => {
+  const encoder = new CommandEncoder();
+  encoder.createBuffer(7, 16, 12);
+  encoder.writeBuffer(7, 4, new Uint8Array([1, 2, 3, 4]));
+  encoder.readBuffer(8, 7, 4, 4);
+  encoder.destroyBuffer(7);
+  const records = decodeCommands(encoder.finish());
+  assert.deepEqual(records.map(record => record.opcode), [1, 2, 27, 3]);
+  const create = new DataView(records[0].payload.buffer);
+  assert.equal(create.getUint32(0, true), 7);
+  assert.equal(create.getBigUint64(4, true), 16n);
+  assert.equal(create.getUint32(12, true), 12);
+  assert.deepEqual([...records[1].payload.slice(12)], [1, 2, 3, 4]);
+  assert.throws(() => encoder.createBuffer(0, 16, 12));
+  assert.throws(() => encoder.readBuffer(8, 7, -1, 4));
+  assert.throws(() => encoder.writeBuffer(7, 0, [1, 2, 3, 4]));
+});

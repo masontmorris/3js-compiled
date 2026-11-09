@@ -2110,6 +2110,10 @@ dependencies = [
 [[package]]
 name = "threejsc-gpu"
 version = "0.1.0"
+dependencies = [
+ "pollster",
+ "wgpu",
+]
 
 [[package]]
 name = "threejsc-host"
