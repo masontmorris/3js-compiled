@@ -11,6 +11,7 @@ VENDOR = Path(__file__).resolve().parent.parent / 'crates/ui-host/vendor'
 CRATES = {
     'servo-script': ('0.7.0', '84ab625df5e83104d2b1ef7066f6fbc879d24be07c14438eb25f427657ed7fee', ()),
     'servo-fonts': ('0.7.0', '871ff64ee0d5269a3caeae5c0e758d8e0579987e0187edf86ae0307103359051', ('tests/',)),
+    'servo-layout': ('0.7.0', '675bf3cb0127b58dde2d072f783c2c57d92c271abd037bc76c781a778af285f4', ()),
 }
 
 
