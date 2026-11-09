@@ -1,5 +1,6 @@
 // Records example scenes for the replay tests and adds a surface readback to the last frame.
 // The Edge references come from tools/parity: <scene>-web.png saved here as <scene>-edge.png.
+// standard-shadow-off records standard-shadow with its shadow map disabled, a render the gate must reject.
 // Usage, from the repository root: node crates/gpu/tests/fixtures/scenes.mjs
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,9 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommandEncoder, decodeCommands, Opcode, streamFrame } from '../../../../packages/three-native/src/commands.js';
 
-for (const scene of ['basic-cube', 'standard-shadow']) {
+const fixtures = [['basic-cube', 'basic-cube'], ['standard-shadow', 'standard-shadow'], ['invalid-wgsl', 'invalid-wgsl'], ['standard-shadow-off', 'standard-shadow', '--no-shadows']];
+for (const [fixture, scene, ...flags] of fixtures) {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-scene-'));
-  execFileSync(process.execPath, ['tools/scenes/record.mjs', scene, dir, '2'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tools/scenes/record.mjs', scene, dir, '2', ...flags], { stdio: 'inherit' });
   for (const index of [0, 1]) {
     const bytes = new Uint8Array(readFileSync(join(dir, `00${index}.bin`)));
     const records = decodeCommands(bytes);
@@ -20,6 +22,6 @@ for (const scene of ['basic-cube', 'standard-shadow']) {
       const surface = new DataView(acquire.payload.buffer).getUint32(0, true);
       frame.readTexture(0xffffffff, surface, { mip: 0, x: 0, y: 0, layer: 0, width: 1280, height: 720 });
     }
-    writeFileSync(new URL(`./${scene}-${index}.bin`, import.meta.url), frame.finish(streamFrame(bytes)));
+    writeFileSync(new URL(`./${fixture}-${index}.bin`, import.meta.url), frame.finish(streamFrame(bytes)));
   }
 }

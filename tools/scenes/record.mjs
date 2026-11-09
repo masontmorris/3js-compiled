@@ -1,11 +1,13 @@
 // Runs one example scene against the recording device in Node and saves each submitted frame.
-// Usage, from the repository root: node tools/scenes/record.mjs <scene> <out-dir> [frames]
+// Usage, from the repository root: node tools/scenes/record.mjs <scene> <out-dir> [frames] [--no-shadows]
+// --no-shadows disables the renderer's shadow map before the first frame, as a negative control for parity gates.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const [scene, out, count = '3'] = process.argv.slice(2);
-if (!scene || !out) throw new Error('Usage: node tools/scenes/record.mjs <scene> <out-dir> [frames]');
+const flags = process.argv.slice(2).filter(arg => arg.startsWith('--'));
+const [scene, out, count = '3'] = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+if (!scene || !out || flags.some(flag => flag !== '--no-shadows')) throw new Error('Usage: node tools/scenes/record.mjs <scene> <out-dir> [frames] [--no-shadows]');
 await import('./build.mjs');
 
 let callbacks = [];
@@ -21,6 +23,7 @@ Object.assign(globalThis, {
   submitGpuCommands: bytes => frames.push(bytes.slice()),
 });
 await import(pathToFileURL(resolve('examples/scenes/scene-bundle.js')));
+if (flags.includes('--no-shadows')) globalThis.__scene.renderer.shadowMap.enabled = false;
 for (let tick = 0; frames.length < Number(count) && !globalThis.__sceneError; tick++) {
   if (tick === 1000) throw new Error(`Scene ${scene} submitted ${frames.length} of ${count} frames`);
   const current = callbacks;

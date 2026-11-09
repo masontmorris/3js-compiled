@@ -12,6 +12,7 @@ const renderer = new THREE.WebGPURenderer({ canvas, backend, antialias: false })
 renderer.setSize(canvas.width, canvas.height, false);
 await renderer.init();
 const context = await buildScene(name, renderer);
+globalThis.__scene = { renderer, context };
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
   context.camera.aspect = innerWidth / innerHeight;

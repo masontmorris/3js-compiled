@@ -1,5 +1,12 @@
 use threejsc_gpu::{Executor, Response};
 
+// Each bound sits just above the scene's difference from Edge on llvmpipe and WARP, so a replay
+// that drops or changes a draw fails. docs/testing.md lists the measured values.
+const BASIC_CUBE_BOUND: f64 = 0.00001;
+const SHADOW_BOUND: f64 = 0.0001;
+const SHADOW_REGION_BOUND: f64 = 0.00015;
+const INVALID_WGSL_BOUND: f64 = 0.00001;
+
 fn device() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
@@ -460,30 +467,36 @@ fn errors_outside_error_scopes_become_responses() {
     );
 }
 
-fn assert_scene_matches_edge(scene: &str, frames: [&[u8]; 2], edge: &[u8]) {
+struct Parity {
+    mean: f64,
+    region: f64,
+}
+
+/// Replays two recorded frames onto a 1280x720 surface and returns the mean RGB difference from
+/// the Edge capture over the frame and over `region` (inclusive pixel bounds), as fractions of
+/// full scale. Every error must name `expected_error`.
+fn parity(
+    scene: &str,
+    frames: [&[u8]; 2],
+    edge: &[u8],
+    region: [u32; 4],
+    expected_error: Option<&str>,
+) -> Parity {
     let (device, queue) = device();
-    let surface = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: wgpu::Extent3d {
-            width: 1280,
-            height: 720,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Bgra8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
+    let surface = surface_texture(&device, 1280, 720);
     let mut executor = Executor::new(device, queue);
     let mut responses = executor.replay(frames[0], Some(&surface)).unwrap();
     responses.extend(executor.replay(frames[1], Some(&surface)).unwrap());
-    let errors: Vec<_> = responses
+    let unexpected: Vec<_> = responses
         .iter()
-        .filter(|response| matches!(response, Response::Error { .. }))
+        .filter(|response| match response {
+            Response::Error { message, .. } => {
+                expected_error.is_none_or(|expected| !message.contains(expected))
+            }
+            _ => false,
+        })
         .collect();
-    assert!(errors.is_empty(), "{scene}: {errors:?}");
+    assert!(unexpected.is_empty(), "{scene}: {unexpected:?}");
     let native = responses
         .iter()
         .find_map(|response| match response {
@@ -495,39 +508,100 @@ fn assert_scene_matches_edge(scene: &str, frames: [&[u8]; 2], edge: &[u8]) {
         })
         .expect("surface readback");
     let edge = image::load_from_memory(edge).unwrap().to_rgba8();
-    let total: u64 = native
-        .chunks(4)
-        .zip(edge.pixels())
-        .map(|(bgra, rgba)| {
-            (0..3)
-                .map(|c| u64::from(bgra[2 - c].abs_diff(rgba[c])))
-                .sum::<u64>()
-        })
-        .sum();
-    let mean = total as f64 / (1280.0 * 720.0 * 3.0 * 255.0);
-    assert!(
-        mean < 0.01,
-        "{scene}: mean RGB difference from Edge is {mean}"
+    let [left, top, right, bottom] = region;
+    let (mut total, mut inside) = (0u64, 0u64);
+    for ((index, bgra), (x, y, rgba)) in native.chunks(4).enumerate().zip(edge.enumerate_pixels()) {
+        assert_eq!(index, (y * 1280 + x) as usize);
+        let delta: u64 = (0..3)
+            .map(|c| u64::from(bgra[2 - c].abs_diff(rgba[c])))
+            .sum();
+        total += delta;
+        if (left..=right).contains(&x) && (top..=bottom).contains(&y) {
+            inside += delta;
+        }
+    }
+    let area = f64::from((right - left + 1) * (bottom - top + 1));
+    let parity = Parity {
+        mean: total as f64 / (1280.0 * 720.0 * 3.0 * 255.0),
+        region: inside as f64 / (area * 3.0 * 255.0),
+    };
+    println!(
+        "{scene}: mean {:.7}, region {:.7}",
+        parity.mean, parity.region
     );
+    parity
+}
+
+const FULL_FRAME: [u32; 4] = [0, 0, 1279, 719];
+/// The cube's shadow on the floor in the Edge capture, from lane 4 of the E3 verification.
+const SHADOW: [u32; 4] = [557, 384, 830, 465];
+
+fn standard_shadow(frames: [&[u8]; 2]) -> Parity {
+    parity(
+        "standard-shadow",
+        frames,
+        include_bytes!("fixtures/standard-shadow-edge.png"),
+        SHADOW,
+        None,
+    )
 }
 
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn recorded_three_scenes_match_edge_captures() {
-    assert_scene_matches_edge(
+    let basic = parity(
         "basic-cube",
         [
             include_bytes!("fixtures/basic-cube-0.bin"),
             include_bytes!("fixtures/basic-cube-1.bin"),
         ],
         include_bytes!("fixtures/basic-cube-edge.png"),
+        FULL_FRAME,
+        None,
     );
-    assert_scene_matches_edge(
-        "standard-shadow",
+    assert!(basic.mean < BASIC_CUBE_BOUND, "basic-cube: {}", basic.mean);
+    let shadow = standard_shadow([
+        include_bytes!("fixtures/standard-shadow-0.bin"),
+        include_bytes!("fixtures/standard-shadow-1.bin"),
+    ]);
+    assert!(
+        shadow.mean < SHADOW_BOUND,
+        "standard-shadow: {}",
+        shadow.mean
+    );
+    assert!(
+        shadow.region < SHADOW_REGION_BOUND,
+        "standard-shadow region: {}",
+        shadow.region
+    );
+    let invalid = parity(
+        "invalid-wgsl",
         [
-            include_bytes!("fixtures/standard-shadow-0.bin"),
-            include_bytes!("fixtures/standard-shadow-1.bin"),
+            include_bytes!("fixtures/invalid-wgsl-0.bin"),
+            include_bytes!("fixtures/invalid-wgsl-1.bin"),
         ],
-        include_bytes!("fixtures/standard-shadow-edge.png"),
+        include_bytes!("fixtures/invalid-wgsl-edge.png"),
+        FULL_FRAME,
+        Some("invalid-wgsl-material"),
+    );
+    assert!(
+        invalid.mean < INVALID_WGSL_BOUND,
+        "invalid-wgsl: {}",
+        invalid.mean
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn the_parity_gate_rejects_a_render_without_its_shadow() {
+    let shadowless = standard_shadow([
+        include_bytes!("fixtures/standard-shadow-off-0.bin"),
+        include_bytes!("fixtures/standard-shadow-off-1.bin"),
+    ]);
+    assert!(
+        shadowless.mean >= SHADOW_BOUND && shadowless.region >= SHADOW_REGION_BOUND,
+        "a shadowless render passed: mean {}, region {}",
+        shadowless.mean,
+        shadowless.region
     );
 }
