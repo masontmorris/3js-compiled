@@ -47,7 +47,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] Resolve the forge once. Default to `gh`; if `command -v origin` succeeds and Origin can resolve the repository, use `origin pr` for every PR operation. Record any fallback to `gh`. Never require `gt`.
 - [ ] Open the PR ready, never draft, per **Opening a PR**. Use `gh pr create --base <base-branch>`. A stack child targets its parent branch.
-- [ ] Run `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, and `npm run check` once before the PR-facing push. Push with hooks on.
+- [ ] Before the PR-facing push, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked` in each Cargo workspace. For the Servo workspace, add `--manifest-path crates/ui-host/Cargo.toml` to each command. Run `npm run check`. Push with hooks on.
 - [ ] Reread the diff for AI slop before each commit, because `/deslop` is not installed here. Run `/no-comments` before review.
 - [ ] Triage every review-bot comment per `../references/bugbot-triage.md`. Record "none configured" when no bot runs.
 - [ ] Rebase onto current trunk before the code-ready report and babysit. Keep that merge base in fix rounds. Rebase again only at merge prep, on a `git merge-tree` conflict with trunk, on a CI failure that comes from a change on trunk, or when a known concurrent change to the same files lands.
@@ -65,7 +65,7 @@ Each live lane runs on the operator's Windows 11 PC with the RTX 3060, one lane 
 Checks that need no GPU run on Modal in parallel. Modal containers are Linux, and their only working Vulkan device is Mesa llvmpipe, a CPU renderer. Modal runs the WGSL gate, the JS unit tests, and command-buffer replay tests, never a perf or GPU parity lane. Azure Windows GPU VMs are an optional extra once the quota check passes, and no verdict waits on them.
 
 - [ ] `git fetch origin <head-branch> && git checkout <head SHA>` in a worktree under `C:\3jsc\worktrees\<pr-id>`.
-- [ ] Set `CARGO_TARGET_DIR=C:\3jsc\target`. Run `cargo build --release -p threejsc-host -p threejsc-ui-host`, then `npm ci` and the PR's bundle build. Wait for both to finish.
+- [ ] Set `CARGO_TARGET_DIR=C:\3jsc\target`. Run `cargo build --release --locked -p threejsc-host` and `cargo build --release --locked --manifest-path crates/ui-host/Cargo.toml`. Copy the matching ANGLE DLLs beside `ui-host.exe` as described in [the build guide](build.md). Then run `npm ci` and the PR's bundle build. Wait for all builds to finish.
 - [ ] Deliver input only through `host --script <lane file>`. The read-only diagnostics are `frames.csv`, `host.log`, and `ui-host.log`.
 - [ ] Save every screenshot to `C:\3jsc\swarm\<pr-id>\worker-<n>\<slug>.png` and return the paths with the report.
 - [ ] Run Modal checks with `modal run tools/modal/lanes.py::<check>` and save their logs to `C:\3jsc\swarm\<pr-id>\modal\`.
@@ -144,7 +144,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 
 - [ ] Port `spikes/xproc` into `crates/ui-host` and `crates/host/src/ui.rs`. Use a 4-slot ring of NT-handle textures, two shared fences, a non-blocking fence poll, and two named pipes.
 - [ ] Launch `ui-host` off the render thread. Relaunch it after a broken pipe with a 500 ms backoff.
-- [ ] Composite the UI texture with premultiplied alpha. Convert its sRGB values in the shader and flip it there.
+- [ ] Composite the UI texture with premultiplied alpha in sRGB space. Flip the texture in the shader.
 - [ ] Forward a pointer event to `ui-host` when it lands inside an interactive rect the page reported. Send every other pointer event to the game.
 - [ ] Expose `bridge.send(patch)` and `bridge.onEvent(fn)` in JS. Send at most one patch per Servo frame.
 
@@ -172,7 +172,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. Game-thread CPU time per frame with and without the HUD, p50, and state-to-pixels latency p50.
-- [ ] Probe. Run `host --entry examples/hud/game.js --script lanes/e2/perf.json` with `--no-ui` and with the UI, interleaved, three runs each.
+- [ ] Probe. Run `host --entry examples/hud/game.js --script lanes/e2/perf.json` with `--no-ui` and with the UI, interleaved, three runs each. Render 9,000 frames per run with vsync off. Confirm that the HUD is visible before frame 6,000, then measure frames 6,000 through 8,999.
 - [ ] Baseline. Record trunk's `examples/clear.js` frame time first.
 - [ ] Rule. E2 fails when the UI adds more than 0.1 ms p50 to the game thread or state-to-pixels p50 exceeds 5 frames at vsync.
 

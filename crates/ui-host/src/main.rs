@@ -285,7 +285,6 @@ fn main() {
         height: size.height,
     });
 
-    // ── Servo ──────────────────────────────────────────────────────────────
     let preferences = Preferences {
         shell_background_color_rgba: [0.0, 0.0, 0.0, 0.0],
         ..Preferences::default()
