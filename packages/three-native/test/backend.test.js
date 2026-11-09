@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WebGPURenderer } from 'three/webgpu';
 import { NativeBackend, RecordingDevice } from '../src/NativeBackend.js';
-import { decodeCommands, Opcode } from '../src/commands.js';
+import { decodeCommands, Opcode, streamFrame } from '../src/commands.js';
 
 Object.assign(globalThis, { self: globalThis, requestAnimationFrame: () => 0, cancelAnimationFrame() {} });
 
@@ -433,4 +433,86 @@ test('pipeline validation scopes resolve from the separate response channel', as
   device.receiveResponses([{ type: 'validation', request: request(records[0]) }]);
   assert.equal(await first, null);
   assert.equal((await second).message, 'bad pipeline');
+});
+
+const creates = new Set([Opcode.CREATE_BUFFER, Opcode.CREATE_TEXTURE, Opcode.CREATE_TEXTURE_VIEW, Opcode.CREATE_SAMPLER, Opcode.CREATE_SHADER,
+  Opcode.CREATE_BIND_GROUP_LAYOUT, Opcode.CREATE_BIND_GROUP, Opcode.CREATE_PIPELINE_LAYOUT, Opcode.CREATE_RENDER_PIPELINE, Opcode.GET_BIND_GROUP_LAYOUT, Opcode.ACQUIRE_SURFACE]);
+const releases = new Set([Opcode.DESTROY_BUFFER, Opcode.DESTROY_TEXTURE, Opcode.DESTROY_RESOURCE]);
+
+// Tracks live handles as the host's one executor does: a create of a live handle is rejected,
+// a texture takes its views with it, and the surface lasts one frame.
+function replayHandles(frames) {
+  const live = new Map();
+  const duplicates = [];
+  for (const bytes of frames) {
+    for (const { opcode, payload } of decodeCommands(bytes)) {
+      if (!creates.has(opcode) && !releases.has(opcode)) continue;
+      const view = new DataView(payload.buffer);
+      const handle = view.getUint32(0, true);
+      if (creates.has(opcode)) {
+        if (live.has(handle)) duplicates.push(handle);
+        else live.set(handle, { parent: opcode === Opcode.CREATE_TEXTURE_VIEW ? view.getUint32(4, true) : null, surface: opcode === Opcode.ACQUIRE_SURFACE });
+      } else if (releases.has(opcode)) {
+        live.delete(handle);
+        for (const [child, entry] of live) if (entry.parent === handle) live.delete(child);
+      }
+    }
+    for (const [handle, entry] of live) if (entry.surface) {
+      live.delete(handle);
+      for (const [child, other] of live) if (other.parent === handle) live.delete(child);
+    }
+  }
+  return { live, duplicates };
+}
+
+async function boxRenderer(canvas, color) {
+  const { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene } = await import('three/webgpu');
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const scene = new Scene();
+  scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color })));
+  return { backend, renderer, render: () => renderer.render(scene, new PerspectiveCamera()) };
+}
+
+test('a replaced renderer releases its resources and the next renderer reuses no handle or frame', async () => {
+  const listeners = new Set();
+  Object.assign(globalThis, { addEventListener: (type, listener) => listeners.add(listener), removeEventListener: (type, listener) => listeners.delete(listener) });
+  try {
+    const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+    const first = await boxRenderer(canvas, 0xff0000);
+    const frames = [];
+    for (let i = 0; i < 2; i++) {
+      first.render();
+      frames.push(first.backend.takeFrame());
+    }
+    const stale = [];
+    first.backend.recordingDevice.onuncapturederror = event => stale.push(event);
+    const created = replayHandles(frames).live;
+    await first.renderer.dispose();
+    const second = await boxRenderer(canvas, 0x00ff00);
+    second.render();
+    frames.push(second.backend.takeFrame());
+    const { live, duplicates } = replayHandles(frames);
+    assert.deepEqual(duplicates, []);
+    assert.deepEqual([...created.keys()].filter(handle => live.has(handle)), []);
+    assert.deepEqual(frames.map(streamFrame).slice(1).map((frame, index) => frame - streamFrame(frames[index])), [1, 1]);
+    const fresh = [];
+    second.backend.recordingDevice.onuncapturederror = event => fresh.push(event);
+    for (const listener of listeners) listener({ responses: [{ type: 'error', request: null, message: 'lost' }] });
+    assert.deepEqual([stale.length, fresh.length], [0, 1]);
+    await second.renderer.dispose();
+  } finally {
+    delete globalThis.addEventListener;
+    delete globalThis.removeEventListener;
+  }
+});
+
+test('a second live native renderer is rejected until the first is disposed', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const first = await boxRenderer(canvas, 0xff0000);
+  assert.throws(() => new NativeBackend({ canvas }), /one live NativeBackend/);
+  await first.renderer.dispose();
+  const second = await boxRenderer(canvas, 0x00ff00);
+  await second.renderer.dispose();
 });

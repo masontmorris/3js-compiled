@@ -87,15 +87,17 @@ fn test_entry(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn resize_bundle() -> PathBuf {
-    let bundle = std::env::temp_dir().join(format!("threejsc-resize-{}.js", std::process::id()));
+/// Bundles the three.js test entry `name` from crates/host/tests.
+fn bundle(name: &str) -> PathBuf {
+    let bundle = std::env::temp_dir().join(format!("threejsc-{name}-{}.js", std::process::id()));
     let built = Command::new("node")
         .current_dir(ROOT)
+        .env("ENTRY", format!("crates/host/tests/{name}.js"))
         .env("OUT", &bundle)
-        .args(["-e", "import('esbuild').then(({ build }) => build({ entryPoints: ['crates/host/tests/resize.js'], outfile: process.env.OUT, bundle: true, format: 'esm', platform: 'browser', target: 'es2022' }))"])
+        .args(["-e", "import('esbuild').then(({ build }) => build({ entryPoints: [process.env.ENTRY], outfile: process.env.OUT, bundle: true, format: 'esm', platform: 'browser', target: 'es2022' }))"])
         .status()
         .unwrap();
-    assert!(built.success(), "resize bundle build failed");
+    assert!(built.success(), "{name} bundle build failed");
     bundle
 }
 
@@ -138,7 +140,7 @@ fn a_stream_cannot_destroy_the_surface() {
 fn the_first_frame_after_a_resize_draws_the_scene() {
     let run = run(
         "resize",
-        &resize_bundle(),
+        &bundle("resize"),
         serde_json::json!([
             {"type": "wait", "frames": 3},
             {"type": "resize", "width": 800, "height": 600},
@@ -148,6 +150,19 @@ fn the_first_frame_after_a_resize_draws_the_scene() {
     assert!(!run.log.contains("GPU error"), "{}", run.log);
     assert_near(&run, (400, 300), [255, 136, 0]);
     assert_near(&run, (8, 8), [51, 102, 153]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_replaced_renderer_draws_its_scene() {
+    let run = run(
+        "replace",
+        &bundle("replace"),
+        serde_json::json!([{"type": "wait", "frames": 8}]),
+    );
+    assert!(!run.log.contains("GPU error"), "{}", run.log);
+    assert_near(&run, (8, 8), [0, 255, 0]);
+    assert_near(&run, (640, 360), [255, 255, 0]);
 }
 
 #[test]
@@ -210,7 +225,7 @@ fn captures_and_recordings_hold_the_frame_javascript_produced() {
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn repeated_runs_capture_identical_frames() {
-    let bundle = resize_bundle();
+    let bundle = bundle("resize");
     let steps = serde_json::json!([
         {"type": "wait", "frames": 3},
         {"type": "resize", "width": 800, "height": 600},
