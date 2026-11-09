@@ -106,11 +106,14 @@ export async function buildScene(name, renderer) {
   } else if (name === 'msaa') {
     box(scene, new THREE.MeshStandardMaterial({ color: 0xe68045 }));
     addFloor(scene);
-    const target = new THREE.RenderTarget(1280, 720, { samples: 4 });
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.RenderTarget(size.x, size.y, { samples: 4 });
     const display = new THREE.Scene();
     const displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     display.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: target.texture, toneMapped: false })));
     result.render = () => {
+      renderer.getDrawingBufferSize(size);
+      if (target.width !== size.x || target.height !== size.y) target.setSize(size.x, size.y);
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
       renderer.setRenderTarget(null);
