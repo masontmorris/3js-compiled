@@ -284,6 +284,10 @@ fn main() {
 
     let preferences = Preferences {
         shell_background_color_rgba: [0.0, 0.0, 0.0, 0.0],
+        // SpiderMonkey's GC triggers do not count DOM nodes, which Servo allocates outside the
+        // JS heap. Without a low malloc trigger, a HUD that replaces text every frame keeps its
+        // detached nodes for minutes.
+        js_mem_gc_malloc_threshold_base_mb: 1,
         ..Preferences::default()
     };
     let servo = ServoBuilder::default()
