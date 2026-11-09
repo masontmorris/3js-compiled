@@ -39,7 +39,7 @@ grafting-servo = { git = "https://github.com/merely-made/wgpu-graft", rev = "790
 servo = { git = "https://github.com/servo/servo", rev = "aac43a3f31a259f04a574f5ec4e959c943ad7cc7" }
 ```
 
-```rust
+```rust,ignore
 use servo_wgpu_interop_adapter::ServoWgpuRenderingContext;
 use winit::dpi::PhysicalSize;
 
@@ -57,7 +57,7 @@ See the demo crates for complete integration examples.
 For GPU import, hand `adapter.rendering_context()` to `WebViewBuilder`, then
 paint, present through that same importing context, and take its frame:
 
-```rust
+```rust,ignore
 webview.paint();
 adapter.rendering_context().present();
 let imported = adapter.take_imported_texture_result()?;
