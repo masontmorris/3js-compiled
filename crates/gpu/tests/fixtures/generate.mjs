@@ -214,3 +214,12 @@ labelDevice.createBindGroup({ layout: uniformLayout, entries: [{ binding: 0, res
 writeFileSync(new URL('./labels-2.bin', import.meta.url), labelDevice.takeFrame());
 labelDevice.queue.writeBuffer(particles, 2, new Uint8Array(4));
 writeFileSync(new URL('./labels-3.bin', import.meta.url), labelDevice.takeFrame());
+
+const ownedDevice = new RecordingDevice();
+const owned = ownedDevice.surfaceTexture(4, 4, { format: 'bgra8unorm', usage: 17 });
+ownedDevice.commands.destroyTexture(owned.handle);
+const ownedEncoder = ownedDevice.createCommandEncoder();
+ownedEncoder.beginRenderPass({ colorAttachments: [{ view: owned.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 1, 0, 1] }] }).end();
+ownedDevice.queue.submit([ownedEncoder.finish()]);
+ownedDevice.commands.readTexture(100, owned.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
+writeFileSync(new URL('./surface-destroy.bin', import.meta.url), ownedDevice.takeFrame());

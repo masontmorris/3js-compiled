@@ -364,6 +364,69 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
     );
 }
 
+fn surface_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_stream_cannot_destroy_the_host_surface() {
+    let (device, queue) = device();
+    let surface = surface_texture(&device, 4, 4);
+    let mut executor = Executor::new(device, queue);
+    assert_eq!(
+        executor
+            .replay(
+                include_bytes!("fixtures/surface-destroy.bin"),
+                Some(&surface)
+            )
+            .unwrap(),
+        vec![
+            error(
+                1,
+                None,
+                "the surface texture belongs to the host and cannot be destroyed"
+            ),
+            Response::Readback {
+                request: 100,
+                bytes: [0, 255, 0, 255].repeat(16)
+            },
+        ]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn errors_outside_error_scopes_become_responses() {
+    let (device, queue) = device();
+    let surface = surface_texture(&device, 4, 4);
+    let mut executor = Executor::new(device, queue);
+    surface.destroy();
+    let responses = executor
+        .replay(include_bytes!("fixtures/surface.bin"), Some(&surface))
+        .unwrap();
+    assert!(
+        responses.iter().any(|response| matches!(
+            response,
+            Response::Error { request: Some(100), message, .. } if message.contains("destroyed")
+        )),
+        "{responses:?}"
+    );
+}
+
 fn assert_scene_matches_edge(scene: &str, frames: [&[u8]; 2], edge: &[u8]) {
     let (device, queue) = device();
     let surface = device.create_texture(&wgpu::TextureDescriptor {

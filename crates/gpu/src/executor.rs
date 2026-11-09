@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::mpsc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, mpsc},
+};
 
 use crate::decode;
 
@@ -60,6 +63,7 @@ pub struct Executor {
     surface: Option<wgpu::Texture>,
     surface_handle: Option<u32>,
     surface_used: bool,
+    uncaptured: Arc<Mutex<Vec<String>>>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -101,7 +105,14 @@ fn buffer_slice(
 }
 
 impl Executor {
+    /// Replaces the device's uncaptured-error handler, whose default panics, so that a stream
+    /// can only produce error responses.
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
+        let uncaptured = Arc::new(Mutex::new(Vec::new()));
+        let errors = uncaptured.clone();
+        device.on_uncaptured_error(Arc::new(move |error| {
+            errors.lock().unwrap().push(error.to_string());
+        }));
         Self {
             device,
             queue,
@@ -125,6 +136,7 @@ impl Executor {
             surface: None,
             surface_handle: None,
             surface_used: false,
+            uncaptured,
         }
     }
 
@@ -181,7 +193,13 @@ impl Executor {
         for (command, record) in records.iter().enumerate() {
             let subject = self.subject(record.opcode, record.payload);
             let before = self.label(subject);
-            match self.execute(record.opcode, record.payload) {
+            let mut result = self.execute(record.opcode, record.payload);
+            let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
+            if !uncaptured.is_empty() {
+                let first = result.err().into_iter();
+                result = Err(first.chain(uncaptured).collect::<Vec<_>>().join("\n"));
+            }
+            match result {
                 Ok(Some(response)) => responses.push(response),
                 Ok(None) => {}
                 Err(message) => responses.push(Response::Error {
@@ -472,6 +490,11 @@ impl Executor {
             }
             6 => {
                 size(payload, 4)?;
+                if self.surface_handle == Some(u32_at(payload, 0)) {
+                    return Err(
+                        "the surface texture belongs to the host and cannot be destroyed".into(),
+                    );
+                }
                 let texture = self
                     .textures
                     .remove(&u32_at(payload, 0))

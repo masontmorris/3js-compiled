@@ -130,6 +130,7 @@ impl Renderer {
         clear: Option<[f64; 4]>,
         captures: &[&Path],
     ) -> Result<wgpu::SurfaceTexture> {
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self
             .device
@@ -194,6 +195,9 @@ impl Renderer {
             Some(buffer)
         };
         self.queue.submit(Some(encoder.finish()));
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            bail!("host frame rendering failed: {error}");
+        }
         if let Some(buffer) = buffer {
             let slice = buffer.slice(..);
             let (tx, rx) = mpsc::channel();
