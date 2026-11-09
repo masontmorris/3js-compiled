@@ -347,16 +347,17 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
             },
         ]
     );
-    let mismatch = executor
-        .replay(
-            include_bytes!("fixtures/surface-mismatch.bin"),
-            Some(&surface),
-        )
-        .unwrap();
-    assert!(
-        matches!(&mismatch[..], [Response::Error { message, .. }] if message == "surface is 4x4, not 8x8"),
-        "{mismatch:?}"
+    assert_eq!(
+        executor
+            .replay(include_bytes!("fixtures/surface-resize.bin"), Some(&surface))
+            .unwrap(),
+        vec![Response::Readback {
+            request: 100,
+            bytes: [0, 255, 0, 255].repeat(16)
+        }],
+        "a texture acquired before a resize renders offscreen and later draws reach the surface"
     );
+    assert!(executor.surface_used());
     let missing = executor.replay(frame, None).unwrap();
     assert!(
         missing.iter().any(|response| matches!(response, Response::Error { message, .. } if message == "no surface for this frame")),

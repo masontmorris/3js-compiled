@@ -572,6 +572,10 @@ export class RecordingDevice {
 
   surfaceTexture(width, height, { format, usage }) {
     if (this.destroyed) throw new Error('Device is destroyed');
+    if (this.surface && (this.surface.width !== width || this.surface.height !== height)) {
+      this.surface.destroy();
+      this.surface = null;
+    }
     if (!this.surface) {
       this.surface = new RecordingTexture(this, { size: [width, height], format, usage }, true);
       this.textures.add(this.surface);

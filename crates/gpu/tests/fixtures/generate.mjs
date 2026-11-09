@@ -197,8 +197,14 @@ surfacePass.end();
 surfaceDevice.queue.submit([surfaceEncoder.finish()]);
 surfaceDevice.commands.readTexture(100, surface.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
 writeFileSync(new URL('./surface.bin', import.meta.url), surfaceDevice.takeFrame());
-surfaceDevice.surfaceTexture(8, 8, { format: 'bgra8unorm', usage: 17 });
-writeFileSync(new URL('./surface-mismatch.bin', import.meta.url), surfaceDevice.takeFrame());
+for (const [size, color] of [[8, [1, 0, 0, 1]], [4, [0, 1, 0, 1]]]) {
+  const encoder = surfaceDevice.createCommandEncoder();
+  const view = surfaceDevice.surfaceTexture(size, size, { format: 'bgra8unorm', usage: 17 }).createView();
+  encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: color }] }).end();
+  surfaceDevice.queue.submit([encoder.finish()]);
+}
+surfaceDevice.commands.readTexture(100, surfaceDevice.surface.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
+writeFileSync(new URL('./surface-resize.bin', import.meta.url), surfaceDevice.takeFrame());
 
 const labelDevice = new RecordingDevice();
 const particles = labelDevice.createBuffer({ label: 'particles', size: 16, usage: 12 });

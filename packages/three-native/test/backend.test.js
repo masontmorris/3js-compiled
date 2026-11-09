@@ -4,6 +4,8 @@ import { WebGPURenderer } from 'three/webgpu';
 import { NativeBackend, RecordingDevice } from '../src/NativeBackend.js';
 import { decodeCommands, Opcode } from '../src/commands.js';
 
+Object.assign(globalThis, { self: globalThis, requestAnimationFrame: () => 0, cancelAnimationFrame() {} });
+
 test('renderer initializes the native backend and hides unsupported subgroups', async () => {
   const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
   const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits', 'subgroups'] });
@@ -302,6 +304,23 @@ test('render pass draw state records typed fields and rejects use after end', ()
   assert.deepEqual([field(2, 0), field(2, 4), field(2, 8, 64), field(2, 16, 64)], [1, indices.handle, 8, 24]);
   assert.equal(field(3, 8, 'f'), 2);
   assert.deepEqual([0, 4, 8, 12, 16].map(offset => field(4, offset)), [6, 2, 0, 0xfffffffd, 1]);
+});
+
+test('a canvas resize within a frame acquires a texture of the new size', async () => {
+  const canvas = { width: 1280, height: 720, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  const { Scene, PerspectiveCamera } = await import('three/webgpu');
+  const scene = new Scene();
+  const camera = new PerspectiveCamera();
+  renderer.render(scene, camera);
+  renderer.setSize(800, 600, false);
+  renderer.render(scene, camera);
+  assert.deepEqual([backend.context.getCurrentTexture().width, backend.context.getCurrentTexture().height], [800, 600]);
+  const acquired = decodeCommands(backend.takeFrame()).filter(item => item.opcode === Opcode.ACQUIRE_SURFACE);
+  assert.deepEqual(acquired.map(item => [...new Uint32Array(item.payload.buffer)].slice(1)), [[1280, 720], [800, 600]]);
+  await renderer.dispose();
 });
 
 test('the canvas texture is acquired once per frame and released with the frame', async () => {

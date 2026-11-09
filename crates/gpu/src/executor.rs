@@ -61,7 +61,7 @@ pub struct Executor {
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
     valid_pipeline: Option<bool>,
     surface: Option<wgpu::Texture>,
-    surface_handle: Option<u32>,
+    surface_handles: Vec<u32>,
     surface_used: bool,
     uncaptured: Arc<Mutex<Vec<String>>>,
 }
@@ -134,7 +134,7 @@ impl Executor {
             render_pass_scope: None,
             valid_pipeline: None,
             surface: None,
-            surface_handle: None,
+            surface_handles: Vec::new(),
             surface_used: false,
             uncaptured,
         }
@@ -239,7 +239,7 @@ impl Executor {
                 message: "incomplete command submission".into(),
             });
         }
-        if let Some(handle) = self.surface_handle.take() {
+        for handle in std::mem::take(&mut self.surface_handles) {
             self.textures.remove(&handle);
             self.views.retain(|_, (parent, _)| *parent != handle);
         }
@@ -249,7 +249,7 @@ impl Executor {
         Ok(responses)
     }
 
-    /// Whether the last replay bound its surface with `ACQUIRE_SURFACE`.
+    /// Whether the last replay bound the host's surface, at its current size, with `ACQUIRE_SURFACE`.
     pub fn surface_used(&self) -> bool {
         self.surface_used
     }
@@ -490,7 +490,7 @@ impl Executor {
             }
             6 => {
                 size(payload, 4)?;
-                if self.surface_handle == Some(u32_at(payload, 0)) {
+                if self.surface_handles.contains(&u32_at(payload, 0)) {
                     return Err(
                         "the surface texture belongs to the host and cannot be destroyed".into(),
                     );
@@ -1296,19 +1296,37 @@ impl Executor {
             30 => {
                 size(payload, 12)?;
                 let handle = u32_at(payload, 0);
-                if self.handle_used(handle) || self.surface_handle.is_some() {
+                if self.handle_used(handle) {
                     return Err("invalid or duplicate surface handle".into());
                 }
-                let raw = self.surface.clone().ok_or("no surface for this frame")?;
-                if (raw.width(), raw.height()) != (u32_at(payload, 4), u32_at(payload, 8)) {
-                    return Err(format!(
-                        "surface is {}x{}, not {}x{}",
-                        raw.width(),
-                        raw.height(),
-                        u32_at(payload, 4),
-                        u32_at(payload, 8)
-                    ));
-                }
+                let surface = self.surface.clone().ok_or("no surface for this frame")?;
+                let (width, height) = (u32_at(payload, 4), u32_at(payload, 8));
+                let current = (surface.width(), surface.height()) == (width, height);
+                // A canvas texture acquired before a resize renders offscreen, as a browser
+                // discards it, so the frame's later draws still reach the resized surface.
+                let raw = if current {
+                    surface
+                } else {
+                    let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                    let stale = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("stale surface"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: surface.format(),
+                        usage: surface.usage(),
+                        view_formats: &[],
+                    });
+                    if let Some(error) = pollster::block_on(scope.pop()) {
+                        return Err(error.to_string());
+                    }
+                    stale
+                };
                 self.textures.insert(
                     handle,
                     Texture {
@@ -1322,8 +1340,8 @@ impl Executor {
                         raw,
                     },
                 );
-                self.surface_handle = Some(handle);
-                self.surface_used = true;
+                self.surface_handles.push(handle);
+                self.surface_used |= current;
                 Ok(None)
             }
             31 => {
