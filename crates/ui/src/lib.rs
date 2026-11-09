@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::{
     fs::File,
     io::BufReader,
@@ -14,14 +14,19 @@ use std::{
 use threejsc_ipc::{self as proto, Msg};
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_ALL, HANDLE},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_PIPE_CONNECTED,
+            ERROR_PIPE_LISTENING, GENERIC_ALL, HANDLE,
+        },
         Graphics::Direct3D12::{
             D3D12_FENCE_FLAG_SHARED, ID3D12CommandQueue, ID3D12Device, ID3D12Fence, ID3D12Resource,
         },
-        Storage::FileSystem::{PIPE_ACCESS_INBOUND, PIPE_ACCESS_OUTBOUND},
+        Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
         System::{
             Pipes::{
-                ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
+                ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_NOWAIT,
+                PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
+                SetNamedPipeHandleState,
             },
             Threading::GetCurrentProcess,
         },
@@ -71,17 +76,12 @@ enum Connection {
     Backoff(Instant),
 }
 
-fn create_pipe(name: &str, outbound: bool) -> Result<File> {
-    let access = if outbound {
-        PIPE_ACCESS_OUTBOUND
-    } else {
-        PIPE_ACCESS_INBOUND
-    };
+fn create_pipe(name: &str) -> Result<File> {
     let handle = unsafe {
         CreateNamedPipeW(
             &HSTRING::from(name),
-            access,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
             1,
             1 << 16,
             1 << 16,
@@ -95,11 +95,31 @@ fn create_pipe(name: &str, outbound: bool) -> Result<File> {
     Ok(unsafe { File::from_raw_handle(handle.0) })
 }
 
-fn connect(pipe: File) -> File {
-    unsafe {
-        let _ = ConnectNamedPipe(HANDLE(pipe.as_raw_handle()), None);
+fn connect(pipe: &File, child: &mut Child, deadline: Instant) -> Result<()> {
+    let handle = HANDLE(pipe.as_raw_handle());
+    loop {
+        match unsafe { ConnectNamedPipe(handle, None) } {
+            Ok(()) => break,
+            Err(error) if error.code() == ERROR_PIPE_CONNECTED.to_hresult() => break,
+            Err(error) if error.code() == ERROR_PIPE_LISTENING.to_hresult() => {
+                if let Some(status) = child.try_wait()? {
+                    bail!("ui-host exited before pipe connection: {status}");
+                }
+                if Instant::now() >= deadline {
+                    bail!("ui-host pipe connection timed out");
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => return Err(error.into()),
+        }
     }
-    pipe
+    let mut pid = 0;
+    unsafe { GetNamedPipeClientProcessId(handle, &mut pid)? };
+    if pid != child.id() {
+        bail!("unexpected ui-host pipe client {pid}");
+    }
+    unsafe { SetNamedPipeHandleState(handle, Some(&PIPE_WAIT), None, None)? };
+    Ok(())
 }
 
 fn dup_into(child: HANDLE, handle: HANDLE) -> Result<u64> {
@@ -143,14 +163,18 @@ fn launch(
     base: u64,
     size: (u32, u32),
     page: String,
-    generation: u64,
 ) -> Result<Link> {
-    let name = format!(r"\\.\pipe\threejsc-{}-{generation}", std::process::id());
-    let down = create_pipe(&format!("{name}-down"), true)?;
-    let up = create_pipe(&format!("{name}-up"), false)?;
+    let mut nonce = [0u8; 16];
+    getrandom::fill(&mut nonce).map_err(|error| anyhow::anyhow!("pipe name: {error}"))?;
+    let name = format!(
+        r"\\.\pipe\threejsc-{}",
+        nonce.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    let down = create_pipe(&format!("{name}-down"))?;
+    let up = create_pipe(&format!("{name}-up"))?;
     let exe = std::env::current_exe()?.with_file_name("ui-host.exe");
     let log = File::create("ui-host.log")?;
-    let child = Command::new(exe)
+    let mut child = Command::new(exe)
         .args([
             "--pipe",
             &name,
@@ -167,18 +191,39 @@ fn launch(
         .stderr(Stdio::from(log))
         .spawn()
         .context("spawn ui-host")?;
+    let connected = (|| -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        connect(&down, &mut child, deadline)?;
+        connect(&up, &mut child, deadline)?;
+        Ok(())
+    })();
+    if let Err(error) = connected {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
     let process = HANDLE(child.as_raw_handle());
-    let hello = Msg::Hello {
-        ready_fence: dup_into(process, HANDLE(ready as *mut _))?,
-        done_fence: dup_into(process, HANDLE(done as *mut _))?,
-        ready_base: base,
-        width: size.0,
-        height: size.1,
+    let hello = (|| -> Result<Msg> {
+        Ok(Msg::Hello {
+            ready_fence: dup_into(process, HANDLE(ready as *mut _))?,
+            done_fence: dup_into(process, HANDLE(done as *mut _))?,
+            ready_base: base,
+            width: size.0,
+            height: size.1,
+        })
+    })();
+    let hello = match hello {
+        Ok(hello) => hello,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
     };
     let (tx, out) = mpsc::channel();
     tx.send(hello)?;
     std::thread::spawn(move || {
-        let mut pipe = connect(down);
+        let mut pipe = down;
         while let Ok(message) = out.recv() {
             if proto::write_msg(&mut pipe, &message).is_err() {
                 break;
@@ -187,7 +232,7 @@ fn launch(
     });
     let (incoming, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut pipe = BufReader::new(connect(up));
+        let mut pipe = BufReader::new(up);
         while let Ok(message) = proto::read_msg(&mut pipe) {
             if incoming.send(message).is_err() {
                 break;
@@ -220,7 +265,6 @@ pub struct Ui {
     connection: Connection,
     page: String,
     size: (u32, u32),
-    generation: u64,
     max_ready: u64,
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -325,7 +369,6 @@ impl Ui {
             connection: Connection::Backoff(Instant::now()),
             page,
             size,
-            generation: 0,
             max_ready: 0,
             pipeline,
             layout,
@@ -338,9 +381,8 @@ impl Ui {
         Ok(ui)
     }
     fn start(&mut self) {
-        self.generation += 1;
         let (tx, rx) = mpsc::channel();
-        let (luid, ready, done, base, size, page, generation) = (
+        let (luid, ready, done, base, size, page) = (
             self.d3d.luid,
             self.d3d.ready_handle.0 as usize,
             self.d3d.done_handle.0 as usize,
@@ -349,10 +391,13 @@ impl Ui {
                 + 1,
             self.size,
             self.page.clone(),
-            self.generation,
         );
         std::thread::spawn(move || {
-            let _ = tx.send(launch(luid, ready, done, base, size, page, generation));
+            if let Err(mpsc::SendError(Ok(link))) =
+                tx.send(launch(luid, ready, done, base, size, page))
+            {
+                retire(link, true);
+            }
         });
         self.connection = Connection::Launching(rx);
     }
@@ -654,3 +699,53 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
     return textureSample(hud, samp, v.uv);
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::OpenOptions;
+
+    fn name() -> String {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).unwrap();
+        format!(
+            r"\\.\pipe\threejsc-test-{:032x}",
+            u128::from_le_bytes(bytes)
+        )
+    }
+
+    #[test]
+    fn exited_child_does_not_leave_a_pipe_waiting() {
+        for _ in 0..10 {
+            let pipe = create_pipe(&name()).unwrap();
+            let mut child = Command::new("cmd.exe")
+                .args(["/C", "exit", "0"])
+                .spawn()
+                .unwrap();
+            let started = Instant::now();
+            assert!(connect(&pipe, &mut child, started + Duration::from_secs(2)).is_err());
+            assert!(started.elapsed() < Duration::from_secs(2));
+        }
+    }
+
+    #[test]
+    fn pipe_rejects_another_process_and_a_second_server() {
+        let name = name();
+        let pipe = create_pipe(&name).unwrap();
+        assert!(create_pipe(&name).is_err());
+        let _client = OpenOptions::new().read(true).open(&name).unwrap();
+        let mut child = Command::new("cmd.exe")
+            .args(["/C", "ping -n 10 127.0.0.1 >nul"])
+            .spawn()
+            .unwrap();
+        let result = connect(&pipe, &mut child, Instant::now() + Duration::from_secs(2));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unexpected ui-host pipe client")
+        );
+    }
+}
