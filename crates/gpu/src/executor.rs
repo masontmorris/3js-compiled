@@ -61,8 +61,10 @@ pub struct Executor {
     queue: wgpu::Queue,
     buffers: HashMap<u32, Buffer>,
     shaders: HashMap<u32, Option<wgpu::ShaderModule>>,
-    textures: HashMap<u32, Texture>,
-    views: HashMap<u32, (u32, wgpu::TextureView)>,
+    /// Each texture, or `None` when its creation failed, which leaves an invalid texture in WebGPU.
+    textures: HashMap<u32, Option<Texture>>,
+    /// Each view's texture and the view, or `None` for an invalid view.
+    views: HashMap<u32, (u32, Option<wgpu::TextureView>)>,
     samplers: HashMap<u32, wgpu::Sampler>,
     bind_group_layouts: HashMap<u32, wgpu::BindGroupLayout>,
     bind_groups: HashMap<u32, wgpu::BindGroup>,
@@ -75,6 +77,12 @@ pub struct Executor {
     encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
+    /// Inside a render pass with an invalid attachment, the error it raises when it ends. WebGPU
+    /// ignores the commands of such a pass.
+    invalid_pass: Option<String>,
+    /// Whether the open encoder holds an invalid pass, so that nothing in it runs and its submit
+    /// fails, as WebGPU rejects an invalid command buffer.
+    invalid_encoder: bool,
     valid_pipeline: Option<bool>,
     /// The canvas texture that `ACQUIRE_SURFACE` bound in this frame, which replaces the shown
     /// canvas at the end of the replay unless a resize discards it first.
@@ -137,6 +145,28 @@ fn buffer_slice(
     Ok(buffer.raw.slice(offset..end))
 }
 
+const INVALID_TEXTURE: &str = "the texture is invalid due to a previous error";
+
+fn texture(textures: &HashMap<u32, Option<Texture>>, handle: u32) -> Result<&Texture, String> {
+    textures
+        .get(&handle)
+        .ok_or("unknown texture handle")?
+        .as_ref()
+        .ok_or_else(|| INVALID_TEXTURE.into())
+}
+
+/// The active render pass, or `None` inside an invalid pass, whose commands WebGPU ignores.
+fn active<'a>(
+    pass: &'a mut Option<wgpu::RenderPass<'static>>,
+    invalid: &Option<String>,
+) -> Result<Option<&'a mut wgpu::RenderPass<'static>>, String> {
+    match pass {
+        Some(pass) => Ok(Some(pass)),
+        None if invalid.is_some() => Ok(None),
+        None => Err("no active render pass".into()),
+    }
+}
+
 impl Executor {
     /// Replaces the device's uncaptured-error handler, whose default panics, so that a stream
     /// can only produce error responses.
@@ -165,6 +195,8 @@ impl Executor {
             encoder: None,
             render_pass: None,
             render_pass_scope: None,
+            invalid_pass: None,
+            invalid_encoder: false,
             valid_pipeline: None,
             surface: None,
             shown: None,
@@ -250,52 +282,59 @@ impl Executor {
         for (command, record) in records.iter().enumerate() {
             let subject = self.subject(record.opcode, record.payload);
             let before = self.label(subject);
-            let mut result = if record.opcode == 26 && command + 1 == records.len() {
+            let result = if record.opcode == 26 && command + 1 == records.len() {
                 self.submit(record.payload, trailer.take())
             } else {
                 self.execute(record.opcode, record.payload)
             };
+            // Each error is its own response, as each raises its own uncapturederror in WebGPU.
             let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
-            if !uncaptured.is_empty() {
-                let first = result.err().into_iter();
-                result = Err(first.chain(uncaptured).collect::<Vec<_>>().join("\n"));
-            }
-            match result {
-                Ok(Some(response)) => responses.push(response),
-                Ok(None) => {}
-                Err(message) => responses.push(Response::Error {
-                    frame: self.frame,
-                    command,
-                    label: self.label(subject).or(before),
-                    request: if (record.opcode == 27 || record.opcode == 28)
-                        && record.payload.len() >= 4
-                    {
-                        Some(u32_at(record.payload, 0))
-                    } else if record.opcode == 9
-                        && record.payload.len() >= 16
-                        && u32_at(record.payload, 12) != 0
-                    {
-                        Some(u32_at(record.payload, 12))
-                    } else if record.opcode == 13
-                        && record.payload.len() >= 8
-                        && u32_at(record.payload, 4) != 0
-                    {
-                        Some(u32_at(record.payload, 4))
-                    } else {
-                        None
-                    },
-                    message,
-                }),
-            }
+            let messages = match result {
+                Ok(response) if uncaptured.is_empty() => {
+                    responses.extend(response);
+                    Vec::new()
+                }
+                result => result.err().into_iter().chain(uncaptured).collect(),
+            };
+            let label = self.label(subject).or(before);
+            let request =
+                if (record.opcode == 27 || record.opcode == 28) && record.payload.len() >= 4 {
+                    Some(u32_at(record.payload, 0))
+                } else if record.opcode == 9
+                    && record.payload.len() >= 16
+                    && u32_at(record.payload, 12) != 0
+                {
+                    Some(u32_at(record.payload, 12))
+                } else if record.opcode == 13
+                    && record.payload.len() >= 8
+                    && u32_at(record.payload, 4) != 0
+                {
+                    Some(u32_at(record.payload, 4))
+                } else {
+                    None
+                };
+            responses.extend(messages.into_iter().map(|message| Response::Error {
+                frame: self.frame,
+                command,
+                request,
+                label: label.clone(),
+                message,
+            }));
             // A create keeps its label for its error and drops it when the create left no resource.
             if let Some(handle) = subject.filter(|handle| !self.handle_used(*handle)) {
                 self.labels.remove(&handle);
             }
         }
         self.clear_unwritten_surface();
-        if self.render_pass.is_some() || self.encoder.is_some() {
+        if self.render_pass.is_some()
+            || self.invalid_pass.is_some()
+            || self.invalid_encoder
+            || self.encoder.is_some()
+        {
             self.render_pass = None;
             self.render_pass_scope = None;
+            self.invalid_pass = None;
+            self.invalid_encoder = false;
             self.encoder = None;
             responses.push(Response::Error {
                 frame: self.frame,
@@ -340,8 +379,13 @@ impl Executor {
         trailer: Option<Trailer<'_>>,
     ) -> Result<Option<Response>, String> {
         size(payload, 0)?;
-        if self.render_pass.is_some() {
+        if self.render_pass.is_some() || self.invalid_pass.is_some() {
             return Err("cannot submit an active render pass".into());
+        }
+        if std::mem::take(&mut self.invalid_encoder) {
+            self.encoder = None;
+            self.encoder_dropped(false);
+            return Err("the command buffer is invalid due to a previous error".into());
         }
         let trailer = trailer.filter(|_| self.surface_clear != SurfaceClear::Needed);
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -369,6 +413,7 @@ impl Executor {
         self.surface.as_ref().is_some_and(|surface| {
             self.textures
                 .get(&texture)
+                .and_then(Option::as_ref)
                 .is_some_and(|texture| texture.raw == *surface)
         })
     }
@@ -623,11 +668,12 @@ impl Executor {
                     view_formats: &[],
                 });
                 if let Some(error) = pollster::block_on(scope.pop()) {
+                    self.textures.insert(handle, None);
                     return Err(error.to_string());
                 }
                 self.textures.insert(
                     handle,
-                    Texture {
+                    Some(Texture {
                         raw,
                         format,
                         width,
@@ -636,7 +682,7 @@ impl Executor {
                         mips,
                         samples,
                         usage,
-                    },
+                    }),
                 );
                 Ok(None)
             }
@@ -644,10 +690,7 @@ impl Executor {
                 if payload.len() < 40 {
                     return Err("truncated texture write".into());
                 }
-                let texture = self
-                    .textures
-                    .get(&u32_at(payload, 0))
-                    .ok_or("unknown texture handle")?;
+                let texture = texture(&self.textures, u32_at(payload, 0))?;
                 let mip_level = u32_at(payload, 4);
                 let origin = wgpu::Origin3d {
                     x: u32_at(payload, 8),
@@ -692,11 +735,14 @@ impl Executor {
                         "the surface texture belongs to the host and cannot be destroyed".into(),
                     );
                 }
+                // As in WebGPU, destroying an invalid texture raises nothing.
                 let texture = self
                     .textures
                     .remove(&u32_at(payload, 0))
                     .ok_or("unknown texture handle")?;
-                texture.raw.destroy();
+                if let Some(texture) = texture {
+                    texture.raw.destroy();
+                }
                 let handle = u32_at(payload, 0);
                 let labels = &mut self.labels;
                 self.views.retain(|view, (parent, _)| {
@@ -742,26 +788,36 @@ impl Executor {
                 let mips = u32_at(payload, 12);
                 let layers = u32_at(payload, 20);
                 let label = self.labels.get(&parent).cloned();
-                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-                let view = texture.raw.create_view(&wgpu::TextureViewDescriptor {
-                    label: label.as_deref(),
-                    format: None,
-                    dimension,
-                    usage,
-                    aspect,
-                    base_mip_level: u32_at(payload, 8),
-                    mip_level_count: (mips != 0).then_some(mips),
-                    base_array_layer: u32_at(payload, 16),
-                    array_layer_count: (layers != 0).then_some(layers),
-                });
-                if let Some(error) = pollster::block_on(scope.pop()) {
-                    return Err(error.to_string());
-                }
-                self.views.insert(handle, (parent, view));
+                let view = match texture {
+                    None => Err(INVALID_TEXTURE.to_owned()),
+                    Some(texture) => {
+                        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                        let view = texture.raw.create_view(&wgpu::TextureViewDescriptor {
+                            label: label.as_deref(),
+                            format: None,
+                            dimension,
+                            usage,
+                            aspect,
+                            base_mip_level: u32_at(payload, 8),
+                            mip_level_count: (mips != 0).then_some(mips),
+                            base_array_layer: u32_at(payload, 16),
+                            array_layer_count: (layers != 0).then_some(layers),
+                        });
+                        match pollster::block_on(scope.pop()) {
+                            Some(error) => Err(error.to_string()),
+                            None => Ok(view),
+                        }
+                    }
+                };
                 if let Some(label) = label {
                     self.labels.insert(handle, label);
                 }
-                Ok(None)
+                let (view, result) = match view {
+                    Ok(view) => (Some(view), Ok(None)),
+                    Err(error) => (None, Err(error)),
+                };
+                self.views.insert(handle, (parent, view));
+                result
             }
             28 => {
                 size(payload, 32)?;
@@ -769,10 +825,7 @@ impl Executor {
                     self.clear_unwritten_surface();
                 }
                 let request = u32_at(payload, 0);
-                let texture = self
-                    .textures
-                    .get(&u32_at(payload, 4))
-                    .ok_or("unknown texture handle")?;
+                let texture = texture(&self.textures, u32_at(payload, 4))?;
                 let mip = u32_at(payload, 8);
                 let x = u32_at(payload, 12);
                 let y = u32_at(payload, 16);
@@ -1084,11 +1137,12 @@ impl Executor {
                                 .ok_or("unknown sampler handle")?,
                         ),
                         3 if offset == 0 && size == 0 => wgpu::BindingResource::TextureView(
-                            &self
-                                .views
+                            self.views
                                 .get(&resource_handle)
                                 .ok_or("unknown texture view handle")?
-                                .1,
+                                .1
+                                .as_ref()
+                                .ok_or("the texture view is invalid due to a previous error")?,
                         ),
                         _ => return Err("invalid bind group resource".into()),
                     };
@@ -1204,7 +1258,7 @@ impl Executor {
                 Ok((request != 0).then_some(Response::Validation { request }))
             }
             14 => {
-                if self.render_pass.is_some() {
+                if self.render_pass.is_some() || self.invalid_pass.is_some() {
                     return Err("render pass already active".into());
                 }
                 if payload.len() < 36 || !(payload.len() - 36).is_multiple_of(52) {
@@ -1215,6 +1269,7 @@ impl Executor {
                 }
                 let mut colors = Vec::new();
                 let mut writes_surface = false;
+                let mut invalid = false;
                 for entry in payload[4..payload.len() - 32].as_chunks::<52>().0 {
                     let flags = u32_at(entry, 0);
                     if flags == 0 {
@@ -1228,6 +1283,7 @@ impl Executor {
                         .views
                         .get(&u32_at(entry, 4))
                         .ok_or("unknown color view handle")?;
+                    invalid |= view.is_none();
                     let needs_clear = self.surface_clear == SurfaceClear::Needed;
                     let on_surface = needs_clear && self.is_surface(*parent);
                     let resolve_target = if flags & 2 != 0 {
@@ -1235,8 +1291,9 @@ impl Executor {
                             .views
                             .get(&u32_at(entry, 8))
                             .ok_or("unknown resolve view handle")?;
+                        invalid |= view.is_none();
                         writes_surface |= needs_clear && self.is_surface(*parent);
-                        Some(view)
+                        view.as_ref()
                     } else {
                         None
                     };
@@ -1265,7 +1322,7 @@ impl Executor {
                         1 => wgpu::StoreOp::Store,
                         _ => return Err("invalid color store operation".into()),
                     };
-                    colors.push(Some(wgpu::RenderPassColorAttachment {
+                    colors.push(view.as_ref().map(|view| wgpu::RenderPassColorAttachment {
                         view,
                         depth_slice: None,
                         resolve_target,
@@ -1277,11 +1334,13 @@ impl Executor {
                 let depth = if depth_view == 0 {
                     None
                 } else {
-                    let view = &self
+                    let view = self
                         .views
                         .get(&depth_view)
                         .ok_or("unknown depth view handle")?
-                        .1;
+                        .1
+                        .as_ref();
+                    invalid |= view.is_none();
                     let flags = u32_at(depth_entry, 4);
                     if flags > 3 {
                         return Err("invalid depth attachment flags".into());
@@ -1321,12 +1380,20 @@ impl Executor {
                     } else {
                         None
                     };
-                    Some(wgpu::RenderPassDepthStencilAttachment {
+                    view.map(|view| wgpu::RenderPassDepthStencilAttachment {
                         view,
                         depth_ops,
                         stencil_ops,
                     })
                 };
+                self.valid_pipeline = None;
+                self.pipeline = None;
+                self.pass_view = self.subject(14, payload);
+                if invalid {
+                    self.invalid_pass =
+                        Some("a render pass attachment is invalid due to a previous error".into());
+                    return Ok(None);
+                }
                 let encoder = self
                     .encoder
                     .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
@@ -1345,9 +1412,6 @@ impl Executor {
                 if writes_surface {
                     self.surface_clear = SurfaceClear::Encoded;
                 }
-                self.valid_pipeline = None;
-                self.pipeline = None;
-                self.pass_view = self.subject(14, payload);
                 self.render_pass = Some(pass);
                 Ok(None)
             }
@@ -1357,7 +1421,9 @@ impl Executor {
                     .render_pipelines
                     .get(&u32_at(payload, 0))
                     .ok_or("unknown render pipeline handle")?;
-                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
                 self.valid_pipeline = Some(pipeline.is_some());
                 self.pipeline = Some(u32_at(payload, 0));
                 if let Some(pipeline) = pipeline {
@@ -1382,10 +1448,10 @@ impl Executor {
                     .iter()
                     .map(|value| u32::from_le_bytes(*value))
                     .collect();
-                self.render_pass
-                    .as_mut()
-                    .ok_or("no active render pass")?
-                    .set_bind_group(u32_at(payload, 0), group, &offsets);
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
+                pass.set_bind_group(u32_at(payload, 0), group, &offsets);
                 Ok(None)
             }
             17 | 18 => {
@@ -1400,7 +1466,9 @@ impl Executor {
                     wgpu::BufferUsages::INDEX
                 };
                 let slice = buffer_slice(buffer, u64_at(payload, 8), u64_at(payload, 16), usage)?;
-                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
                 if opcode == 17 {
                     pass.set_vertex_buffer(u32_at(payload, 0), slice);
                 } else {
@@ -1420,25 +1488,25 @@ impl Executor {
                 if !values.iter().all(|value| value.is_finite()) {
                     return Err("invalid viewport".into());
                 }
-                self.render_pass
-                    .as_mut()
-                    .ok_or("no active render pass")?
-                    .set_viewport(
-                        values[0], values[1], values[2], values[3], values[4], values[5],
-                    );
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
+                pass.set_viewport(
+                    values[0], values[1], values[2], values[3], values[4], values[5],
+                );
                 Ok(None)
             }
             20 => {
                 size(payload, 16)?;
-                self.render_pass
-                    .as_mut()
-                    .ok_or("no active render pass")?
-                    .set_scissor_rect(
-                        u32_at(payload, 0),
-                        u32_at(payload, 4),
-                        u32_at(payload, 8),
-                        u32_at(payload, 12),
-                    );
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
+                pass.set_scissor_rect(
+                    u32_at(payload, 0),
+                    u32_at(payload, 4),
+                    u32_at(payload, 8),
+                    u32_at(payload, 12),
+                );
                 Ok(None)
             }
             21 => {
@@ -1447,28 +1515,30 @@ impl Executor {
                 if !values.iter().all(|value| value.is_finite()) {
                     return Err("invalid blend constant".into());
                 }
-                self.render_pass
-                    .as_mut()
-                    .ok_or("no active render pass")?
-                    .set_blend_constant(wgpu::Color {
-                        r: values[0],
-                        g: values[1],
-                        b: values[2],
-                        a: values[3],
-                    });
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
+                pass.set_blend_constant(wgpu::Color {
+                    r: values[0],
+                    g: values[1],
+                    b: values[2],
+                    a: values[3],
+                });
                 Ok(None)
             }
             22 => {
                 size(payload, 4)?;
-                self.render_pass
-                    .as_mut()
-                    .ok_or("no active render pass")?
-                    .set_stencil_reference(u32_at(payload, 0));
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
+                pass.set_stencil_reference(u32_at(payload, 0));
                 Ok(None)
             }
             23 | 24 => {
                 size(payload, if opcode == 23 { 16 } else { 20 })?;
-                let pass = self.render_pass.as_mut().ok_or("no active render pass")?;
+                let Some(pass) = active(&mut self.render_pass, &self.invalid_pass)? else {
+                    return Ok(None);
+                };
                 let valid = self.valid_pipeline.ok_or("no render pipeline set")?;
                 let first = u32_at(payload, 8);
                 let end = first
@@ -1493,6 +1563,15 @@ impl Executor {
             }
             25 => {
                 size(payload, 0)?;
+                // WebGPU reports an invalid pass once, when its encoder finishes, and the stream
+                // records no finish, so the first invalid pass in an encoder reports as it ends.
+                if let Some(error) = self.invalid_pass.take() {
+                    return if std::mem::replace(&mut self.invalid_encoder, true) {
+                        Ok(None)
+                    } else {
+                        Err(error)
+                    };
+                }
                 drop(self.render_pass.take().ok_or("no active render pass")?);
                 let scope = self
                     .render_pass_scope
@@ -1512,6 +1591,25 @@ impl Executor {
                     return Err("invalid or duplicate surface handle".into());
                 }
                 let (width, height) = (u32_at(payload, 4), u32_at(payload, 8));
+                // A canvas with no area has no texture to draw, so the acquire fails and the canvas
+                // shows nothing, as in Edge, which raises both of these errors.
+                if width == 0 || height == 0 {
+                    self.textures.insert(handle, None);
+                    self.surface_handles.push(handle);
+                    if let Some(discarded) = self.surface.take() {
+                        self.spare = Some(discarded);
+                    }
+                    self.surface_clear = SurfaceClear::Done;
+                    if self.shown.is_some() {
+                        let canvas = self.canvas_texture(1, 1)?;
+                        self.clear(&canvas);
+                        self.next = Some(canvas);
+                    }
+                    self.uncaptured.lock().unwrap().push(format!(
+                        "could not create a canvas texture of size {width}x{height}"
+                    ));
+                    return Err(format!("the canvas texture size {width}x{height} is empty"));
+                }
                 // A texture acquired before an acquire at another size keeps its handle but no
                 // longer reaches the window, as a browser discards it on resize.
                 let raw = match &self.surface {
@@ -1528,7 +1626,7 @@ impl Executor {
                 };
                 self.textures.insert(
                     handle,
-                    Texture {
+                    Some(Texture {
                         format: raw.format(),
                         width: raw.width(),
                         height: raw.height(),
@@ -1537,7 +1635,7 @@ impl Executor {
                         samples: 1,
                         usage: raw.usage(),
                         raw,
-                    },
+                    }),
                 );
                 self.surface_handles.push(handle);
                 Ok(None)
