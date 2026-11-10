@@ -1,7 +1,8 @@
 // Counts animation frames, times each frame's callbacks, and reports the measured window through console.log.
 // The frame-cost tool sets globalThis.__perfProbe = { warmup, frames, go } before this script runs.
 // Frames count from the first frame after `go` becomes true. Callbacks that share a timestamp belong to
-// one frame, because three's renderer runs its own animation loop beside the application's.
+// one frame, because three's renderer runs its own animation loop beside the application's. Once `stop` is true,
+// the probe drops every callback, so the page stops drawing.
 {
   const { warmup, frames } = globalThis.__perfProbe;
   const request = globalThis.requestAnimationFrame.bind(globalThis);
@@ -30,6 +31,7 @@
     }
   };
   globalThis.requestAnimationFrame = callback => request(time => {
+    if (globalThis.__perfProbe.stop) return;
     const before = performance.now();
     if (globalThis.__perfProbe.go && time !== frameTime) {
       if (frameTime !== null) finishFrame(before);
