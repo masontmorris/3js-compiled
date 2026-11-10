@@ -521,6 +521,22 @@ test('a second live native renderer is rejected until the first is disposed', as
   await second.renderer.dispose();
 });
 
+test('a second renderer constructed before the first initializes gets the one-surface error', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const make = () => new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas }, { features: ['core-features-and-limits'] }) });
+  const first = make();
+  const second = make();
+  await first.init();
+  await assert.rejects(second.init(), /one live NativeBackend/);
+  assert.equal(second.backend.isNativeBackend, true);
+  const { Mesh, BoxGeometry, MeshBasicMaterial, PerspectiveCamera, Scene } = await import('three/webgpu');
+  const scene = new Scene();
+  scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+  first.render(scene, new PerspectiveCamera());
+  assert.ok(decodeCommands(first.backend.takeFrame()).some(record => record.opcode === Opcode.ACQUIRE_SURFACE));
+  await first.dispose();
+});
+
 test('a renderer disposed before init or after a failed init leaves the surface to the next renderer', async () => {
   const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
   const unused = new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas }, { features: ['core-features-and-limits'] }) });
@@ -532,8 +548,8 @@ test('a renderer disposed before init or after a failed init leaves the surface 
     }
   }
   const failed = new WebGPURenderer({ canvas, backend: new FailingBackend({ canvas }, { features: ['core-features-and-limits'] }) });
-  await assert.rejects(failed.init());
-  await assert.rejects(failed.dispose());
+  await assert.rejects(failed.init(), /init failed/);
+  await assert.rejects(failed.dispose(), /init failed/);
   const next = await boxRenderer(canvas, 0x00ff00);
   next.render();
   assert.ok(decodeCommands(next.backend.takeFrame()).some(record => record.opcode === Opcode.ACQUIRE_SURFACE));
