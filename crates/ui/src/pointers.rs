@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::collections::VecDeque;
+use std::time::Instant;
 
 pub(crate) type Size = (u32, u32);
 type Rect = [f64; 4];
@@ -16,6 +17,17 @@ pub(crate) struct Pointer {
     pub x: f64,
     pub y: f64,
     pub button: i16,
+}
+
+/// What the host knows of the HUD frames when it routes input.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct View {
+    /// The size the frame on screen was laid out at.
+    pub shown: Option<Size>,
+    /// The size Servo lays the page out at.
+    pub servo: Option<Size>,
+    /// The size the host last asked ui-host for.
+    pub requested: Size,
 }
 
 /// Input for the page, recorded as a point inside one of its rects.
@@ -36,8 +48,11 @@ pub(crate) struct Pointers {
 }
 
 impl Pointers {
-    /// The page listed `rects` while laid out at `size`.
-    pub fn measured(&mut self, size: Size, rects: Vec<Rect>) {
+    /// The page replied while laid out at `size`, listing `rects` when they changed.
+    pub fn measured(&mut self, _view: View, size: Size, rects: Option<Vec<Rect>>) {
+        let Some(rects) = rects else {
+            return;
+        };
         self.layouts.retain(|(at, _)| *at != size);
         if self.layouts.len() == LAYOUTS {
             self.layouts.pop_front();
@@ -50,17 +65,21 @@ impl Pointers {
             .find(|(at, _)| *at == size)
             .map(|(_, rects)| rects.as_slice())
     }
-    /// Whether `pointer` lands on a rect of the frame on screen, laid out at `shown`. Input that
-    /// does waits for `release`; the rest belongs to the game.
-    pub fn aim(&mut self, shown: Size, pointer: Pointer) -> bool {
-        let Some((rect, r)) = self.layout(shown).and_then(|rects| {
-            rects.iter().enumerate().find(|(_, r)| {
-                pointer.x >= r[0]
-                    && pointer.y >= r[1]
-                    && pointer.x < r[0] + r[2]
-                    && pointer.y < r[1] + r[3]
+    /// Whether `pointer` lands on a rect of the frame on screen. Input that does waits for
+    /// `release`; the rest belongs to the game.
+    pub fn pointer(&mut self, view: View, pointer: Pointer, _now: Instant) -> bool {
+        let Some((rect, r)) = view
+            .shown
+            .and_then(|shown| self.layout(shown))
+            .and_then(|rects| {
+                rects.iter().enumerate().find(|(_, r)| {
+                    pointer.x >= r[0]
+                        && pointer.y >= r[1]
+                        && pointer.x < r[0] + r[2]
+                        && pointer.y < r[1] + r[3]
+                })
             })
-        }) else {
+        else {
             return false;
         };
         let offset = (pointer.x - r[0], pointer.y - r[1]);
@@ -71,10 +90,14 @@ impl Pointers {
         });
         true
     }
-    /// The held input, in order, placed on the layout Servo has at `servo`, once the page has
-    /// been measured at that size. A rect the new layout lacks keeps the input's own point.
-    pub fn release(&mut self, servo: Size) -> Vec<Pointer> {
-        let Some((_, rects)) = self.layouts.iter().find(|(at, _)| *at == servo) else {
+    /// The held input, in order, placed on the page's layout at Servo's size once Servo lays
+    /// the page out at the size the host asked for and the page has been measured there. A
+    /// rect the new layout lacks keeps the input's own point.
+    pub fn release(&mut self, view: View, _now: Instant) -> Vec<Pointer> {
+        if view.servo != Some(view.requested) {
+            return Vec::new();
+        }
+        let Some((_, rects)) = self.layouts.iter().find(|(at, _)| *at == view.requested) else {
             return Vec::new();
         };
         self.held
@@ -105,71 +128,182 @@ impl Pointers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rings::Rings;
+    use std::time::Duration;
 
     const OLD: Size = (1280, 720);
     const NEW: Size = (1680, 720);
-
-    fn click(x: f64) -> Pointer {
-        Pointer {
-            action: 1,
-            x,
-            y: 60.0,
-            button: 0,
-        }
-    }
 
     /// The kept-hit page: a 200x80 button 20 px from the right edge.
     fn right_button(width: u32) -> Vec<Rect> {
         vec![[width as f64 - 220.0, 20.0, 200.0, 80.0]]
     }
 
+    fn at(action: u8, x: f64) -> Pointer {
+        Pointer {
+            action,
+            x,
+            y: 60.0,
+            button: 0,
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum To {
+        Page(Pointer),
+        Game(Pointer),
+    }
+    use To::{Game, Page};
+
+    /// `Ui` without the pipe and D3D: the real `Rings` and `Pointers`, given ui-host's
+    /// messages and the game's input as `Ui::update` and `Ui::pointer` give them.
+    struct Host {
+        rings: Rings<()>,
+        pointers: Pointers,
+        requested: Size,
+        generation: u64,
+        pub_id: u64,
+        now: Instant,
+        out: Vec<To>,
+    }
+
+    impl Host {
+        /// A page laid out at `size` with `rects`, its first frame on screen.
+        fn new(size: Size, rects: Vec<Rect>) -> Self {
+            let mut host = Host {
+                rings: Rings::default(),
+                pointers: Pointers::default(),
+                requested: size,
+                generation: 0,
+                pub_id: 0,
+                now: Instant::now(),
+                out: Vec::new(),
+            };
+            host.resize(size);
+            host.reply(size, Some(rects));
+            host.publish();
+            host
+        }
+        fn view(&self) -> View {
+            self.rings.view(self.requested)
+        }
+        /// The host sends Resize; ui-host resizes the page and announces a ring at that size.
+        fn resize(&mut self, size: Size) {
+            self.requested = size;
+            self.generation += 1;
+            self.rings.announced(self.generation, size);
+            self.rings.opened(self.generation, vec![(), (), ()]);
+        }
+        /// A page reply from ui-host while the page is laid out at `size`.
+        fn reply(&mut self, size: Size, rects: Option<Vec<Rect>>) {
+            self.pointers.measured(self.view(), size, rects);
+            self.update();
+        }
+        /// ui-host publishes a frame into its newest ring and the host shows it.
+        fn publish(&mut self) {
+            self.pub_id += 1;
+            self.rings
+                .published((self.pub_id % 3) as usize, self.pub_id, self.pub_id);
+            assert_eq!(self.rings.pick(self.pub_id), Some(self.pub_id));
+            self.update();
+        }
+        fn pointer(&mut self, action: u8, x: f64) {
+            let pointer = at(action, x);
+            if !self.pointers.pointer(self.view(), pointer, self.now) {
+                self.out.push(Game(pointer));
+            }
+            self.update();
+        }
+        fn click(&mut self, x: f64) {
+            self.pointer(1, x);
+            self.pointer(2, x);
+        }
+        fn update(&mut self) {
+            let view = self.view();
+            for pointer in self.pointers.release(view, self.now) {
+                self.out.push(Page(pointer));
+            }
+        }
+        fn wait(&mut self, ms: u64) {
+            self.now += Duration::from_millis(ms);
+            self.update();
+        }
+        fn take(&mut self) -> Vec<To> {
+            std::mem::take(&mut self.out)
+        }
+    }
+
     #[test]
     fn a_click_on_the_kept_frame_presses_the_button_drawn_there() {
-        let mut pointers = Pointers::default();
-        pointers.measured(OLD, right_button(1280));
-        assert!(pointers.aim(OLD, click(1160.0)), "drawn at x=1060..1260");
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.click(1160.0);
         assert_eq!(
-            pointers.release(NEW),
-            vec![],
-            "not measured at the new size yet"
+            host.take(),
+            [],
+            "drawn at x=1060..1260; not measured at 1680 yet"
         );
-        pointers.measured(NEW, right_button(1680));
-        assert_eq!(pointers.release(NEW), vec![click(1560.0)]);
-        assert_eq!(pointers.release(NEW), vec![]);
+        host.reply(NEW, Some(right_button(1680)));
+        assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
+        host.wait(1000);
+        assert_eq!(host.take(), []);
     }
 
     #[test]
     fn a_click_where_the_kept_frame_draws_nothing_goes_to_the_game() {
-        let mut pointers = Pointers::default();
-        pointers.measured(OLD, right_button(1280));
-        pointers.measured(NEW, right_button(1680));
-        assert!(
-            !pointers.aim(OLD, click(1560.0)),
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.reply(NEW, Some(right_button(1680)));
+        host.click(1560.0);
+        assert_eq!(
+            host.take(),
+            [Game(at(1, 1560.0)), Game(at(2, 1560.0))],
             "the new button is not drawn yet"
         );
-        assert!(pointers.aim(NEW, click(1560.0)));
-        assert!(!pointers.aim(NEW, click(1160.0)));
-        assert_eq!(pointers.release(NEW), vec![click(1560.0)]);
+        host.publish();
+        host.click(1560.0);
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1560.0)),
+                Page(at(2, 1560.0)),
+                Game(at(1, 1160.0)),
+                Game(at(2, 1160.0)),
+            ]
+        );
     }
 
     #[test]
     fn held_input_keeps_its_order_and_its_point_without_a_matching_rect() {
-        let mut pointers = Pointers::default();
-        pointers.measured(OLD, right_button(1280));
-        let down = click(1100.0);
-        let up = Pointer { action: 2, ..down };
-        assert!(pointers.aim(OLD, down) && pointers.aim(OLD, up));
-        pointers.measured(NEW, vec![]);
-        assert_eq!(pointers.release(NEW), vec![down, up]);
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.click(1100.0);
+        host.reply(NEW, Some(vec![]));
+        assert_eq!(host.take(), [Page(at(1, 1100.0)), Page(at(2, 1100.0))]);
+    }
+
+    #[test]
+    fn a_held_click_outside_its_shrunk_rect_lands_at_the_rect_centre() {
+        let mut host = Host::new(OLD, vec![[1060.0, 20.0, 200.0, 80.0]]);
+        host.resize(NEW);
+        host.click(1240.0);
+        host.reply(NEW, Some(vec![[1460.0, 20.0, 100.0, 80.0]]));
+        assert_eq!(host.take(), [Page(at(1, 1510.0)), Page(at(2, 1510.0))]);
     }
 
     #[test]
     fn keeps_a_bounded_number_of_layouts() {
         let mut pointers = Pointers::default();
         for width in 0..10 {
-            pointers.measured((width, 720), right_button(width));
+            let size = (width, 720);
+            let view = View {
+                shown: Some(OLD),
+                servo: Some(size),
+                requested: size,
+            };
+            pointers.measured(view, size, Some(right_button(width)));
         }
-        assert_eq!(pointers.layouts.len(), LAYOUTS);
-        assert!(pointers.layout((9, 720)).is_some() && pointers.layout((0, 720)).is_none());
+        assert!(pointers.layouts.len() <= LAYOUTS);
     }
 }

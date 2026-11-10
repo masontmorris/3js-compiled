@@ -442,12 +442,8 @@ fn warm_up(
         queue.submit(Some(encoder.finish()));
     }
 }
-/// Sends held page input once Servo lays the page out at the size the host asked for.
-fn release(pointers: &mut pointers::Pointers, link: &Link) {
-    if link.rings.newest_size() != Some(link.requested) {
-        return;
-    }
-    for pointer in pointers.release(link.requested) {
+fn send_pointers(link: &Link, pointers: Vec<pointers::Pointer>) {
+    for pointer in pointers {
         let _ = link.tx.send(Msg::Pointer {
             action: pointer.action,
             x: pointer.x as f32,
@@ -739,7 +735,7 @@ impl Ui {
                             link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
                         }
                         link.sent_patches.retain(|(id, _)| *id > seq);
-                        self.receive(seq, size, reply);
+                        self.receive(link.rings.view(link.requested), seq, size, reply);
                     }
                     Ok(Incoming::Msg(Msg::Report { text })) => self.notes.push(text),
                     Ok(Incoming::Msg(_)) => {}
@@ -786,7 +782,10 @@ impl Ui {
                         first_frame: frame,
                     });
                 }
-                release(&mut self.pointers, &link);
+                let held = self
+                    .pointers
+                    .release(link.rings.view(link.requested), Instant::now());
+                send_pointers(&link, held);
                 if self.can_send
                     && !self.state_sent
                     && let Some(json) = &self.state
@@ -828,16 +827,20 @@ impl Ui {
         };
         Ok(self.deliver())
     }
-    fn receive(&mut self, seq: u64, size: pointers::Size, reply: reply::Reply) {
+    fn receive(
+        &mut self,
+        view: pointers::View,
+        seq: u64,
+        size: pointers::Size,
+        reply: reply::Reply,
+    ) {
         self.notes.extend(
             reply
                 .rejected
                 .into_iter()
                 .map(|item| format!("UI reply {seq} rejected: {item}")),
         );
-        if let Some(rects) = reply.rects {
-            self.pointers.measured(size, rects);
-        }
+        self.pointers.measured(view, size, reply.rects);
         self.dropped += reply.dropped as u64;
         for event in reply.events {
             if self.events.len() < MAX_QUEUED_EVENTS {
@@ -860,24 +863,22 @@ impl Ui {
     /// the HUD frame on screen. The page receives it at the same point of the same rect once
     /// Servo has laid the page out at the window's size.
     pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
-        let Connection::Running(link) = &self.connection else {
-            return false;
-        };
         let pointer = pointers::Pointer {
             action,
             x,
             y,
             button,
         };
-        if !link
-            .rings
-            .shown_size()
-            .is_some_and(|shown| self.pointers.aim(shown, pointer))
-        {
-            return false;
-        }
-        release(&mut self.pointers, link);
-        true
+        let now = Instant::now();
+        let Connection::Running(link) = &self.connection else {
+            return self
+                .pointers
+                .pointer(pointers::View::default(), pointer, now);
+        };
+        let view = link.rings.view(link.requested);
+        let page = self.pointers.pointer(view, pointer, now);
+        send_pointers(link, self.pointers.release(view, now));
+        page
     }
     pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         if let Connection::Running(link) = &self.connection

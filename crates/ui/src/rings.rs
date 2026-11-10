@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::pointers::Size;
+use crate::pointers::{Size, View};
 
 #[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
 struct Published {
@@ -82,14 +82,15 @@ impl<S> Rings<S> {
     pub fn shown(&self) -> Option<&S> {
         self.shown.as_ref().map(|(ring, slot, _)| &ring[*slot])
     }
-    /// The size the shown frame was laid out at.
-    pub fn shown_size(&self) -> Option<Size> {
-        self.shown.as_ref().map(|(_, _, size)| *size)
-    }
-    /// The size Servo lays the page out at: ui-host resizes the page and announces a ring in
-    /// one step.
-    pub fn newest_size(&self) -> Option<Size> {
-        self.newest.as_ref().map(|ring| ring.size)
+    /// The frames' sizes for routing input, with the size the host last asked ui-host for.
+    /// Servo lays the page out at the newest ring's size: ui-host resizes the page and
+    /// announces a ring in one step.
+    pub fn view(&self, requested: Size) -> View {
+        View {
+            shown: self.shown.as_ref().map(|(_, _, size)| *size),
+            servo: self.newest.as_ref().map(|ring| ring.size),
+            requested,
+        }
     }
 }
 
