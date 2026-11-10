@@ -1,7 +1,8 @@
-// Draws red at 1280x720 for 20 frames, then resizes the canvas in frame 20 and draws nothing after.
-// `--scene draw-then-resize` draws green and then resizes the canvas to 640x360, so the green frame
-// is never shown. `--scene resize-after-draw` resizes to 640x360, draws green and resizes back to
-// 1280x720, so the canvas ends transparent. Every frame submits its stream.
+// Draws red at 1280x720 for 20 frames, then resizes the canvas and draws nothing after.
+// `--scene draw-then-resize` draws green in frame 20 and then resizes the canvas to 640x360, so the
+// green frame is never shown. `--scene resize-after-draw` resizes to 640x360 in frame 20, draws green
+// and resizes back to 1280x720, so the canvas ends transparent. `--scene resize-idle` resizes to
+// 640x360 in frame 25 without drawing, so the last red frame stays. Every frame submits its stream.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
@@ -29,13 +30,15 @@ function frame() {
   } else if (frames === 20 && mode === 'draw-then-resize') {
     draw(0x00ff00);
     renderer.setSize(640, 360, false);
+  } else if (frames === 25 && mode === 'resize-idle') {
+    renderer.setSize(640, 360, false);
   } else if (frames === 20 && mode === 'resize-after-draw') {
     renderer.setSize(640, 360, false);
     draw(0x00ff00);
     renderer.setSize(1280, 720, false);
   }
   if (native) submitGpuCommands(backend.takeFrame());
-  if (frames === 20) console.log(`frame 20 ends with canvas ${canvas.width}x${canvas.height}`);
+  if (frames === 25) console.log(`frame 25 ends with canvas ${canvas.width}x${canvas.height}`);
   frames++;
   requestAnimationFrame(frame);
 }

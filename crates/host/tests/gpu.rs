@@ -520,7 +520,7 @@ fn canvas_resize(mode: &str) -> image::RgbaImage {
     ]);
     let (status, log) = host(&dir, &bundle("canvas-resize"), &steps, &["--scene", mode]);
     assert!(status.success(), "{mode}: host exited with {status}\n{log}");
-    assert!(log.contains("frame 20 ends"), "{mode}: {log}");
+    assert!(log.contains("frame 25 ends"), "{mode}: {log}");
     image::open(&capture).unwrap().to_rgba8()
 }
 
@@ -543,5 +543,16 @@ fn a_canvas_resized_after_its_last_draw_is_transparent() {
         shown.get_pixel(640, 360).0,
         [0, 0, 0, 0],
         "Edge shows a transparent canvas"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_resize_in_a_frame_that_draws_nothing_keeps_the_last_image() {
+    let shown = canvas_resize("resize-idle");
+    assert_eq!(
+        shown.get_pixel(640, 360).0,
+        [255, 0, 0, 255],
+        "Edge keeps the last red frame"
     );
 }
