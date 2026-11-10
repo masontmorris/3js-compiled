@@ -1401,3 +1401,76 @@ impl Executor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stream(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for (opcode, payload) in records {
+            body.extend_from_slice(&opcode.to_le_bytes());
+            body.extend_from_slice(&0u16.to_le_bytes());
+            body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            body.extend_from_slice(payload);
+        }
+        let mut bytes = b"3JSC".to_vec();
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&(20 + body.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&(records.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&body);
+        bytes
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn rejected_creates_leave_no_labels() {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
+            flags: wgpu::InstanceFlags::default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::default(),
+            display: None,
+        });
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            force_fallback_adapter: true,
+            ..Default::default()
+        }))
+        .expect("a software adapter is required");
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+        let count = 100_000u32;
+        let mut records = Vec::new();
+        for handle in 1..=count {
+            let label = format!("rejected-buffer-{handle}");
+            let mut payload = handle.to_le_bytes().to_vec();
+            payload.extend_from_slice(&0u64.to_le_bytes());
+            payload.extend_from_slice(&128u32.to_le_bytes());
+            payload.extend_from_slice(&(label.len() as u32).to_le_bytes());
+            payload.extend_from_slice(label.as_bytes());
+            records.push((1, payload));
+        }
+        for handle in count + 1..=2 * count {
+            let (format, label) = ("rgba99unorm", format!("rejected-texture-{handle}"));
+            let mut payload: Vec<u8> = [handle, 4, 4, 1, 1, 1, 7, 11, label.len() as u32]
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            payload.extend_from_slice(format.as_bytes());
+            payload.extend_from_slice(label.as_bytes());
+            records.push((4, payload));
+        }
+        let mut executor = Executor::new(device, queue);
+        let responses = executor.replay(&stream(&records), None).unwrap();
+        assert_eq!(responses.len(), 2 * count as usize);
+        assert!(matches!(
+            &responses[0],
+            Response::Error { label: Some(label), message, .. }
+                if label == "rejected-buffer-1" && message == "invalid buffer size"
+        ));
+        assert!(executor.buffers.is_empty() && executor.textures.is_empty());
+        assert_eq!(executor.labels.len(), 0, "rejected creates retained labels");
+    }
+}

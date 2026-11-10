@@ -39,7 +39,7 @@ app = modal.App("threejsc-e3")
 
 @app.function(image=replay_image, cpu=2, memory=4096, timeout=1200)
 def gpu_replay():
-    subprocess.run(["cargo", "test", "-p", "threejsc-gpu", "--locked", "--test", "replay", "--", "--ignored", "--nocapture"], cwd="/src", check=True)
+    subprocess.run(["cargo", "test", "-p", "threejsc-gpu", "--locked", "--lib", "--test", "replay", "--", "--ignored", "--nocapture"], cwd="/src", check=True)
 
 
 @app.function(image=gate_image, cpu=2, memory=4096, timeout=1200)

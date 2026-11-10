@@ -605,3 +605,85 @@ fn the_parity_gate_rejects_a_render_without_its_shadow() {
         shadowless.region
     );
 }
+
+fn stream(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (opcode, payload) in records {
+        body.extend_from_slice(&opcode.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        body.extend_from_slice(payload);
+    }
+    let mut bytes = b"3JSC".to_vec();
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes.extend_from_slice(&(20 + body.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+fn records(stream: &[u8]) -> Vec<(u16, Vec<u8>)> {
+    threejsc_gpu::decode(stream)
+        .unwrap()
+        .records
+        .iter()
+        .map(|record| (record.opcode, record.payload.to_vec()))
+        .collect()
+}
+
+fn words(values: &[u32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_vertex_attribute_offset_past_u64_is_an_error_in_every_build() {
+    let mut records = records(include_bytes!("fixtures/pipeline.bin"));
+    let (_, payload) = records
+        .iter_mut()
+        .find(|(opcode, _)| *opcode == 13)
+        .unwrap();
+    let json = String::from_utf8(payload[8..].to_vec()).unwrap();
+    let crafted = json.replacen("\"offset\":0", "\"offset\":18446744073709551612", 1);
+    assert_ne!(crafted, json);
+    payload.truncate(8);
+    payload.extend_from_slice(crafted.as_bytes());
+    let responses = executor().replay(&stream(&records), None).unwrap();
+    assert!(
+        responses.iter().any(|response| matches!(
+            response,
+            Response::Error { message, .. } if message.contains("vertex attribute")
+        )),
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_partial_depth_readback_reports_its_error_once() {
+    let format = "depth32float";
+    let mut texture = words(&[1, 5, 3, 1, 1, 1, 17, format.len() as u32, 0]);
+    texture.extend_from_slice(format.as_bytes());
+    let responses = executor()
+        .replay(
+            &stream(&[(4, texture), (28, words(&[10, 1, 0, 2, 1, 0, 3, 2]))]),
+            None,
+        )
+        .unwrap();
+    let [
+        Response::Error {
+            request, message, ..
+        },
+    ] = responses.as_slice()
+    else {
+        panic!("expected one error, got {responses:?}");
+    };
+    assert_eq!(*request, Some(10));
+    let first = message.lines().next().unwrap();
+    assert_eq!(message.matches(first).count(), 1, "{message}");
+}
