@@ -23,6 +23,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             x: 12.5,
             y: 30.0,
             button: 0,
+            size: (1280, 720),
             at: place::At::Rect {
                 rect: 3,
                 offset: (100.5, 40.0),
@@ -33,6 +34,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             x: 1160.0,
             y: 60.0,
             button: 2,
+            size: (1680, 720),
             at: place::At::Beside {
                 rect: 1,
                 offset: (-960.0, 40.0),

@@ -153,6 +153,8 @@ impl Msg {
                 put_f32(&mut b, pointer.x);
                 put_f32(&mut b, pointer.y);
                 b.extend_from_slice(&pointer.button.to_le_bytes());
+                put_u32(&mut b, pointer.size.0);
+                put_u32(&mut b, pointer.size.1);
                 let (tag, rect, offset) = match pointer.at {
                     place::At::Rect { rect, offset } => (0, rect, offset),
                     place::At::Beside { rect, offset } => (1, rect, offset),
@@ -243,6 +245,7 @@ impl Msg {
                 x: c.f32()?,
                 y: c.f32()?,
                 button: i16::from_le_bytes(c.take(2)?.try_into().unwrap()),
+                size: (c.u32()?, c.u32()?),
                 at: {
                     let (tag, rect, offset) = (c.u8()?, c.u32()?, (c.f32()?, c.f32()?));
                     match tag {

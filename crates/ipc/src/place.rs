@@ -22,6 +22,8 @@ pub struct Pointer {
     pub x: f32,
     pub y: f32,
     pub button: i16,
+    /// The size of the frame on screen the host hit-tested the event in.
+    pub size: (u32, u32),
     pub at: At,
 }
 
@@ -34,13 +36,15 @@ pub struct Placed {
     pub button: i16,
 }
 
-/// Places the host's pointer events in the layout the page processes them in. The host
-/// hit-tests the frame on screen, which can be laid out at an older size than Servo's, so each
-/// event goes to the same offset from the rect at its index in the page's latest layout. An
-/// event over a rect that has shrunk past the offset goes to the rect's centre instead. An
-/// event for an index the latest layout lacks keeps its window point. Every point is clamped into the viewport, because Servo drops input outside its
-/// scene. While a resize waits for the page's layout at the new size, events wait with it, in
-/// order.
+/// Places the host's pointer events in the layout the page processes them in. An event the host
+/// hit-tested in a frame at the size Servo lays the page out at keeps its window point, as in a
+/// browser, whatever the page has since done to its rects. The frame on screen can be laid out
+/// at an older size than Servo's, so an event hit-tested in it goes to the same offset from the
+/// rect at its index in the page's latest layout. An event over a rect that has shrunk past the
+/// offset goes to the rect's centre instead. An event for an index the latest layout lacks keeps
+/// its window point. Every point is clamped into the viewport, because Servo drops input
+/// outside its scene. While a resize waits for the page's layout at the new size, events wait
+/// with it, in order.
 #[derive(Debug)]
 pub struct Placer {
     size: (u32, u32),
@@ -88,6 +92,7 @@ impl Placer {
     fn place(&self, pointer: Pointer) -> Placed {
         let rect = |rect: u32| self.rects.get(rect as usize);
         let (x, y) = match pointer.at {
+            _ if pointer.size == self.size => (pointer.x, pointer.y),
             At::Rect { rect: i, offset } if let Some(r) = rect(i) => {
                 let (dx, dy) = if f64::from(offset.0) < r[2] && f64::from(offset.1) < r[3] {
                     (f64::from(offset.0), f64::from(offset.1))
@@ -124,6 +129,7 @@ mod tests {
             x,
             y,
             button: 0,
+            size: (1680, 720),
             at,
         };
         let on = At::Rect {

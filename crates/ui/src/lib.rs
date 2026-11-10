@@ -882,6 +882,7 @@ impl Ui {
                         x: x as f32,
                         y: y as f32,
                         button,
+                        size: shown.unwrap_or_default(),
                         at,
                     }));
                 }

@@ -252,7 +252,8 @@ mod tests {
             self.send(at(action, x));
         }
         fn send(&mut self, pointer: Pointer) {
-            match self.pointers.pointer(self.view().shown, pointer) {
+            let shown = self.view().shown;
+            match self.pointers.pointer(shown, pointer) {
                 Route::Game => self.out.push(Game(pointer)),
                 Route::Page(at) => {
                     let placed = self.placer.pointer(place::Pointer {
@@ -260,6 +261,7 @@ mod tests {
                         x: pointer.x as f32,
                         y: pointer.y as f32,
                         button: pointer.button,
+                        size: shown.unwrap_or_default(),
                         at,
                     });
                     self.page(placed);
@@ -336,7 +338,7 @@ mod tests {
     /// Adversary round 4: a press that starts on the button drawn in the kept old-size frame
     /// and ends, at the same window point, after the new-size frame reaches the screen.
     #[test]
-    fn a_press_held_across_the_frame_switch_presses_the_drawn_button() {
+    fn a_press_held_across_the_frame_switch_ends_where_the_pointer_is() {
         let mut host = Host::new(OLD, right_button(1280));
         host.resize(NEW);
         host.reply(NEW, Some(right_button(1680)));
@@ -348,10 +350,10 @@ mod tests {
             host.take(),
             [
                 Page(at(1, 1560.0)),
-                Page(at(0, 1570.0)),
-                Page(at(2, 1560.0))
+                Page(at(0, 1170.0)),
+                Page(at(2, 1160.0))
             ],
-            "over no drawn rect, the press stays beside the button its down was on"
+            "the down is on the drawn button; the frame on screen then draws nothing at 1160"
         );
     }
 
@@ -561,6 +563,54 @@ mod tests {
         host.click(1170.0);
         host.reply(S2, Some(right_button(S2.0)));
         assert_eq!(host.take(), [Page(at(1, 1270.0)), Page(at(2, 1270.0))]);
+    }
+
+    /// Adversary round 6: a page whose warning, listed before its button, has just appeared.
+    /// ui-host has the reply that lists it; the host has not read that reply yet. Nothing
+    /// resizes.
+    #[test]
+    fn a_click_on_a_fixed_button_lands_on_it_when_a_rect_appears_before_it() {
+        let warning = [40.0, 20.0, 200.0, 80.0];
+        let mut host = Host::new(OLD, right_button(1280));
+        host.placer
+            .replied(Some(vec![warning, right_button(1280)[0]]));
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1160.0)), Page(at(2, 1160.0))],
+            "the button did not move; the click is at 1160 on it"
+        );
+    }
+
+    /// Adversary round 6: the same page when the warning has just gone. ui-host's latest reply
+    /// lacks it; the host's latest does not.
+    #[test]
+    fn a_click_on_a_fixed_button_lands_on_it_when_a_rect_before_it_goes() {
+        let warning = [40.0, 20.0, 200.0, 80.0];
+        let mut host = Host::new(OLD, vec![warning, right_button(1280)[0]]);
+        host.placer.replied(Some(right_button(1280)));
+        host.click(1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1160.0)), Page(at(2, 1160.0))]);
+    }
+
+    /// Adversary round 6: two right-anchored buttons, A 20 px from the right edge and B 420 px
+    /// from it. A press on A held still at 1160 while the window grows to 1680, where B is
+    /// drawn at 1060..1260, ends on B, as in a browser.
+    #[test]
+    fn a_press_held_still_while_a_resize_moves_another_button_under_it_ends_on_that_button() {
+        let two = |w: u32| {
+            vec![
+                [w as f64 - 220.0, 20.0, 200.0, 80.0],
+                [w as f64 - 620.0, 20.0, 200.0, 80.0],
+            ]
+        };
+        let mut host = Host::new(OLD, two(1280));
+        host.pointer(1, 1160.0);
+        host.resize(NEW);
+        host.reply(NEW, Some(two(1680)));
+        host.publish();
+        host.pointer(2, 1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1160.0)), Page(at(2, 1160.0))]);
     }
 
     #[test]
