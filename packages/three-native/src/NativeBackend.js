@@ -234,17 +234,45 @@ class RecordingCommandEncoder {
   }
 }
 
+// Calls `assigned` after each set of the canvas width or height, which a browser treats as a resize
+// even when the value does not change.
+function watchSize(canvas, assigned) {
+  for (const key of ['width', 'height']) {
+    let owner = canvas;
+    while (owner && !Object.hasOwn(owner, key)) owner = Object.getPrototypeOf(owner);
+    let { value, get = () => value, set = next => { value = next; } } = owner ? Object.getOwnPropertyDescriptor(owner, key) : {};
+    Object.defineProperty(canvas, key, {
+      configurable: true,
+      enumerable: true,
+      get() { return get.call(this); },
+      set(next) { set.call(this, next); assigned(); },
+    });
+  }
+}
+
 class RecordingCanvasContext {
   constructor(canvas) {
     this.canvas = canvas;
     this.configuration = null;
+    this.assigned = false;
+    watchSize(canvas, () => { this.assigned = true; });
   }
 
   configure(configuration) {
     if (!(configuration.device instanceof RecordingDevice)) throw new Error('Invalid canvas device');
     if (configuration.format !== 'bgra8unorm') throw new Error('The native surface format is bgra8unorm');
     this.configuration = configuration;
-    configuration.device.canvas = this.canvas;
+    // three configures again after each resize, and only sets before the first configure are not
+    // resizes of the canvas the device draws.
+    if (configuration.device.context !== this) this.assigned = false;
+    configuration.device.context = this;
+  }
+
+  // The canvas size, and whether a script set it since the last call.
+  takeSize() {
+    const assigned = this.assigned;
+    this.assigned = false;
+    return [this.canvas.width, this.canvas.height, assigned];
   }
 
   unconfigure() {
@@ -258,8 +286,9 @@ class RecordingCanvasContext {
   getCurrentTexture() {
     if (!this.configuration) throw new Error('Canvas context is not configured');
     const { device } = this.configuration;
-    device.resizeSurface(this.canvas.width, this.canvas.height);
-    return device.surfaceTexture(this.canvas.width, this.canvas.height, this.configuration);
+    const [width, height, assigned] = this.takeSize();
+    device.resizeSurface(width, height, assigned);
+    return device.surfaceTexture(width, height, this.configuration);
   }
 }
 
@@ -581,12 +610,13 @@ export class RecordingDevice {
     return texture;
   }
 
-  // Records a change of the canvas size since the last acquire or frame, which discards the frame's
-  // canvas texture, as a browser discards it when a canvas is resized.
-  resizeSurface(width, height) {
+  // Records a resize when a script set the canvas size since the last acquire or frame, even to the
+  // size it had, or when the size differs from the last one this stream recorded, as it does for a
+  // renderer on another canvas. The resize discards the frame's canvas texture, as a browser does.
+  resizeSurface(width, height, assigned = false) {
     const last = this.output.canvasSize;
     this.output.canvasSize = [width, height];
-    if (!last || (last[0] === width && last[1] === height)) return;
+    if (!last || (!assigned && last[0] === width && last[1] === height)) return;
     this.surface?.destroy();
     this.surface = null;
     this.commands.words(Opcode.RESIZE_SURFACE, [width, height]);
@@ -642,7 +672,7 @@ export class RecordingDevice {
 
   takeFrame() {
     if (this.destroyed) throw new Error('Device is destroyed');
-    if (this.canvas) this.resizeSurface(this.canvas.width, this.canvas.height);
+    if (this.context) this.resizeSurface(...this.context.takeSize());
     this.surface?.destroy();
     this.surface = null;
     return this.commands.finish(this.output.frame++);
