@@ -68,7 +68,7 @@ fn pointer(action: PointerAction, x: f64, y: f64, button: i16) -> Value {
 }
 fn route_pointer(
     game: &mut Game<'_>,
-    ui: Option<&ui::Ui>,
+    ui: Option<&mut ui::Ui>,
     action: PointerAction,
     x: f64,
     y: f64,
@@ -165,7 +165,7 @@ fn main() -> Result<()> {
                 ))?,
                 Event::MouseMotion { x, y, .. } => route_pointer(
                     &mut game,
-                    ui.as_ref(),
+                    ui.as_mut(),
                     PointerAction::Move,
                     x.into(),
                     y.into(),
@@ -175,7 +175,7 @@ fn main() -> Result<()> {
                     x, y, mouse_btn, ..
                 } => route_pointer(
                     &mut game,
-                    ui.as_ref(),
+                    ui.as_mut(),
                     PointerAction::Down,
                     x.into(),
                     y.into(),
@@ -185,7 +185,7 @@ fn main() -> Result<()> {
                     x, y, mouse_btn, ..
                 } => route_pointer(
                     &mut game,
-                    ui.as_ref(),
+                    ui.as_mut(),
                     PointerAction::Up,
                     x.into(),
                     y.into(),
@@ -206,7 +206,7 @@ fn main() -> Result<()> {
                     Step::Wait { frames } if *frames > 0 => { wait = *frames; break; }
                     Step::Wait { .. } => {},
                     Step::Key { code, down } => game.event(&input::keyboard(code, *down, false, sdl3::keyboard::Mod::NOMOD))?,
-                    Step::Pointer { action, x, y, button } => route_pointer(&mut game, ui.as_ref(), *action, *x, *y, i16::from(*button))?,
+                    Step::Pointer { action, x, y, button } => route_pointer(&mut game, ui.as_mut(), *action, *x, *y, i16::from(*button))?,
                     Step::Wheel { x, y } => game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?,
                     Step::Gamepad { button, down, index } => game.event(&json!({"type":"gamepadbutton", "button":button, "down":down, "index":index}))?,
                     Step::Resize { width, height } => { if *width == 0 || *height == 0 { bail!("resize dimensions must be nonzero"); } window.set_size(*width, *height)?; },

@@ -43,6 +43,8 @@ fn messages_round_trip_and_truncated_frames_fail() {
         },
         Msg::Events {
             seq: 9,
+            width: 640,
+            height: 480,
             json: "[]".into(),
         },
         Msg::Report {
@@ -61,8 +63,10 @@ fn messages_round_trip_and_truncated_frames_fail() {
 #[test]
 fn writer_refuses_what_the_reader_refuses() {
     for (seq, len) in [(1, MAX_JSON), (2, MAX_JSON + 1)] {
-        let message = Msg::Patch {
+        let message = Msg::Events {
             seq,
+            width: 640,
+            height: 480,
             json: "x".repeat(len),
         };
         let mut bytes = Vec::new();

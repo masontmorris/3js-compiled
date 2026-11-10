@@ -4,11 +4,21 @@
 
 use std::sync::Arc;
 
+use crate::pointers::Size;
+
 #[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
 struct Published {
     slot: usize,
     id: u64,
     ready: u64,
+}
+
+/// The newest ring ui-host announced: its generation, its size and, once opened, its slots.
+#[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
+struct Ring<S> {
+    generation: u64,
+    size: Size,
+    slots: Option<Arc<[S]>>,
 }
 
 /// The rings of shared textures ui-host announced, and the frame the game draws.
@@ -19,10 +29,9 @@ struct Published {
 /// is ready, which keeps the HUD on screen while a resize is pending.
 #[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
 pub(crate) struct Rings<S> {
-    /// The newest ring's generation and, once opened, its slots.
-    newest: Option<(u64, Option<Arc<[S]>>)>,
+    newest: Option<Ring<S>>,
     published: Vec<Published>,
-    shown: Option<(Arc<[S]>, usize)>,
+    shown: Option<(Arc<[S]>, usize, Size)>,
 }
 
 impl<S> Default for Rings<S> {
@@ -36,16 +45,21 @@ impl<S> Default for Rings<S> {
 }
 
 impl<S> Rings<S> {
-    /// ui-host announced ring `generation`; frames published from now on live in it.
-    pub fn announced(&mut self, generation: u64) {
-        self.newest = Some((generation, None));
+    /// ui-host announced ring `generation`, sized as its page; frames published from now on
+    /// live in it.
+    pub fn announced(&mut self, generation: u64, size: Size) {
+        self.newest = Some(Ring {
+            generation,
+            size,
+            slots: None,
+        });
         self.published.clear();
     }
     pub fn opened(&mut self, generation: u64, slots: Vec<S>) {
-        if let Some((newest, ring)) = &mut self.newest
-            && *newest == generation
+        if let Some(ring) = &mut self.newest
+            && ring.generation == generation
         {
-            *ring = Some(slots.into());
+            ring.slots = Some(slots.into());
         }
     }
     pub fn published(&mut self, slot: usize, id: u64, ready: u64) {
@@ -53,19 +67,29 @@ impl<S> Rings<S> {
     }
     /// Shows the newest frame whose ready fence value is at most `ready`, and returns its id.
     pub fn pick(&mut self, ready: u64) -> Option<u64> {
-        let ring = self.newest.as_ref()?.1.as_ref()?;
+        let newest = self.newest.as_ref()?;
+        let ring = newest.slots.as_ref()?;
         let frame = self
             .published
             .iter()
             .filter(|p| p.ready <= ready && p.slot < ring.len())
             .max_by_key(|p| p.id)?;
         let (slot, id) = (frame.slot, frame.id);
-        self.shown = Some((ring.clone(), slot));
+        self.shown = Some((ring.clone(), slot, newest.size));
         self.published.retain(|p| p.id > id);
         Some(id)
     }
     pub fn shown(&self) -> Option<&S> {
-        self.shown.as_ref().map(|(ring, slot)| &ring[*slot])
+        self.shown.as_ref().map(|(ring, slot, _)| &ring[*slot])
+    }
+    /// The size the shown frame was laid out at.
+    pub fn shown_size(&self) -> Option<Size> {
+        self.shown.as_ref().map(|(_, _, size)| *size)
+    }
+    /// The size Servo lays the page out at: ui-host resizes the page and announces a ring in
+    /// one step.
+    pub fn newest_size(&self) -> Option<Size> {
+        self.newest.as_ref().map(|ring| ring.size)
     }
 }
 
@@ -75,7 +99,6 @@ mod tests {
     use std::collections::{HashSet, VecDeque};
     use threejsc_ipc::next_ring_size;
 
-    type Size = (u32, u32);
     const A: Size = (1280, 720);
     const B: Size = (1296, 728);
     const C: Size = (1280, 736);
@@ -131,7 +154,8 @@ mod tests {
                 match message {
                     Up::Slots(generation) => {
                         self.opening = Some((generation, false));
-                        self.rings.announced(generation);
+                        self.rings
+                            .announced(generation, self.ring_sizes[generation as usize - 1]);
                     }
                     Up::Frame(slot, id) => self.rings.published(slot, id, id),
                 }

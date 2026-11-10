@@ -6,9 +6,9 @@ use std::io::{self, Read, Write};
 
 /// Largest message payload either side writes or accepts.
 pub const MAX_PAYLOAD: usize = 1 << 20;
-/// Largest JSON text a `Patch` or `Events` message carries: the payload minus its tag,
-/// sequence number and length prefix.
-pub const MAX_JSON: usize = MAX_PAYLOAD - 13;
+/// Largest JSON text a `Patch` or `Events` message carries: the payload minus an `Events`
+/// message's tag, sequence number, viewport size and length prefix.
+pub const MAX_JSON: usize = MAX_PAYLOAD - 21;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
@@ -60,9 +60,11 @@ pub enum Msg {
         ready_value: u64,
     },
     /// Result of `__bridge.tick` for patch `seq`, or for a poll of the current state when
-    /// `seq` is 0.
+    /// `seq` is 0, with the viewport size the page was laid out at.
     Events {
         seq: u64,
+        width: u32,
+        height: u32,
         json: String,
     },
     /// ui-host evaluates the next patch as soon as it arrives.
@@ -187,9 +189,16 @@ impl Msg {
                 put_u64(&mut b, *pub_id);
                 put_u64(&mut b, *ready_value);
             }
-            Msg::Events { seq, json } => {
+            Msg::Events {
+                seq,
+                width,
+                height,
+                json,
+            } => {
                 b.push(12);
                 put_u64(&mut b, *seq);
+                put_u32(&mut b, *width);
+                put_u32(&mut b, *height);
                 put_str(&mut b, json);
             }
             Msg::Report { text } => {
@@ -259,6 +268,8 @@ impl Msg {
             },
             12 => Msg::Events {
                 seq: c.u64()?,
+                width: c.u32()?,
+                height: c.u32()?,
                 json: c.string()?,
             },
             13 => Msg::Report { text: c.string()? },

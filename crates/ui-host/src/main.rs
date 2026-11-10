@@ -192,7 +192,10 @@ impl Pacer {
         self.evaluating = true;
         self.unpainted.push_back(now);
         self.last_started = Some(now);
-        Some((seq, format!("__bridge.tick({state})")))
+        Some((
+            seq,
+            format!("[innerWidth, innerHeight, __bridge.tick({state})]"),
+        ))
     }
     /// Whether to ask the host for its next state now.
     fn ready(&mut self, now: Instant) -> bool {
@@ -204,6 +207,41 @@ impl Pacer {
             self.ready_sent = Some(now);
         }
         ready
+    }
+}
+
+/// How long after the page first reports a new viewport size display lists built before the
+/// resize may still reach the screen: two rendering updates.
+const RELAYOUT_SETTLE: Duration = Duration::from_millis(40);
+/// Longest wait for the page to report a new viewport size, for pages whose tick fails.
+const RELAYOUT_FALLBACK: Duration = Duration::from_millis(250);
+
+/// A resize whose new ring receives no frame until the page is laid out at the new size. Servo
+/// first repaints the previous display list into the resized surface, and the host hit-tests a
+/// frame by its ring's size, so each frame in a ring must show the page at that size.
+struct Relayout {
+    size: (u32, u32),
+    since: Instant,
+    measured: Option<Instant>,
+}
+
+impl Relayout {
+    fn new(size: (u32, u32), now: Instant) -> Self {
+        Self {
+            size,
+            since: now,
+            measured: None,
+        }
+    }
+    /// An evaluation found the page laid out at `size`.
+    fn measured(&mut self, size: (u32, u32), now: Instant) {
+        if size == self.size {
+            self.measured.get_or_insert(now);
+        }
+    }
+    fn done(&self, now: Instant) -> bool {
+        self.measured.is_some_and(|at| now - at >= RELAYOUT_SETTLE)
+            || now - self.since >= RELAYOUT_FALLBACK
     }
 }
 
@@ -452,6 +490,7 @@ fn main() {
     let mut last_memory_report = Instant::now();
     let mut warmed_at: Option<Instant> = None;
     let applied = Rc::new(Cell::new(false));
+    let relayout: Rc<RefCell<Option<Relayout>>> = Rc::default();
 
     loop {
         let mut events = Vec::new();
@@ -528,6 +567,7 @@ fn main() {
         if let Some((width, height)) = proto::next_ring_size((size.width, size.height), resizes) {
             size = PhysicalSize::new(width, height);
             webview.resize(size);
+            *relayout.borrow_mut() = Some(Relayout::new((width, height), Instant::now()));
             destroy_slots(&frame_ctx, &mut slots);
             slots = new_ring(size, &mut unimported);
             picked = 0;
@@ -552,23 +592,42 @@ fn main() {
             let applied = applied.clone();
             let new_frame = new_frame.clone();
             let pacer = pacer.clone();
+            let relayout = relayout.clone();
             webview.evaluate_javascript(script, move |result| {
                 stats.borrow_mut().round_trip.push(started.elapsed());
                 pacer.borrow_mut().finished();
                 if !applied.replace(true) {
                     new_frame.set(false);
                 }
-                let failure = match result {
-                    Ok(JSValue::String(json)) if json.len() <= proto::MAX_JSON => {
-                        send(&Msg::Events { seq, json });
+                let failure = match result.as_ref().map(|value| match value {
+                    JSValue::Array(values) => values.as_slice(),
+                    _ => &[],
+                }) {
+                    Ok(
+                        [
+                            JSValue::Number(width),
+                            JSValue::Number(height),
+                            JSValue::String(json),
+                        ],
+                    ) if json.len() <= proto::MAX_JSON => {
+                        if let Some(relayout) = relayout.borrow_mut().as_mut() {
+                            relayout.measured((*width as u32, *height as u32), Instant::now());
+                        }
+                        send(&Msg::Events {
+                            seq,
+                            width: *width as u32,
+                            height: *height as u32,
+                            json: json.clone(),
+                        });
                         return;
                     }
-                    Ok(JSValue::String(json)) => format!(
+                    Ok([_, _, JSValue::String(json)]) => format!(
                         "page reply of {} bytes exceeds {} and was dropped",
                         json.len(),
                         proto::MAX_JSON
                     ),
-                    other => format!("page tick did not return a string: {other:?}"),
+                    Ok([_, _, other]) => format!("page tick did not return a string: {other:?}"),
+                    _ => format!("page tick did not return a string: {result:?}"),
                 };
                 stats.borrow_mut().eval_errors += 1;
                 let text: String = format!("[ui-host] patch {seq}: {failure}")
@@ -607,7 +666,10 @@ fn main() {
             }
         }
 
-        let due = new_frame.get() || last_paint.elapsed() >= Duration::from_millis(100);
+        let now = Instant::now();
+        let relaying = relayout.borrow().as_ref().is_some_and(|r| !r.done(now));
+        let relaid = !relaying && relayout.borrow_mut().take().is_some();
+        let due = new_frame.get() || relaid || last_paint.elapsed() >= Duration::from_millis(100);
         // Until the first patch is applied, a published frame would show the page without
         // state, so these paints are not published. The first paint of the loaded page takes
         // 70 to 110 ms; the host sends state only after it, so the first patch is current
@@ -619,7 +681,7 @@ fn main() {
                 stats.borrow_mut().eval_to_frame.push(waited);
             }
         };
-        if due && warming {
+        if due && (warming || relaying) {
             let fresh = new_frame.replace(false);
             last_paint = Instant::now();
             webview.paint();
@@ -930,6 +992,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_resize_publishes_once_the_page_reports_the_new_size_and_settles() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut relayout = Relayout::new((1680, 720), t);
+        relayout.measured((1280, 720), ms(5));
+        assert!(!relayout.done(ms(100)), "still laid out at the old size");
+        relayout.measured((1680, 720), ms(120));
+        relayout.measured((1680, 720), ms(140));
+        assert!(!relayout.done(ms(159)));
+        assert!(relayout.done(ms(160)));
+        assert!(
+            Relayout::new((1680, 720), t).done(ms(250)),
+            "a page whose tick fails"
+        );
+    }
+
+    #[test]
     fn timing_samples_remain_bounded() {
         let mut samples = Samples::default();
         for i in 0..10_000 {
@@ -940,7 +1019,10 @@ mod tests {
     }
 
     fn tick(seq: u64, state: &str) -> Option<(u64, String)> {
-        Some((seq, format!("__bridge.tick({state})")))
+        Some((
+            seq,
+            format!("[innerWidth, innerHeight, __bridge.tick({state})]"),
+        ))
     }
 
     #[test]

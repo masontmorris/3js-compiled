@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod pointers;
 mod reply;
 mod rings;
 
@@ -66,7 +67,7 @@ struct Import {
 /// A message from ui-host. The pipe reader parses replies so the game thread does not.
 enum Incoming {
     Msg(Msg),
-    Reply(u64, reply::Reply),
+    Reply(u64, pointers::Size, reply::Reply),
 }
 struct Link {
     child: Child,
@@ -274,7 +275,12 @@ fn launch(
         let mut pipe = BufReader::new(up);
         while let Ok(message) = proto::read_msg(&mut pipe) {
             let message = match message {
-                Msg::Events { seq, json } => Incoming::Reply(seq, reply::parse(&json)),
+                Msg::Events {
+                    seq,
+                    width,
+                    height,
+                    json,
+                } => Incoming::Reply(seq, (width, height), reply::parse(&json)),
                 message => Incoming::Msg(message),
             };
             if incoming.send(message).is_err() {
@@ -436,6 +442,20 @@ fn warm_up(
         queue.submit(Some(encoder.finish()));
     }
 }
+/// Sends held page input once Servo lays the page out at the size the host asked for.
+fn release(pointers: &mut pointers::Pointers, link: &Link) {
+    if link.rings.newest_size() != Some(link.requested) {
+        return;
+    }
+    for pointer in pointers.release(link.requested) {
+        let _ = link.tx.send(Msg::Pointer {
+            action: pointer.action,
+            x: pointer.x as f32,
+            y: pointer.y as f32,
+            button: pointer.button,
+        });
+    }
+}
 fn retire(mut link: Link, kill: bool) {
     let _ = link.tx.send(Msg::Shutdown);
     std::thread::spawn(move || {
@@ -459,7 +479,7 @@ pub struct Ui {
     state: Option<String>,
     state_sent: bool,
     can_send: bool,
-    rects: Vec<[f64; 4]>,
+    pointers: pointers::Pointers,
     events: VecDeque<String>,
     dropped: u64,
     notes: Vec<String>,
@@ -571,7 +591,7 @@ impl Ui {
             state: None,
             state_sent: false,
             can_send: false,
-            rects: Vec::new(),
+            pointers: pointers::Pointers::default(),
             events: VecDeque::new(),
             dropped: 0,
             notes: Vec::new(),
@@ -698,7 +718,7 @@ impl Ui {
                             Ok(owned) => {
                                 link.import =
                                     Some(self.importer.spawn(owned, generation, (width, height)));
-                                link.rings.announced(generation);
+                                link.rings.announced(generation, (width, height));
                             }
                             Err(error) => failure = Some(format!("ui-host slot import: {error:#}")),
                         }
@@ -713,13 +733,13 @@ impl Ui {
                         link.rings.published(slot as usize, pub_id, ready_value);
                     }
                     Ok(Incoming::Msg(Msg::Ready)) => self.can_send = true,
-                    Ok(Incoming::Reply(seq, reply)) => {
+                    Ok(Incoming::Reply(seq, size, reply)) => {
                         if let Some((_, sent)) = link.sent_patches.iter().find(|(id, _)| *id == seq)
                         {
                             link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
                         }
                         link.sent_patches.retain(|(id, _)| *id > seq);
-                        self.receive(seq, reply);
+                        self.receive(seq, size, reply);
                     }
                     Ok(Incoming::Msg(Msg::Report { text })) => self.notes.push(text),
                     Ok(Incoming::Msg(_)) => {}
@@ -745,7 +765,7 @@ impl Ui {
                 }
             }
             if let Some(failure) = failure {
-                self.rects.clear();
+                self.pointers.clear();
                 self.can_send = false;
                 self.state_sent = false;
                 if link.connected_at.elapsed() >= Duration::from_secs(5) {
@@ -766,6 +786,7 @@ impl Ui {
                         first_frame: frame,
                     });
                 }
+                release(&mut self.pointers, &link);
                 if self.can_send
                     && !self.state_sent
                     && let Some(json) = &self.state
@@ -807,7 +828,7 @@ impl Ui {
         };
         Ok(self.deliver())
     }
-    fn receive(&mut self, seq: u64, reply: reply::Reply) {
+    fn receive(&mut self, seq: u64, size: pointers::Size, reply: reply::Reply) {
         self.notes.extend(
             reply
                 .rejected
@@ -815,7 +836,7 @@ impl Ui {
                 .map(|item| format!("UI reply {seq} rejected: {item}")),
         );
         if let Some(rects) = reply.rects {
-            self.rects = rects;
+            self.pointers.measured(size, rects);
         }
         self.dropped += reply.dropped as u64;
         for event in reply.events {
@@ -835,26 +856,28 @@ impl Ui {
             notes: std::mem::take(&mut self.notes),
         }
     }
-    pub fn pointer(&self, action: u8, x: f64, y: f64, button: i16) -> bool {
-        if !self
-            .rects
-            .iter()
-            .any(|r| x >= r[0] && y >= r[1] && x < r[0] + r[2] && y < r[1] + r[3])
+    /// Whether the pointer input belongs to the page: it lands on one of the page's rects in
+    /// the HUD frame on screen. The page receives it at the same point of the same rect once
+    /// Servo has laid the page out at the window's size.
+    pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
+        let Connection::Running(link) = &self.connection else {
+            return false;
+        };
+        let pointer = pointers::Pointer {
+            action,
+            x,
+            y,
+            button,
+        };
+        if !link
+            .rings
+            .shown_size()
+            .is_some_and(|shown| self.pointers.aim(shown, pointer))
         {
             return false;
         }
-        if let Connection::Running(link) = &self.connection {
-            link.tx
-                .send(Msg::Pointer {
-                    action,
-                    x: x as f32,
-                    y: y as f32,
-                    button,
-                })
-                .is_ok()
-        } else {
-            false
-        }
+        release(&mut self.pointers, link);
+        true
     }
     pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         if let Connection::Running(link) = &self.connection
