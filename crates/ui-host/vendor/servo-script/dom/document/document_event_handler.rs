@@ -18,7 +18,7 @@ use embedder_traits::{
 use embedder_traits::{
     GamepadEvent as EmbedderGamepadEvent, GamepadSupportedHapticEffects, GamepadUpdateType,
 };
-use euclid::{Point2D, Size2D, Vector2D};
+use euclid::{Point2D, Vector2D};
 use js::context::{JSContext, NoGC};
 use keyboard_types::{
     Code, Key, KeyState, KeyboardEvent as KeyboardTypesEvent, Modifiers, NamedKey,
@@ -167,9 +167,8 @@ pub(crate) struct DocumentEventHandler {
     coalesced_wheel_event_ids: DomRefCell<Vec<InputEventId>>,
     /// <https://w3c.github.io/uievents/#event-type-dblclick>
     click_counting_info: DomRefCell<ClickCountingInfo>,
-    /// The point of the last primary down and the viewport size it was hit-tested at.
-    #[no_trace]
-    last_mouse_button_down_point: Cell<Option<(Point2D<f32, CSSPixel>, Size2D<f32, CSSPixel>)>>,
+    /// The element the last mouse button down was over.
+    last_mouse_button_down_element: MutNullableDom<Element>,
     /// The current button state of the mouse. This is used to ensure that
     /// `pointerup` and `pointerdown` events are only sent when transitioning from
     /// having no mouse buttons pressed to having any and vice-versa.
@@ -222,7 +221,7 @@ impl DocumentEventHandler {
             wheel_event_index: Default::default(),
             coalesced_wheel_event_ids: Default::default(),
             click_counting_info: Default::default(),
-            last_mouse_button_down_point: Default::default(),
+            last_mouse_button_down_element: Default::default(),
             mouse_button_state: Cell::new(MouseButtons::empty()),
             current_hover_target: Default::default(),
             current_active_element: Default::default(),
@@ -1011,10 +1010,7 @@ impl DocumentEventHandler {
 
         match mouse_button_event.action {
             MouseButtonAction::Down => {
-                self.last_mouse_button_down_point.set(Some((
-                    hit_test_result.point_in_frame,
-                    self.window.viewport_details().size,
-                )));
+                self.last_mouse_button_down_element.set(Some(&element));
 
                 // Step 6. Dispatch pointerdown event.
                 let pointer_event_name = if self.mouse_button_state.get().is_empty() {
@@ -1188,20 +1184,22 @@ impl DocumentEventHandler {
             return;
         }
 
-        let Some((last_mouse_button_down_point, down_viewport)) =
-            self.last_mouse_button_down_point.take()
-        else {
+        let Some(down_element) = self.last_mouse_button_down_element.take() else {
             return;
         };
 
-        // A down and an up hit-tested in viewports of different sizes are points in different
-        // layouts, so their distance says nothing about whether the pointer moved.
-        let distance = last_mouse_button_down_point.distance_to(hit_test_result.point_in_frame);
-        let maximum_click_distance = 10.0 * self.window.device_pixel_ratio().get();
-        if down_viewport == self.window.viewport_details().size && distance > maximum_click_distance
-        {
+        // As in Chrome and Firefox, the click goes to the nearest common ancestor of the
+        // elements the down and the up were over, however far apart the two points are.
+        let Some(element) = element
+            .upcast::<Node>()
+            .common_ancestor_in_flat_tree(cx.no_gc(), down_element.upcast())
+            .and_then(|node| {
+                node.inclusive_ancestors(ShadowIncluding::Yes)
+                    .find_map(DomRoot::downcast::<Element>)
+            })
+        else {
             return;
-        }
+        };
 
         // From <https://w3c.github.io/pointerevents/#click>
         // > The click event type MUST be dispatched on the topmost event target indicated by the
