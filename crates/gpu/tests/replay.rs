@@ -450,6 +450,65 @@ fn a_stream_cannot_destroy_the_host_surface() {
 
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn each_frame_that_acquires_the_surface_starts_transparent() {
+    let (device, queue) = device();
+    let surface = surface_texture(&device, 4, 4);
+    let mut executor = Executor::new(device, queue);
+    let acquire = |texture: u32, view: u32| {
+        [
+            (30, words(&[texture, 4, 4])),
+            (7, words(&[view, texture, 0, 0, 0, 0, 0, 0, 0])),
+        ]
+    };
+    let pass = |view: u32, load: u32| {
+        let mut payload = words(&[1, 1, view, 0, load, 1]);
+        for component in [0.0f64, 0.0, 1.0, 1.0] {
+            payload.extend_from_slice(&component.to_bits().to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 32]);
+        [(14, payload), (25, vec![]), (26, vec![])]
+    };
+    let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
+    let readback = |bytes: [u8; 4]| Response::Readback {
+        request: 100,
+        bytes: bytes.repeat(16),
+    };
+    let blue = [255, 0, 0, 255];
+    let mut cleared = acquire(1, 2).to_vec();
+    cleared.extend(pass(2, 1));
+    cleared.push(read(1));
+    assert_eq!(
+        executor.replay(&stream(&cleared), Some(&surface)).unwrap(),
+        vec![readback(blue)]
+    );
+    let mut loaded = acquire(3, 4).to_vec();
+    loaded.extend(pass(4, 0));
+    loaded.push(read(3));
+    assert_eq!(
+        executor.replay(&stream(&loaded), Some(&surface)).unwrap(),
+        vec![readback([0; 4])],
+        "a pass that loads a newly acquired surface sees transparent black, as in a browser"
+    );
+    let mut redrawn = acquire(5, 6).to_vec();
+    redrawn.extend(pass(6, 1));
+    redrawn.extend(pass(6, 0));
+    redrawn.push(read(5));
+    assert_eq!(
+        executor.replay(&stream(&redrawn), Some(&surface)).unwrap(),
+        vec![readback(blue)],
+        "later passes in the same frame load what the frame drew"
+    );
+    let mut unused = acquire(7, 8).to_vec();
+    unused.push(read(7));
+    assert_eq!(
+        executor.replay(&stream(&unused), Some(&surface)).unwrap(),
+        vec![readback([0; 4])],
+        "an acquired surface that nothing draws reads as transparent black"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn errors_outside_error_scopes_become_responses() {
     let (device, queue) = device();
     let surface = surface_texture(&device, 4, 4);
