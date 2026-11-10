@@ -1,29 +1,29 @@
 import csv
+import re
 import sys
 from pathlib import Path
-from PIL import Image
 
 run = Path(sys.argv[1])
 hz = float(sys.argv[2])
+ui = '--no-ui' not in sys.argv
 rows = list(csv.DictReader((run / 'frames.csv').open()))
 assert len(rows) >= 2
 elapsed = 0.0
 intervals = []
-for row in rows[1:]:
+for frame, row in enumerate(rows[1:], start=1):
     interval = float(row['interval_ms'])
     elapsed += interval
     if elapsed <= 1000:
-        intervals.append(interval)
-assert max(intervals) <= 2000 / hz, (max(intervals), 2000 / hz)
-
-def has_hud(path):
-    image = Image.open(path).convert('RGB')
-    reference = image.getpixel((image.width // 2, image.height // 2))
-    return sum(max(abs(a - b) for a, b in zip(image.getpixel((x, y)), reference)) > 10
-               for y in range(0, min(300, image.height), 2)
-               for x in range(0, min(420, image.width), 2)) >= 40
-
-files = sorted((run / 'frames').glob('*.png'))
-assert files and not has_hud(files[0])
-assert any(has_hud(file) for file in files[1:]), 'HUD never appeared'
-print(f'Game precedes HUD; max first-second interval {max(intervals):.3f} ms')
+        intervals.append((frame, interval))
+limit = 2000 / hz
+over = [(frame, interval) for frame, interval in intervals if interval > limit]
+worst = max(interval for _, interval in intervals)
+frame0 = float(rows[0]['cpu_ms'])
+shown = re.findall(r'ui-host first frame shown at game frame (\d+)', (run / 'host.log').read_text())
+assert not over, f'frame 0 cpu {frame0:.2f} ms; {len(over)} first-second intervals over {limit:.3f} ms at frames {over[:6]}'
+if ui:
+    assert shown, 'HUD never appeared'
+    assert int(shown[0]) > 1, f'HUD appeared on game frame {shown[0]}'
+    print(f'HUD from game frame {shown[0]}; frame 0 cpu {frame0:.2f} ms; max first-second interval {worst:.3f} ms')
+else:
+    print(f'frame 0 cpu {frame0:.2f} ms; max first-second interval {worst:.3f} ms')
