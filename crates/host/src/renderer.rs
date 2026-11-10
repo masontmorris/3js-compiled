@@ -39,12 +39,21 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
-    /// The canvas the game draws into. Each frame copies it to the window. A frame that acquires
-    /// it starts from transparent black, and other frames keep the last image, as a browser
-    /// canvas does.
+    /// The canvas the game draws into. A frame that acquires it starts from transparent black, and
+    /// other frames keep the last image, as a browser canvas does.
     game: wgpu::Texture,
-    /// Whether the game has drawn into `game` since it was created at the window's size.
-    drawn: bool,
+    shown: Shown,
+    stretch: wgpu::util::TextureBlitter,
+}
+/// What each frame copies to the window.
+enum Shown {
+    /// The game has not drawn since the host started.
+    Clear,
+    /// The last image the game drew before the window's size changed, which the window shows
+    /// scaled to its size, as a browser scales a canvas, until the game draws at the new size.
+    Stretched(wgpu::TextureView),
+    /// The game has drawn into `game` at the window's size.
+    Game,
 }
 impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -144,7 +153,10 @@ impl Renderer {
         Self {
             executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
             game: game_texture(&target.device, &target.config),
-            drawn: false,
+            shown: Shown::Clear,
+            stretch: wgpu::util::TextureBlitterBuilder::new(&target.device, target.config.format)
+                .sample_type(wgpu::FilterMode::Linear)
+                .build(),
             surface: target.surface,
             device: target.device,
             queue: target.queue,
@@ -153,15 +165,17 @@ impl Renderer {
     }
     /// Replays `frame` into the game texture, copies the game texture to a surface texture at the
     /// frame's size, and presents it. A frame whose commands do not acquire the surface at its
-    /// current size keeps the last frame the game drew. Until the game draws at the current size,
-    /// the window shows the frame's clear color.
+    /// current size keeps the last frame the game drew, scaled to the window after a resize. Until
+    /// the game first draws, the window shows the frame's clear color.
     pub fn frame(&mut self, frame: Frame) -> Result<Rendered> {
         let started = Instant::now();
         self.resize(frame.size);
         let replay = frame
             .commands
             .map(|commands| self.executor.replay(&commands, Some(&self.game)));
-        self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
+        if matches!(replay, Some(Ok(_))) && self.executor.surface_used() {
+            self.shown = Shown::Game;
+        }
         let acquire_started = Instant::now();
         let surface = self.acquire()?;
         let acquire_wait = acquire_started.elapsed();
@@ -180,9 +194,32 @@ impl Renderer {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
+            if matches!(self.shown, Shown::Game) {
+                self.shown = Shown::Stretched(self.snapshot());
+            }
             self.game = game_texture(&self.device, &self.config);
-            self.drawn = false;
         }
+    }
+    /// A copy of `game` that the blitter can sample. `game` has a canvas's usages, which exclude it.
+    fn snapshot(&self) -> wgpu::TextureView {
+        let copy = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("stretched"),
+            size: self.game.size(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.game.format(),
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_texture(
+            self.game.as_image_copy(),
+            copy.as_image_copy(),
+            self.game.size(),
+        );
+        self.queue.submit([encoder.finish()]);
+        copy.create_view(&Default::default())
     }
     fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
@@ -209,34 +246,36 @@ impl Renderer {
             height: self.config.height,
             depth_or_array_layers: 1,
         };
-        if self.drawn {
-            encoder.copy_texture_to_texture(
+        match &self.shown {
+            Shown::Game => encoder.copy_texture_to_texture(
                 self.game.as_image_copy(),
                 frame.texture.as_image_copy(),
                 size,
-            );
-        } else {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear[0],
-                            g: clear[1],
-                            b: clear[2],
-                            a: clear[3],
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            ),
+            Shown::Stretched(last) => self.stretch.copy(&self.device, &mut encoder, last, &view),
+            Shown::Clear => {
+                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clear"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: clear[0],
+                                g: clear[1],
+                                b: clear[2],
+                                a: clear[3],
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+            }
         }
         // Overlays that composite over the game frame, such as E2's UI, draw here so captures
         // include them.
