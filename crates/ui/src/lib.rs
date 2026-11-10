@@ -370,6 +370,73 @@ impl Importer {
         Import { generation, slots }
     }
 }
+/// Composites a blank texture into a scratch target, so that the first HUD frame does not
+/// pay for the pipeline's first use: without this, the game's submission after its first
+/// composite pass took about 0.4 ms longer. `Ui::new` runs off the game thread.
+fn warm_up(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pipeline: &wgpu::RenderPipeline,
+    layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) {
+    let texture = |format, usage| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ui warm-up"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        })
+    };
+    let source = texture(
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureUsages::TEXTURE_BINDING,
+    );
+    let target = texture(format, wgpu::TextureUsages::RENDER_ATTACHMENT);
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("ui warm-up"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&source.create_view(&Default::default())),
+        }],
+    });
+    let view = target.create_view(&Default::default());
+    for _ in 0..2 {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ui warm-up"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        queue.submit(Some(encoder.finish()));
+    }
+}
+
 fn retire(mut link: Link, kill: bool) {
     let _ = link.tx.send(Msg::Shutdown);
     std::thread::spawn(move || {
@@ -487,6 +554,7 @@ impl Ui {
             multiview_mask: None,
             cache: None,
         });
+        warm_up(device, queue, &pipeline, &layout, format);
         let importer = Importer {
             d3d: d3d.device.clone(),
             device: device.clone(),
