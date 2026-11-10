@@ -1,4 +1,4 @@
-use threejsc_ipc::{MAX_JSON, MAX_PAYLOAD, Msg, read_msg, write_msg};
+use threejsc_ipc::{MAX_JSON, MAX_PAYLOAD, Msg, place, read_msg, write_msg};
 
 #[test]
 fn messages_round_trip_and_truncated_frames_fail() {
@@ -18,12 +18,26 @@ fn messages_round_trip_and_truncated_frames_fail() {
             pub_id: 5,
             first_frame: 6,
         },
-        Msg::Pointer {
+        Msg::Pointer(place::Pointer {
             action: 1,
             x: 12.5,
             y: 30.0,
             button: 0,
-        },
+            at: place::At::Rect {
+                rect: 3,
+                offset: (100.5, 40.0),
+            },
+        }),
+        Msg::Pointer(place::Pointer {
+            action: 2,
+            x: 1160.0,
+            y: 60.0,
+            button: 2,
+            at: place::At::Beside {
+                rect: 1,
+                offset: (-960.0, 40.0),
+            },
+        }),
         Msg::Resize {
             width: 640,
             height: 480,

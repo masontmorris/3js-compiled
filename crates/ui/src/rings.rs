@@ -85,11 +85,10 @@ impl<S> Rings<S> {
     /// The frames' sizes for routing input, with the size the host last asked ui-host for.
     /// Servo lays the page out at the newest ring's size: ui-host resizes the page and
     /// announces a ring in one step.
-    pub fn view(&self, requested: Size) -> View {
+    pub fn view(&self) -> View {
         View {
             shown: self.shown.as_ref().map(|(_, _, size)| *size),
             servo: self.newest.as_ref().map(|ring| ring.size),
-            requested,
         }
     }
 }

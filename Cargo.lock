@@ -2127,6 +2127,9 @@ dependencies = [
 [[package]]
 name = "threejsc-ipc"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "threejsc-ui"
@@ -2135,7 +2138,6 @@ dependencies = [
  "anyhow",
  "getrandom",
  "pollster",
- "serde_json",
  "threejsc-ipc",
  "wgpu",
  "wgpu-hal",

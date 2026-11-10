@@ -2,12 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
-
-/// Longest the host holds input for the page while it waits for the page's layout at
-/// Servo's size. Older held input goes to the page placed on the rects the page listed last.
-pub(crate) const HOLD_LIMIT: Duration = Duration::from_millis(250);
+use threejsc_ipc::place::At;
 
 pub(crate) type Size = (u32, u32);
 type Rect = [f64; 4];
@@ -27,13 +22,25 @@ pub(crate) struct View {
     pub shown: Option<Size>,
     /// The size Servo lays the page out at.
     pub servo: Option<Size>,
-    /// The size the host last asked ui-host for.
-    pub requested: Size,
+}
+
+/// Where a pointer event goes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Route {
+    Game,
+    /// To the page, for ui-host to place by `At` in the layout the page processes it in.
+    Page(At),
+    /// To neither side: the rest of a press whose ui-host has stopped.
+    Neither,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Owner {
-    Page,
+    /// The page's, begun over the rect at index `rect`, drawn with its corner at `corner`.
+    Page {
+        rect: u32,
+        corner: (f64, f64),
+    },
     Game,
     /// The page's, but the ui-host that received its start has stopped.
     Neither,
@@ -46,25 +53,10 @@ struct Press {
     buttons: Vec<i16>,
 }
 
-/// Where held input lands in the page's layout at Servo's size.
-#[derive(Clone, Copy)]
-enum Place {
-    /// The same point of the rect at this index.
-    Rect { rect: usize, offset: (f64, f64) },
-    /// Moved as far as the down that began its press.
-    Press,
-}
-
-struct Held {
-    pointer: Pointer,
-    place: Place,
-    at: Instant,
-}
-
 /// Routes pointer input by the HUD frame on screen. After a resize the host may show a frame
 /// laid out at the old size while Servo already lays the page out at the new one, so input is
-/// hit-tested against the rects measured at the shown frame's size, then held until the page
-/// has been measured at Servo's size and moved to the same point of the same rect there.
+/// hit-tested against the rects measured at the shown frame's size and sent with the rect it
+/// was made over. ui-host places it on that rect in the page's current layout.
 #[derive(Default)]
 pub(crate) struct Pointers {
     /// The rects the page listed at the sizes of the shown frame, of Servo and of its latest
@@ -72,10 +64,7 @@ pub(crate) struct Pointers {
     layouts: Vec<(Size, Vec<Rect>)>,
     /// The rects the page listed last.
     last: Vec<Rect>,
-    held: VecDeque<Held>,
     press: Option<Press>,
-    /// How far `release` moved the down of the page's latest press.
-    shift: (f64, f64),
 }
 
 impl Pointers {
@@ -89,24 +78,29 @@ impl Pointers {
             .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
         self.layouts.push((size, self.last.clone()));
     }
-    fn hit(&self, shown: Size, pointer: Pointer) -> Option<Place> {
-        let (_, rects) = self.layouts.iter().find(|(at, _)| *at == shown)?;
+    /// The index and corner of the rect under `pointer` in the frame on screen.
+    fn hit(&self, shown: Option<Size>, pointer: Pointer) -> Option<(u32, (f64, f64))> {
+        let (_, rects) = self.layouts.iter().find(|(at, _)| Some(*at) == shown)?;
         rects.iter().enumerate().find_map(|(rect, r)| {
             (pointer.x >= r[0]
                 && pointer.y >= r[1]
                 && pointer.x < r[0] + r[2]
                 && pointer.y < r[1] + r[3])
-                .then_some(Place::Rect {
-                    rect,
-                    offset: (pointer.x - r[0], pointer.y - r[1]),
-                })
+                .then_some((rect as u32, (r[0], r[1])))
         })
     }
-    /// Whether `pointer` belongs to the page: during a press, whether the press began on a
-    /// rect of the frame then on screen; otherwise, whether it lands on a rect of the frame on
-    /// screen. Input for the page waits for `release`.
-    pub fn pointer(&mut self, view: View, pointer: Pointer, now: Instant) -> bool {
-        let place = if let Some(press) = &mut self.press {
+    /// Where `pointer` goes: during a press, where the press's down went; otherwise to the
+    /// page when it lands on a rect of the frame on screen. Page input is placed on the rect it
+    /// was made over, or, during a press and over no rect, beside the rect the down was over.
+    pub fn pointer(&mut self, shown: Option<Size>, pointer: Pointer) -> Route {
+        let hit = self.hit(shown, pointer);
+        let offset =
+            |corner: (f64, f64)| ((pointer.x - corner.0) as f32, (pointer.y - corner.1) as f32);
+        let on = hit.map(|(rect, corner)| At::Rect {
+            rect,
+            offset: offset(corner),
+        });
+        let owner = if let Some(press) = &mut self.press {
             match pointer.action {
                 1 if !press.buttons.contains(&pointer.button) => press.buttons.push(pointer.button),
                 2 => press.buttons.retain(|button| *button != pointer.button),
@@ -116,88 +110,36 @@ impl Pointers {
             if press.buttons.is_empty() {
                 self.press = None;
             }
-            match owner {
-                Owner::Page => Place::Press,
-                Owner::Game => return false,
-                Owner::Neither => return true,
-            }
+            owner
         } else {
-            let hit = view.shown.and_then(|shown| self.hit(shown, pointer));
+            let owner = match hit {
+                Some((rect, corner)) => Owner::Page { rect, corner },
+                None => Owner::Game,
+            };
             if pointer.action == 1 {
                 self.press = Some(Press {
-                    owner: if hit.is_some() {
-                        Owner::Page
-                    } else {
-                        Owner::Game
-                    },
+                    owner,
                     buttons: vec![pointer.button],
                 });
             }
-            let Some(place) = hit else {
-                return false;
-            };
-            place
+            owner
         };
-        self.held.push_back(Held {
-            pointer,
-            place,
-            at: now,
-        });
-        true
-    }
-    /// The held input, in order, placed on the page's layout at Servo's size once Servo lays
-    /// the page out at the size the host asked for and the page has replied there, or on the
-    /// rects the page listed last once the oldest has waited `HOLD_LIMIT`. Input on a rect
-    /// goes to the same offset in the rect at the same index, or to its centre when the rect
-    /// has shrunk past the offset, and keeps its own point when the layout lacks the rect. The
-    /// rest of a press moves as far as its down. Also returns whether `HOLD_LIMIT` released it.
-    pub fn release(&mut self, view: View, now: Instant) -> (Vec<Pointer>, bool) {
-        let (rects, late) = match self
-            .layouts
-            .iter()
-            .find(|(at, _)| view.servo == Some(view.requested) && *at == view.requested)
-        {
-            Some((_, rects)) => (rects, false),
-            None if self
-                .held
-                .front()
-                .is_some_and(|held| now.duration_since(held.at) >= HOLD_LIMIT) =>
-            {
-                (&self.last, true)
-            }
-            None => return (Vec::new(), false),
-        };
-        let mut out = Vec::with_capacity(self.held.len());
-        for Held { pointer, place, .. } in self.held.drain(..) {
-            let (x, y) = match place {
-                Place::Rect { rect, offset } => match rects.get(rect) {
-                    Some(r) => {
-                        let (dx, dy) = if offset.0 < r[2] && offset.1 < r[3] {
-                            offset
-                        } else {
-                            (r[2] / 2.0, r[3] / 2.0)
-                        };
-                        (r[0] + dx, r[1] + dy)
-                    }
-                    None => (pointer.x, pointer.y),
-                },
-                Place::Press => (pointer.x + self.shift.0, pointer.y + self.shift.1),
-            };
-            if let (Place::Rect { .. }, 1) = (place, pointer.action) {
-                self.shift = (x - pointer.x, y - pointer.y);
-            }
-            out.push(Pointer { x, y, ..pointer });
+        match owner {
+            Owner::Page { rect, corner } => Route::Page(on.unwrap_or(At::Beside {
+                rect,
+                offset: offset(corner),
+            })),
+            Owner::Game => Route::Game,
+            Owner::Neither => Route::Neither,
         }
-        (out, late)
     }
-    /// ui-host stopped: its layouts and held input go, and the rest of a press it received
-    /// goes to neither side.
+    /// ui-host stopped: its layouts go, and the rest of a press it received goes to neither
+    /// side.
     pub fn clear(&mut self) {
         self.layouts.clear();
         self.last.clear();
-        self.held.clear();
         if let Some(press) = &mut self.press
-            && press.owner == Owner::Page
+            && let Owner::Page { .. } = press.owner
         {
             press.owner = Owner::Neither;
         }
@@ -208,6 +150,7 @@ impl Pointers {
 mod tests {
     use super::*;
     use crate::rings::Rings;
+    use threejsc_ipc::place::{self, Placer};
 
     const OLD: Size = (1280, 720);
     const NEW: Size = (1680, 720);
@@ -233,18 +176,18 @@ mod tests {
     }
     use To::{Game, Page};
 
-    /// `Ui` without the pipe and D3D: the real `Rings` and `Pointers`, given ui-host's
-    /// messages and the game's input as `Ui::update` and `Ui::pointer` give them.
+    /// `Ui` and ui-host without the pipe, D3D and Servo: the real `Rings`, `Pointers` and
+    /// `Placer`, given ui-host's messages and the game's input as `Ui::update` and `Ui::pointer`
+    /// give them. `Page` holds each point as ui-host gives it to Servo.
     struct Host {
         rings: Rings<()>,
         pointers: Pointers,
-        requested: Size,
+        /// The size ui-host lays the page out at.
+        servo: Size,
+        placer: Placer,
         generation: u64,
         pub_id: u64,
-        now: Instant,
         out: Vec<To>,
-        /// Releases by `HOLD_LIMIT`.
-        late: usize,
     }
 
     impl Host {
@@ -253,12 +196,11 @@ mod tests {
             let mut host = Host {
                 rings: Rings::default(),
                 pointers: Pointers::default(),
-                requested: size,
+                servo: size,
+                placer: Placer::new(size),
                 generation: 0,
                 pub_id: 0,
-                now: Instant::now(),
                 out: Vec::new(),
-                late: 0,
             };
             host.resize(size);
             host.reply(size, Some(rects));
@@ -266,19 +208,38 @@ mod tests {
             host
         }
         fn view(&self) -> View {
-            self.rings.view(self.requested)
+            self.rings.view()
         }
-        /// The host sends Resize; ui-host resizes the page and announces a ring at that size.
+        /// ui-host applies a resize and announces a ring at that size.
         fn resize(&mut self, size: Size) {
-            self.requested = size;
+            self.servo = size;
+            self.placer.resized(size);
             self.generation += 1;
             self.rings.announced(self.generation, size);
             self.rings.opened(self.generation, vec![(), (), ()]);
         }
-        /// A page reply from ui-host while the page is laid out at `size`.
+        /// A page reply while laid out at `size`. A reply at ui-host's size ends its relayout.
         fn reply(&mut self, size: Size, rects: Option<Vec<Rect>>) {
-            self.pointers.measured(self.view(), size, rects);
-            self.update();
+            self.pointers.measured(self.view(), size, rects.clone());
+            self.placer.replied(rects);
+            if size == self.servo {
+                self.relaid();
+            }
+        }
+        /// ui-host's relayout ends, with or without a reply at its size.
+        fn relaid(&mut self) {
+            let placed = self.placer.relaid();
+            self.page(placed);
+        }
+        fn page(&mut self, placed: impl IntoIterator<Item = place::Placed>) {
+            self.out.extend(placed.into_iter().map(|p| {
+                Page(Pointer {
+                    action: p.action,
+                    x: p.x.into(),
+                    y: p.y.into(),
+                    button: p.button,
+                })
+            }));
         }
         /// ui-host publishes a frame into its newest ring and the host shows it.
         fn publish(&mut self) {
@@ -286,30 +247,29 @@ mod tests {
             self.rings
                 .published((self.pub_id % 3) as usize, self.pub_id, self.pub_id);
             assert_eq!(self.rings.pick(self.pub_id), Some(self.pub_id));
-            self.update();
         }
         fn pointer(&mut self, action: u8, x: f64) {
             self.send(at(action, x));
         }
         fn send(&mut self, pointer: Pointer) {
-            if !self.pointers.pointer(self.view(), pointer, self.now) {
-                self.out.push(Game(pointer));
+            match self.pointers.pointer(self.view().shown, pointer) {
+                Route::Game => self.out.push(Game(pointer)),
+                Route::Page(at) => {
+                    let placed = self.placer.pointer(place::Pointer {
+                        action: pointer.action,
+                        x: pointer.x as f32,
+                        y: pointer.y as f32,
+                        button: pointer.button,
+                        at,
+                    });
+                    self.page(placed);
+                }
+                Route::Neither => {}
             }
-            self.update();
         }
         fn click(&mut self, x: f64) {
             self.pointer(1, x);
             self.pointer(2, x);
-        }
-        fn update(&mut self) {
-            let view = self.view();
-            let (pointers, late) = self.pointers.release(view, self.now);
-            self.out.extend(pointers.into_iter().map(Page));
-            self.late += usize::from(late);
-        }
-        fn wait(&mut self, ms: u64) {
-            self.now += Duration::from_millis(ms);
-            self.update();
         }
         fn take(&mut self) -> Vec<To> {
             std::mem::take(&mut self.out)
@@ -324,13 +284,10 @@ mod tests {
         assert_eq!(
             host.take(),
             [],
-            "drawn at x=1060..1260; not measured at 1680 yet"
+            "drawn at x=1060..1260; not laid out at 1680 yet"
         );
         host.reply(NEW, Some(right_button(1680)));
         assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
-        host.wait(1000);
-        assert_eq!(host.take(), []);
-        assert_eq!(host.late, 0);
     }
 
     #[test]
@@ -394,7 +351,19 @@ mod tests {
                 Page(at(0, 1570.0)),
                 Page(at(2, 1560.0))
             ],
-            "the page gets the whole press, moved with its down; the game gets none of it"
+            "over no drawn rect, the press stays beside the button its down was on"
+        );
+    }
+
+    #[test]
+    fn a_press_dragged_off_its_button_ends_off_it() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(1, 1160.0);
+        host.pointer(0, 900.0);
+        host.pointer(2, 900.0);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1160.0)), Page(at(0, 900.0)), Page(at(2, 900.0))]
         );
     }
 
@@ -517,15 +486,81 @@ mod tests {
         let mut host = Host::new(OLD, right_button(1280));
         host.resize(NEW);
         host.click(1160.0);
-        host.wait(HOLD_LIMIT.as_millis() as u64 - 1);
         assert_eq!(host.take(), []);
-        host.wait(1);
+        host.relaid();
         assert_eq!(
             host.take(),
             [Page(at(1, 1160.0)), Page(at(2, 1160.0))],
             "placed on the rects the page listed last"
         );
-        assert_eq!(host.late, 1);
+    }
+
+    /// Adversary round 5: a press whose down reached the page before a resize, released on the
+    /// button still drawn in the kept old-size frame.
+    #[test]
+    fn an_up_on_the_kept_frame_after_a_resize_mid_press_lands_on_the_button() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(1, 1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1160.0))], "down delivered at once");
+        host.resize(NEW);
+        assert_eq!(host.view().shown, Some(OLD));
+        host.pointer(2, 1160.0);
+        host.reply(NEW, Some(right_button(1680)));
+        assert_eq!(
+            host.take(),
+            [Page(at(2, 1560.0))],
+            "the up is on the drawn button; at 1680 the button is at 1460..1660"
+        );
+    }
+
+    /// Adversary round 5: a press that begins on the kept frame during a resize and ends after
+    /// a resize back, on the button drawn in the old-size frame.
+    #[test]
+    fn a_press_spanning_two_resizes_ends_on_the_drawn_button() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.pointer(1, 1160.0);
+        host.reply(NEW, Some(right_button(1680)));
+        host.publish();
+        host.resize(OLD);
+        host.reply(OLD, Some(right_button(1280)));
+        host.publish();
+        assert_eq!(host.view().shown, Some(OLD));
+        host.pointer(2, 1160.0);
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1560.0)),
+                Page(at(2, 1160.0)),
+                Page(at(1, 1160.0)),
+                Page(at(2, 1160.0)),
+            ],
+            "the up is on the button drawn at 1060..1260 in a 1280 px page, and the next click \
+             reaches the page"
+        );
+    }
+
+    /// Adversary round 5: during a drag the host has asked for a newer size than Servo's, and a
+    /// click on the frame on screen waits for the page's layout at Servo's size.
+    #[test]
+    fn a_click_during_a_drag_lands_on_the_button_at_servos_size() {
+        const S1: Size = (1380, 720);
+        const S2: Size = (1480, 720);
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(S1);
+        host.reply(S1, Some(right_button(S1.0)));
+        host.publish();
+        host.resize(S2);
+        assert_eq!(host.view().shown, Some(S1), "button drawn at 1160..1360");
+        assert_eq!(
+            host.view().servo,
+            Some(S2),
+            "Servo lays it out at 1260..1460"
+        );
+        host.click(1170.0);
+        host.reply(S2, Some(right_button(S2.0)));
+        assert_eq!(host.take(), [Page(at(1, 1270.0)), Page(at(2, 1270.0))]);
     }
 
     #[test]

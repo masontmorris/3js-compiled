@@ -2,6 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+pub mod place;
+pub mod reply;
+
 use std::io::{self, Read, Write};
 
 /// Largest message payload either side writes or accepts.
@@ -30,12 +33,7 @@ pub enum Msg {
         pub_id: u64,
         first_frame: u64,
     },
-    Pointer {
-        action: u8,
-        x: f32,
-        y: f32,
-        button: i16,
-    },
+    Pointer(place::Pointer),
     Resize {
         width: u32,
         height: u32,
@@ -80,6 +78,9 @@ fn put_u32(b: &mut Vec<u8>, v: u32) {
 fn put_u64(b: &mut Vec<u8>, v: u64) {
     b.extend_from_slice(&v.to_le_bytes());
 }
+fn put_f32(b: &mut Vec<u8>, v: f32) {
+    b.extend_from_slice(&v.to_le_bytes());
+}
 fn put_str(b: &mut Vec<u8>, s: &str) {
     put_u32(b, s.len() as u32);
     b.extend_from_slice(s.as_bytes());
@@ -103,6 +104,9 @@ impl Cursor<'_> {
     }
     fn u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+    fn f32(&mut self) -> io::Result<f32> {
+        Ok(f32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
     fn string(&mut self) -> io::Result<String> {
         let n = self.u32()? as usize;
@@ -143,17 +147,20 @@ impl Msg {
                 put_u64(&mut b, *first_frame);
             }
             Msg::Shutdown => b.push(4),
-            Msg::Pointer {
-                action,
-                x,
-                y,
-                button,
-            } => {
+            Msg::Pointer(pointer) => {
                 b.push(5);
-                b.push(*action);
-                b.extend_from_slice(&x.to_le_bytes());
-                b.extend_from_slice(&y.to_le_bytes());
-                b.extend_from_slice(&button.to_le_bytes());
+                b.push(pointer.action);
+                put_f32(&mut b, pointer.x);
+                put_f32(&mut b, pointer.y);
+                b.extend_from_slice(&pointer.button.to_le_bytes());
+                let (tag, rect, offset) = match pointer.at {
+                    place::At::Rect { rect, offset } => (0, rect, offset),
+                    place::At::Beside { rect, offset } => (1, rect, offset),
+                };
+                b.push(tag);
+                put_u32(&mut b, rect);
+                put_f32(&mut b, offset.0);
+                put_f32(&mut b, offset.1);
             }
             Msg::Resize { width, height } => {
                 b.push(6);
@@ -231,12 +238,25 @@ impl Msg {
                 first_frame: c.u64()?,
             },
             4 => Msg::Shutdown,
-            5 => Msg::Pointer {
+            5 => Msg::Pointer(place::Pointer {
                 action: c.u8()?,
-                x: f32::from_le_bytes(c.take(4)?.try_into().unwrap()),
-                y: f32::from_le_bytes(c.take(4)?.try_into().unwrap()),
+                x: c.f32()?,
+                y: c.f32()?,
                 button: i16::from_le_bytes(c.take(2)?.try_into().unwrap()),
-            },
+                at: {
+                    let (tag, rect, offset) = (c.u8()?, c.u32()?, (c.f32()?, c.f32()?));
+                    match tag {
+                        0 => place::At::Rect { rect, offset },
+                        1 => place::At::Beside { rect, offset },
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!("bad pointer target {tag}"),
+                            ));
+                        }
+                    }
+                },
+            }),
             6 => Msg::Resize {
                 width: c.u32()?,
                 height: c.u32()?,

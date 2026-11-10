@@ -3,3 +3,7 @@ name = "threejsc-ipc"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
+
+[dependencies]
+# Keeps each page event's keys in the page's order when the host forwards it to the game.
+serde_json = { version = "1", features = ["preserve_order"] }

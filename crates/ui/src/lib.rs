@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 mod pointers;
-mod reply;
 mod rings;
 
 use anyhow::{Context, Result, bail};
@@ -16,7 +15,7 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-use threejsc_ipc::{self as proto, Msg};
+use threejsc_ipc::{self as proto, Msg, place, reply};
 use windows::{
     Win32::{
         Foundation::{
@@ -442,16 +441,6 @@ fn warm_up(
         queue.submit(Some(encoder.finish()));
     }
 }
-fn send_pointers(link: &Link, pointers: Vec<pointers::Pointer>) {
-    for pointer in pointers {
-        let _ = link.tx.send(Msg::Pointer {
-            action: pointer.action,
-            x: pointer.x as f32,
-            y: pointer.y as f32,
-            button: pointer.button,
-        });
-    }
-}
 fn retire(mut link: Link, kill: bool) {
     let _ = link.tx.send(Msg::Shutdown);
     std::thread::spawn(move || {
@@ -735,7 +724,7 @@ impl Ui {
                             link.rtt_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
                         }
                         link.sent_patches.retain(|(id, _)| *id > seq);
-                        self.receive(link.rings.view(link.requested), seq, size, reply);
+                        self.receive(link.rings.view(), seq, size, reply);
                     }
                     Ok(Incoming::Msg(Msg::Report { text })) => self.notes.push(text),
                     Ok(Incoming::Msg(_)) => {}
@@ -782,11 +771,6 @@ impl Ui {
                         first_frame: frame,
                     });
                 }
-                let (held, late) = self
-                    .pointers
-                    .release(link.rings.view(link.requested), Instant::now());
-                self.late_input(late, link.requested);
-                send_pointers(&link, held);
                 if self.can_send
                     && !self.state_sent
                     && let Some(json) = &self.state
@@ -862,8 +846,8 @@ impl Ui {
     }
     /// Whether the pointer input belongs to the page: it lands on one of the page's rects in
     /// the HUD frame on screen or, from a button down to the last button up, the down did. The
-    /// game receives the input this returns false for; `Pointers` places the rest on the
-    /// page's layout at Servo's size.
+    /// game receives the input this returns false for. Page input goes to ui-host with the rect
+    /// it was made over, and ui-host places it there in the page's current layout.
     pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
         let pointer = pointers::Pointer {
             action,
@@ -871,28 +855,26 @@ impl Ui {
             y,
             button,
         };
-        let now = Instant::now();
-        let Connection::Running(link) = &self.connection else {
-            return self
-                .pointers
-                .pointer(pointers::View::default(), pointer, now);
+        let link = match &self.connection {
+            Connection::Running(link) => Some(link),
+            _ => None,
         };
-        let view = link.rings.view(link.requested);
-        let page = self.pointers.pointer(view, pointer, now);
-        let (held, late) = self.pointers.release(view, now);
-        send_pointers(link, held);
-        let requested = link.requested;
-        self.late_input(late, requested);
-        page
-    }
-    fn late_input(&mut self, late: bool, size: (u32, u32)) {
-        if late {
-            self.notes.push(format!(
-                "UI input held {} ms without the page's layout at {}x{} went to the page on its last rects",
-                pointers::HOLD_LIMIT.as_millis(),
-                size.0,
-                size.1
-            ));
+        let shown = link.and_then(|link| link.rings.view().shown);
+        match self.pointers.pointer(shown, pointer) {
+            pointers::Route::Game => false,
+            pointers::Route::Page(at) => {
+                if let Some(link) = link {
+                    let _ = link.tx.send(Msg::Pointer(place::Pointer {
+                        action,
+                        x: x as f32,
+                        y: y as f32,
+                        button,
+                        at,
+                    }));
+                }
+                true
+            }
+            pointers::Route::Neither => true,
         }
     }
     pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {

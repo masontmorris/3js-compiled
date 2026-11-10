@@ -72,6 +72,8 @@ impl EventLoopWaker for Waker {
 struct Delegate {
     new_frame: Rc<Cell<bool>>,
     input_handled: Rc<Cell<bool>>,
+    /// Pointer events given to Servo and not yet reported handled.
+    unhandled: Rc<Cell<u32>>,
 }
 
 impl WebViewDelegate for Delegate {
@@ -85,10 +87,31 @@ impl WebViewDelegate for Delegate {
         _result: InputEventResult,
     ) {
         self.input_handled.set(true);
+        self.unhandled.set(self.unhandled.get().saturating_sub(1));
     }
     fn notify_crashed(&self, _webview: WebView, reason: String, _backtrace: Option<String>) {
         eprintln!("[ui-host] servo crash: {reason}");
     }
+}
+
+/// Gives Servo a placed pointer event.
+fn give(webview: &WebView, unhandled: &Cell<u32>, pointer: proto::place::Placed) {
+    let point = DevicePoint::new(pointer.x, pointer.y).into();
+    let input = if pointer.action == 0 {
+        InputEvent::MouseMove(MouseMoveEvent::new(point))
+    } else {
+        InputEvent::MouseButton(MouseButtonEvent::new(
+            if pointer.action == 1 {
+                MouseButtonAction::Down
+            } else {
+                MouseButtonAction::Up
+            },
+            MouseButton::from(pointer.button),
+            point,
+        ))
+    };
+    webview.notify_input_event(input);
+    unhandled.set(unhandled.get() + 1);
 }
 
 /// One ring entry. `pub_id == 0` means never published.
@@ -248,13 +271,15 @@ impl Relayout {
 }
 
 /// The viewport size to apply now. Resizes that arrive while the page is laid out for the
-/// last one wait, so each ring receives a frame before a newer resize replaces it.
+/// last one wait, so each ring receives a frame before a newer resize replaces it. They also
+/// wait while Servo has pointer events it has not handled, so each is hit-tested in the layout
+/// it was placed in.
 fn next_resize(
     current: (u32, u32),
     waiting: &mut Vec<(u32, u32)>,
-    relaying: bool,
+    blocked: bool,
 ) -> Option<(u32, u32)> {
-    if relaying {
+    if blocked {
         return None;
     }
     proto::next_ring_size(current, waiting.drain(..))
@@ -305,6 +330,7 @@ struct Stats {
     eval_errors: u64,
     rings: u64,
     resizes_held: u64,
+    pointers_unplaced: u64,
     since: Option<(Instant, Duration, u64)>,
 }
 
@@ -483,12 +509,14 @@ fn main() {
     servo.setup_logging();
     let new_frame = Rc::new(Cell::new(false));
     let input_handled = Rc::new(Cell::new(false));
+    let unhandled = Rc::new(Cell::new(0));
     let webview = WebViewBuilder::new(&servo, ctx.clone())
         .url(Url::from_file_path(&hud).expect("hud path"))
         .hidpi_scale_factor(Scale::new(1.0))
         .delegate(Rc::new(Delegate {
             new_frame: new_frame.clone(),
             input_handled: input_handled.clone(),
+            unhandled: unhandled.clone(),
         }))
         .build();
 
@@ -507,6 +535,10 @@ fn main() {
     let mut warmed_at: Option<Instant> = None;
     let applied = Rc::new(Cell::new(false));
     let relayout: Rc<RefCell<Option<Relayout>>> = Rc::default();
+    let placer = Rc::new(RefCell::new(proto::place::Placer::new((
+        size.width,
+        size.height,
+    ))));
     let mut resizes = Vec::new();
 
     loop {
@@ -546,27 +578,10 @@ fn main() {
                     }
                     picked = pub_id;
                 }
-                Event::Msg(Msg::Pointer {
-                    action,
-                    x,
-                    y,
-                    button,
-                }) => {
-                    let point = DevicePoint::new(x, y).into();
-                    let input = if action == 0 {
-                        InputEvent::MouseMove(MouseMoveEvent::new(point))
-                    } else {
-                        InputEvent::MouseButton(MouseButtonEvent::new(
-                            if action == 1 {
-                                MouseButtonAction::Down
-                            } else {
-                                MouseButtonAction::Up
-                            },
-                            MouseButton::from(button),
-                            point,
-                        ))
-                    };
-                    webview.notify_input_event(input);
+                Event::Msg(Msg::Pointer(pointer)) => {
+                    if let Some(placed) = placer.borrow_mut().pointer(pointer) {
+                        give(&webview, &unhandled, placed);
+                    }
                 }
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
                     if relayout.borrow().is_some() {
@@ -583,12 +598,12 @@ fn main() {
         if shutting_down {
             break;
         }
-        let relayout_pending = relayout.borrow().is_some();
-        if let Some((width, height)) =
-            next_resize((size.width, size.height), &mut resizes, relayout_pending)
+        let blocked = relayout.borrow().is_some() || unhandled.get() > 0;
+        if let Some((width, height)) = next_resize((size.width, size.height), &mut resizes, blocked)
         {
             size = PhysicalSize::new(width, height);
             webview.resize(size);
+            placer.borrow_mut().resized((width, height));
             *relayout.borrow_mut() = Some(Relayout::new((width, height), Instant::now()));
             destroy_slots(&frame_ctx, &mut slots);
             slots = new_ring(size, &mut unimported);
@@ -615,6 +630,7 @@ fn main() {
             let new_frame = new_frame.clone();
             let pacer = pacer.clone();
             let relayout = relayout.clone();
+            let placer = placer.clone();
             webview.evaluate_javascript(script, move |result| {
                 stats.borrow_mut().round_trip.push(started.elapsed());
                 pacer.borrow_mut().finished();
@@ -632,6 +648,7 @@ fn main() {
                             JSValue::String(json),
                         ],
                     ) if json.len() <= proto::MAX_JSON => {
+                        placer.borrow_mut().replied(proto::reply::parse(json).rects);
                         if let Some(relayout) = relayout.borrow_mut().as_mut() {
                             relayout.measured((*width as u32, *height as u32), Instant::now());
                         }
@@ -690,7 +707,17 @@ fn main() {
 
         let now = Instant::now();
         let relaying = relayout.borrow().as_ref().is_some_and(|r| !r.done(now));
-        let relaid = !relaying && relayout.borrow_mut().take().is_some();
+        let ended = (!relaying).then(|| relayout.borrow_mut().take()).flatten();
+        let relaid = ended.is_some();
+        if let Some(ended) = ended {
+            let placed = placer.borrow_mut().relaid();
+            if ended.measured.is_none() {
+                stats.borrow_mut().pointers_unplaced += placed.len() as u64;
+            }
+            for pointer in placed {
+                give(&webview, &unhandled, pointer);
+            }
+        }
         let due = new_frame.get() || relaid || last_paint.elapsed() >= Duration::from_millis(100);
         // Until the first patch is applied, a published frame would show the page without
         // state, so these paints are not published. The first paint of the loaded page takes
@@ -816,6 +843,10 @@ fn report_stats(s: &mut Stats) {
     report += &format!(
         "ui-host resizes held for a pending relayout: {}\n",
         s.resizes_held
+    );
+    report += &format!(
+        "ui-host pointer events placed without the page's layout at its size: {}\n",
+        s.pointers_unplaced
     );
     report += &format!(
         "ui-host per published frame ms: paint {}\n",
