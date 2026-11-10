@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { WebGPURenderer } from 'three/webgpu';
 import { NativeBackend, RecordingDevice } from '../src/NativeBackend.js';
 import { decodeCommands, Opcode, streamFrame } from '../src/commands.js';
@@ -391,6 +393,77 @@ test('every set of the canvas size records RESIZE_SURFACE, even one that ends at
   } finally {
     await renderer.dispose();
   }
+});
+
+test('renderers that come and go wrap the canvas size once and leave no disposed device reachable', async () => {
+  setFlagsFromString('--expose-gc');
+  const gc = runInNewContext('gc');
+  const depths = [];
+  const stackDepth = () => {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = Infinity;
+    const depth = new Error().stack.split('\n').length;
+    Error.stackTraceLimit = limit;
+    return depth;
+  };
+  const surface = {
+    get width() { return this.size[0]; },
+    set width(value) { depths.push(stackDepth()); this.size[0] = value; },
+    get height() { return this.size[1]; },
+    set height(value) { this.size[1] = value; },
+  };
+  const canvas = Object.assign(Object.create(surface), { size: [4, 4], style: {}, addEventListener() {}, removeEventListener() {} });
+  const devices = [];
+  const cycle = async () => {
+    const { backend, renderer, render } = await boxRenderer(canvas, 0xff0000);
+    render();
+    backend.takeFrame();
+    devices.push(new WeakRef(backend.recordingDevice));
+    await renderer.dispose();
+  };
+  await cycle();
+  canvas.width = 4;
+  for (let i = 0; i < 20; i++) await cycle();
+  canvas.width = 4;
+  assert.equal(depths.at(-1), depths.at(-2), 'a set of the canvas size runs as deep after 20 more renderers');
+  for (let i = 0; i < 5; i++) {
+    gc();
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.deepEqual(devices.filter(device => device.deref()).length, 0, 'every disposed device can be collected');
+});
+
+test('a canvas whose size cannot be redefined still renders and records its size changes', async () => {
+  const resizes = frame => decodeCommands(frame).flatMap(item => {
+    const name = { [Opcode.ACQUIRE_SURFACE]: 'acquire', [Opcode.RESIZE_SURFACE]: 'resize' }[item.opcode];
+    const words = new Uint32Array(item.payload.buffer, item.payload.byteOffset, item.payload.byteLength / 4);
+    return name ? [`${name} ${words.at(-2)}x${words.at(-1)}`] : [];
+  });
+  const fixed = { style: {}, addEventListener() {}, removeEventListener() {} };
+  Object.defineProperty(fixed, 'width', { value: 4, writable: true, enumerable: true });
+  Object.defineProperty(fixed, 'height', { value: 4, writable: true, enumerable: true });
+  const { backend, renderer, render } = await boxRenderer(fixed, 0xff0000);
+  try {
+    render();
+    assert.deepEqual(resizes(backend.takeFrame()), ['acquire 4x4']);
+    fixed.width = 8;
+    render();
+    assert.deepEqual(resizes(backend.takeFrame()), ['resize 8x4', 'acquire 8x4']);
+    fixed.width = 4;
+    assert.deepEqual(resizes(backend.takeFrame()), ['resize 4x4']);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
+test('a canvas size with only a getter still rejects a set', async () => {
+  class ReadOnly {
+    get width() { return 4; }
+    get height() { return 4; }
+  }
+  const canvas = Object.assign(new ReadOnly(), { style: {}, addEventListener() {}, removeEventListener() {} });
+  await new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas }) }).dispose();
+  assert.throws(() => { canvas.width = 8; }, TypeError);
 });
 
 test('render target readbacks return the typed array three returns for the format', async () => {
