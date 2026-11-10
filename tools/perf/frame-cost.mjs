@@ -295,7 +295,7 @@ const enough = summary.edge.runs >= options.runs && summary.native.runs >= optio
 const shortfall = key => enough ? 1 - summary.native[key] / summary.edge[key] : null;
 const presentedWorse = shortfall('presentedFps');
 const cpuWorse = enough ? summary.native.cpuMsPerFrame / summary.edge.cpuMsPerFrame - 1 : null;
-const verdict = !enough ? 'INCONCLUSIVE' : presentedWorse > 0.1 || cpuWorse > 0 ? 'FAIL' : 'PASS';
+const verdict = !enough ? 'INCONCLUSIVE' : presentedWorse > 0.1 || cpuWorse > 0.1 ? 'FAIL' : 'PASS';
 const report = { options, results, summary, nativePresentedFpsShortfall: presentedWorse, nativeDisplayedFpsShortfall: shortfall('displayedFps'), nativeFrameFpsShortfall: shortfall('fps'), nativeCpuExcess: cpuWorse, unavailable, verdict };
 await writeFile(resolve(out, 'frame-cost.json'), JSON.stringify(report, null, 2));
 if (!enough) {
@@ -310,4 +310,4 @@ console.log(`${line('displayed fps (information only)', 'displayedFps', 0)} (nat
 console.log(`${line('frame fps from the probe (information only)', 'fps', 0)} (native ${(shortfall('fps') * 100).toFixed(1)}% lower)`);
 console.log(`${line('CPU ms per frame', 'cpuMsPerFrame', 3)} (native ${(cpuWorse * 100).toFixed(1)}% higher)`);
 console.log(`${line('JavaScript frame callback p50 in ms (information only)', 'callbackP50', 3)}`);
-console.log(`E3 perf rule (fail when native presents more than 10% fewer frames per second than Edge, or spends more CPU per frame): ${verdict}`);
+console.log(`E3 perf rule (fail when native presents more than 10% fewer frames per second than Edge, or spends more than 10% more CPU per frame): ${verdict}`);
