@@ -1,0 +1,26 @@
+--- a/dom.rs
++++ b/dom.rs
+@@ -68,10 +68,19 @@
+         pseudo_element: PseudoElement,
+     ) -> ArcRefCell<InnerDOMLayoutData> {
+         let data: ArcRefCell<InnerDOMLayoutData> = Default::default();
+-        self.pseudo_boxes.push(PseudoLayoutData {
+-            pseudo: pseudo_element,
+-            data: data.clone(),
+-        });
++        // A box tree rebuild creates the pseudo-element's box again. Replace the earlier data
++        // so that each pseudo-element keeps one entry.
++        match self
++            .pseudo_boxes
++            .iter_mut()
++            .find(|pseudo_layout_data| pseudo_layout_data.pseudo == pseudo_element)
++        {
++            Some(pseudo_layout_data) => pseudo_layout_data.data = data.clone(),
++            None => self.pseudo_boxes.push(PseudoLayoutData {
++                pseudo: pseudo_element,
++                data: data.clone(),
++            }),
++        }
+         data
+     }
+ 
