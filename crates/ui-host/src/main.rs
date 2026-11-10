@@ -271,10 +271,36 @@ impl Relayout {
     }
 }
 
+/// Longest wait for the host to show a ring's first frame before a newer resize may replace the
+/// ring. The host has taken up to 71 ms to open a ring.
+const SHOW_WAIT: Duration = Duration::from_millis(100);
+
+/// The first frame published into the current ring, from its publication until the host shows
+/// a frame of the ring. The host shows frames of its newest ring only, so a ring replaced before
+/// then never reaches the screen, and during a drag the HUD would keep an old size.
+#[derive(Default)]
+struct Unshown(Option<(u64, Instant)>);
+
+impl Unshown {
+    fn published(&mut self, pub_id: u64, now: Instant) {
+        self.0.get_or_insert((pub_id, now));
+    }
+    /// The host shows frame `pub_id`.
+    fn picked(&mut self, pub_id: u64) {
+        if self.0.is_some_and(|(first, _)| pub_id >= first) {
+            self.0 = None;
+        }
+    }
+    /// Whether a newer resize waits for the host to show the ring's first frame.
+    fn holds(&self, now: Instant) -> bool {
+        self.0.is_some_and(|(_, at)| now - at < SHOW_WAIT)
+    }
+}
+
 /// The viewport size to apply now. Resizes that arrive while the page is laid out for the
-/// last one wait, so each ring receives a frame before a newer resize replaces it. They also
-/// wait while Servo has pointer events it has not handled, so each is hit-tested in the layout
-/// it was placed in.
+/// last one wait, so each ring receives a frame before a newer resize replaces it, and they
+/// wait for the host to show that frame. They also wait while Servo has pointer events it has
+/// not handled, so each is hit-tested in the layout it was placed in.
 fn next_resize(
     current: (u32, u32),
     waiting: &mut Vec<(u32, u32)>,
@@ -532,6 +558,7 @@ fn main() {
     let mut next_pub: u64 = 0;
     let mut ready_value = ready_base;
     let mut picked: u64 = 0;
+    let mut unshown = Unshown::default();
     let mut shutting_down = false;
     let mut last_paint = Instant::now();
     let mut last_report = Instant::now();
@@ -585,6 +612,7 @@ fn main() {
                         }
                     }
                     picked = pub_id;
+                    unshown.picked(pub_id);
                 }
                 Event::Msg(Msg::Pointer(pointer)) => {
                     if let Some(placed) = placer.borrow_mut().pointer(pointer) {
@@ -606,7 +634,8 @@ fn main() {
         if shutting_down {
             break;
         }
-        let blocked = relayout.borrow().is_some() || unhandled.get() > 0;
+        let blocked =
+            relayout.borrow().is_some() || unhandled.get() > 0 || unshown.holds(Instant::now());
         if let Some((width, height)) = next_resize((size.width, size.height), &mut resizes, blocked)
         {
             size = PhysicalSize::new(width, height);
@@ -617,6 +646,7 @@ fn main() {
             slots = new_ring(size, &mut unimported);
             ring_at = Instant::now();
             picked = 0;
+            unshown = Unshown::default();
         }
         if input_handled.take() {
             pacer.borrow_mut().input_handled();
@@ -802,6 +832,7 @@ fn main() {
                 painted(fresh);
 
                 next_pub += 1;
+                unshown.published(next_pub, Instant::now());
                 last_ready = Some(ready_value);
                 let slot = &mut slots[index];
                 slot.pub_id = next_pub;
@@ -1170,6 +1201,89 @@ mod tests {
                 "frame at {to} ms not at a newer size"
             );
         }
+    }
+
+    /// Frames as (ms, size).
+    type Frames = Vec<(u64, (u32, u32))>;
+
+    /// The drag above, with a host that opens each ring 70 ms after ui-host creates it and
+    /// shows a ring's newest frame 4 ms after the later of the two. Returns the frames ui-host
+    /// published and those the host showed.
+    fn drag_with_a_host(opens: Option<u64>) -> (Frames, Frames) {
+        let t = Instant::now();
+        let mut size = (1280, 720);
+        let mut waiting = Vec::new();
+        let mut relayout: Option<Relayout> = None;
+        let mut unshown = Unshown::default();
+        let (mut ring_at, mut pub_id) = (0, 0);
+        let mut pending: Option<(u64, u64)> = None;
+        let (mut published, mut shown) = (vec![(0, size)], vec![(0, size)]);
+        for ms in (4..2000).step_by(4) {
+            let now = t + Duration::from_millis(ms);
+            if ms % 16 == 0 {
+                waiting.push((1280 + ms as u32 / 2, 720));
+            }
+            let blocked = relayout.is_some() || unshown.holds(now);
+            if let Some(next) = next_resize(size, &mut waiting, blocked) {
+                size = next;
+                relayout = Some(Relayout::new(size, now));
+                unshown = Unshown::default();
+                (ring_at, pending) = (ms, None);
+            }
+            if let Some(relayout) = relayout.as_mut()
+                && now - relayout.since >= Duration::from_millis(20)
+            {
+                relayout.measured(size, now);
+            }
+            if relayout.as_ref().is_some_and(|r| r.done(now)) {
+                relayout = None;
+                pub_id += 1;
+                unshown.published(pub_id, now);
+                pending = Some((pub_id, ms));
+                published.push((ms, size));
+            }
+            if let (Some(open), Some((id, at))) = (opens, pending)
+                && ms >= (ring_at + open).max(at) + 4
+            {
+                unshown.picked(id);
+                pending = None;
+                shown.push((ms, size));
+            }
+        }
+        (published, shown)
+    }
+
+    #[test]
+    fn a_continuous_resize_shows_a_frame_of_every_ring_it_publishes() {
+        let (published, shown) = drag_with_a_host(Some(70));
+        for pair in published.windows(2) {
+            let ((from, size), (to, _)) = (pair[0], pair[1]);
+            assert!(
+                shown
+                    .iter()
+                    .any(|&(at, s)| s == size && (from..to).contains(&at)),
+                "the frame published at {from} ms at {size:?} was not shown before {to} ms"
+            );
+        }
+        for pair in shown.windows(2) {
+            let ((from, a), (to, b)) = (pair[0], pair[1]);
+            assert!(
+                to - from <= 250,
+                "the HUD kept {a:?} from {from} ms to {to} ms"
+            );
+            assert!(b.0 > a.0);
+        }
+    }
+
+    #[test]
+    fn a_continuous_resize_goes_on_when_the_host_shows_nothing() {
+        let (published, shown) = drag_with_a_host(None);
+        assert_eq!(shown.len(), 1);
+        for pair in published.windows(2) {
+            let ((from, _), (to, _)) = (pair[0], pair[1]);
+            assert!(to - from <= 250, "no frame from {from} ms to {to} ms");
+        }
+        assert!(published.len() > 10);
     }
 
     #[test]

@@ -19,6 +19,7 @@ struct Ring<S> {
     generation: u64,
     size: Size,
     slots: Option<Arc<[S]>>,
+    shown: bool,
 }
 
 /// The rings of shared textures ui-host announced, and the frame the game draws.
@@ -46,14 +47,20 @@ impl<S> Default for Rings<S> {
 
 impl<S> Rings<S> {
     /// ui-host announced ring `generation`, sized as its page; frames published from now on
-    /// live in it.
-    pub fn announced(&mut self, generation: u64, size: Size) {
-        self.newest = Some(Ring {
+    /// live in it. Returns the generation and size of the ring it replaces when that ring had
+    /// a frame published and none shown.
+    pub fn announced(&mut self, generation: u64, size: Size) -> Option<(u64, Size)> {
+        let replaced = self.newest.replace(Ring {
             generation,
             size,
             slots: None,
+            shown: false,
         });
+        let unseen = !self.published.is_empty();
         self.published.clear();
+        replaced
+            .filter(|ring| unseen && !ring.shown)
+            .map(|ring| (ring.generation, ring.size))
     }
     pub fn opened(&mut self, generation: u64, slots: Vec<S>) {
         if let Some(ring) = &mut self.newest
@@ -67,7 +74,7 @@ impl<S> Rings<S> {
     }
     /// Shows the newest frame whose ready fence value is at most `ready`, and returns its id.
     pub fn pick(&mut self, ready: u64) -> Option<u64> {
-        let newest = self.newest.as_ref()?;
+        let newest = self.newest.as_mut()?;
         let ring = newest.slots.as_ref()?;
         let frame = self
             .published
@@ -76,6 +83,7 @@ impl<S> Rings<S> {
             .max_by_key(|p| p.id)?;
         let (slot, id) = (frame.slot, frame.id);
         self.shown = Some((ring.clone(), slot, newest.size));
+        newest.shown = true;
         self.published.retain(|p| p.id > id);
         Some(id)
     }

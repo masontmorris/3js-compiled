@@ -708,7 +708,14 @@ impl Ui {
                             Ok(owned) => {
                                 link.import =
                                     Some(self.importer.spawn(owned, generation, (width, height)));
-                                link.rings.announced(generation, (width, height));
+                                if let Some((unseen, (w, h))) =
+                                    link.rings.announced(generation, (width, height))
+                                {
+                                    self.notes.push(format!(
+                                        "UI ring {unseen} ({w}x{h}) replaced by ring {generation} \
+                                         before its published frame was shown"
+                                    ));
+                                }
                             }
                             Err(error) => failure = Some(format!("ui-host slot import: {error:#}")),
                         }
