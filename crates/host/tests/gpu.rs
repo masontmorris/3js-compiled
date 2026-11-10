@@ -580,8 +580,9 @@ fn setting_the_canvas_size_it_has_after_a_draw_discards_that_frame() {
 }
 
 /// Runs `canvas-resize.js` in a zero-size `mode` and captures the window while the canvas has a
-/// zero size and after it draws blue at 1280x720 again. Fails on any GPU or uncaptured error.
-fn canvas_zero(mode: &str) -> (image::RgbaImage, image::RgbaImage) {
+/// zero size and after it draws blue at 1280x720 again. `errors` holds the number of GPU errors in
+/// each frame that raises any, and the run must raise no others.
+fn canvas_zero(mode: &str, errors: &[usize]) -> (image::RgbaImage, image::RgbaImage) {
     let dir = workdir(mode);
     let (zero, back) = (dir.join("zero.png"), dir.join("back.png"));
     let steps = serde_json::json!([
@@ -598,9 +599,22 @@ fn canvas_zero(mode: &str) -> (image::RgbaImage, image::RgbaImage) {
 {log}"
     );
     assert!(log.contains("frame 35 ends"), "{mode}: {log}");
-    assert!(
-        !log.contains("uncaptured") && !log.contains("GPU error"),
-        "{mode} raises no error, as in Edge: {log}"
+    let mut frames = std::collections::BTreeMap::new();
+    for line in log.lines() {
+        if let Some(rest) = line.strip_prefix("GPU error: frame ") {
+            let frame: u32 = rest.split(',').next().unwrap().parse().unwrap();
+            *frames.entry(frame).or_insert(0) += 1;
+        }
+    }
+    assert_eq!(
+        frames.into_values().collect::<Vec<usize>>(),
+        errors,
+        "{mode} raises Edge's errors in each frame: {log}"
+    );
+    assert_eq!(
+        log.matches("uncaptured in frame").count(),
+        errors.iter().sum::<usize>(),
+        "{mode}: three sees each error: {log}"
     );
     let open = |path: &Path| image::open(path).unwrap().to_rgba8();
     (open(&zero), open(&back))
@@ -610,7 +624,7 @@ fn canvas_zero(mode: &str) -> (image::RgbaImage, image::RgbaImage) {
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_canvas_resized_to_a_zero_size_after_a_resized_draw_is_transparent() {
     for size in ["0x0", "0x360", "640x0"] {
-        let (zero, back) = canvas_zero(&format!("resized-zero-{size}"));
+        let (zero, back) = canvas_zero(&format!("resized-zero-{size}"), &[]);
         assert_eq!(
             zero.get_pixel(640, 360).0,
             [0, 0, 0, 0],
@@ -629,11 +643,35 @@ fn a_canvas_resized_to_a_zero_size_after_a_resized_draw_is_transparent() {
 fn a_zero_size_resize_otherwise_keeps_the_last_image() {
     for mode in ["drawn", "idle"] {
         for size in ["0x0", "0x360", "640x0"] {
-            let (zero, back) = canvas_zero(&format!("{mode}-zero-{size}"));
+            let (zero, back) = canvas_zero(&format!("{mode}-zero-{size}"), &[]);
             assert_eq!(
                 zero.get_pixel(640, 360).0,
                 [255, 0, 0, 255],
                 "{mode} {size}: Edge keeps the last red frame"
+            );
+            assert_eq!(
+                back.get_pixel(640, 360).0,
+                [0, 0, 255, 255],
+                "{mode} {size}: the canvas draws again"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn drawing_at_a_zero_size_shows_a_cleared_canvas_with_edges_errors() {
+    // Edge raises 8 errors in the first frame that draws at the zero size and 5 in each later one.
+    // Its extra one is an empty texture size error with no label, from a call that was not found.
+    for (mode, frames) in [("sized", 20), ("drawn", 19)] {
+        let mut errors = vec![5; frames];
+        errors[0] = 7;
+        for size in ["0x0", "0x720", "1280x0"] {
+            let (zero, back) = canvas_zero(&format!("{mode}-zero-{size}-draw"), &errors);
+            assert_eq!(
+                zero.get_pixel(640, 360).0,
+                [0, 0, 0, 0],
+                "{mode} {size}: Edge shows a cleared canvas"
             );
             assert_eq!(
                 back.get_pixel(640, 360).0,

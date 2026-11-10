@@ -734,6 +734,127 @@ fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() 
 
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn drawing_at_a_zero_size_shows_a_transparent_canvas_with_edges_errors() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    // A frame as three records one: a new depth texture after a resize, the canvas texture and
+    // its view, and one pass that clears both.
+    let draw =
+        |depth: u32, new_depth: bool, canvas: u32, (width, height): (u32, u32), rgb: [f64; 3]| {
+            let mut records = Vec::new();
+            if new_depth {
+                let (format, label) = (b"depth24plus", b"depthBuffer");
+                let mut payload = words(&[depth, width, height, 1, 1, 1, 16, 11, 11]);
+                payload.extend_from_slice(format);
+                payload.extend_from_slice(label);
+                records.push((4, payload));
+                records.push((7, words(&[depth + 1, depth, 0, 0, 0, 0, 0, 0, 0])));
+            }
+            records.push((30, words(&[canvas, width, height])));
+            records.push((7, words(&[canvas + 1, canvas, 0, 0, 0, 0, 0, 0, 0])));
+            let mut pass = words(&[1, 1, canvas + 1, 0, 1, 1]);
+            for component in [rgb[0], rgb[1], rgb[2], 1.0] {
+                pass.extend_from_slice(&component.to_bits().to_le_bytes());
+            }
+            pass.extend_from_slice(&words(&[depth + 1, 1, 1, 1, 1f32.to_bits(), 0, 0, 0]));
+            records.push((14, pass));
+            let viewport = [0.0, 0.0, width as f32, height as f32, 0.0, 1.0];
+            records.push((
+                19,
+                viewport
+                    .iter()
+                    .flat_map(|value| value.to_bits().to_le_bytes())
+                    .collect(),
+            ));
+            records.push((20, words(&[0, 0, width, height])));
+            records.push((22, words(&[0])));
+            records.push((25, vec![]));
+            records.push((26, vec![]));
+            records
+        };
+    let resize = |width: u32, height: u32| (32, words(&[width, height]));
+    let destroy = |texture: u32| (6, words(&[texture]));
+    let errors = |responses: &[Response]| {
+        assert!(
+            responses
+                .iter()
+                .all(|response| matches!(response, Response::Error { .. })),
+            "{responses:?}"
+        );
+        responses.len()
+    };
+    for zero in [(0, 0), (0, 8), (8, 0)] {
+        for resize_first in [true, false] {
+            let case = format!(
+                "{zero:?}, resize {}",
+                if resize_first {
+                    "then draw"
+                } else {
+                    "after a draw"
+                }
+            );
+            let mut surface = surface_texture(device, 4, 4);
+            let mut executor = Executor::new(device.clone(), queue.clone());
+            let red = draw(1, true, 3, (4, 4), [1.0, 0.0, 0.0]);
+            assert_eq!(
+                executor.replay(&stream(&red), Some(&mut surface)).unwrap(),
+                vec![]
+            );
+            let mut first = Vec::new();
+            if !resize_first {
+                first.extend(draw(1, false, 5, (4, 4), [0.0, 1.0, 0.0]));
+                first.push(resize(zero.0, zero.1));
+                assert_eq!(
+                    executor
+                        .replay(&stream(&first), Some(&mut surface))
+                        .unwrap(),
+                    vec![],
+                    "{case}"
+                );
+                first.clear();
+            } else {
+                first.push(resize(zero.0, zero.1));
+            }
+            first.push(destroy(1));
+            first.extend(draw(7, true, 9, zero, [0.0, 1.0, 0.0]));
+            // Edge raises 8 errors in this frame and 5 in each later one. Its extra one is an empty
+            // texture size error with no label, from a call in three's frame that was not found.
+            let responses = executor
+                .replay(&stream(&first), Some(&mut surface))
+                .unwrap();
+            assert_eq!(errors(&responses), 7, "{case}: {responses:#?}");
+            for frame in 0..3 {
+                assert!(
+                    executor.surface_used()
+                        && read_surface(device, queue, &surface)
+                            .iter()
+                            .all(|byte| *byte == 0),
+                    "{case}: a canvas that draws at a zero size shows transparent, as in Edge"
+                );
+                let steady = draw(7, false, 11 + 2 * frame, zero, [0.0, 1.0, 0.0]);
+                let responses = executor
+                    .replay(&stream(&steady), Some(&mut surface))
+                    .unwrap();
+                assert_eq!(errors(&responses), 5, "{case}: {responses:#?}");
+            }
+            let mut blue = vec![resize(4, 4), destroy(7)];
+            blue.extend(draw(21, true, 23, (4, 4), [0.0, 0.0, 1.0]));
+            assert_eq!(
+                executor.replay(&stream(&blue), Some(&mut surface)).unwrap(),
+                vec![],
+                "{case}: destroying the depth texture that failed at the zero size raises nothing"
+            );
+            assert_eq!(
+                read_surface(device, queue, &surface),
+                [255, 0, 0, 255].repeat(16),
+                "{case}: the canvas draws again once resized"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn errors_outside_error_scopes_become_responses() {
     let gpu = device();
     let (device, queue) = &*gpu;

@@ -6,10 +6,11 @@
 // draws green and resizes back to 1280x720, so the canvas ends transparent. `--scene resize-idle`
 // resizes to 640x360 in frame 25 without drawing, so the last red frame stays. In frame 20,
 // `--scene resized-zero-WxH` resizes to 640x360, draws green and resizes to WxH, where W or H is 0,
-// `--scene drawn-zero-WxH` draws green and resizes to WxH, and `--scene idle-zero-WxH` resizes to
-// WxH without drawing. The canvas then has no drawing buffer and is transparent, until frame 40
-// resizes to 1280x720 and draws blue from then on. Draws stop after frame 20 in the other modes.
-// Every frame submits its stream, and every uncaptured GPU error is logged.
+// `--scene drawn-zero-WxH` draws green and resizes to WxH, `--scene idle-zero-WxH` resizes to WxH
+// without drawing, and `--scene sized-zero-WxH` resizes to WxH and draws green. A `-draw` suffix
+// keeps drawing green at the zero size in frames 21 to 39. The canvas has no drawing buffer until
+// frame 40 resizes to 1280x720 and draws blue from then on. Draws stop after frame 20 in the other
+// modes. Every frame submits its stream, and every uncaptured GPU error is logged with the frame.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
@@ -27,10 +28,10 @@ await renderer.init();
 const device = renderer.backend.device;
 const report = device.onuncapturederror;
 device.onuncapturederror = event => {
-  console.log(`uncaptured: ${event.error?.message ?? event}`);
+  console.log(`uncaptured in frame ${frames}: ${event.error?.message ?? event}`);
   report?.call(device, event);
 };
-const zero = /^(resized|drawn|idle)-zero-(\d+)x(\d+)$/.exec(mode);
+const zero = /^(resized|drawn|idle|sized)-zero-(\d+)x(\d+)(-draw)?$/.exec(mode);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100);
 const draw = color => {
@@ -44,9 +45,12 @@ function frame() {
   } else if (zero) {
     if (frames === 20) {
       if (zero[1] === 'resized') renderer.setSize(640, 360, false);
+      if (zero[1] === 'sized') renderer.setSize(Number(zero[2]), Number(zero[3]), false);
       if (zero[1] !== 'idle') draw(0x00ff00);
-      renderer.setSize(Number(zero[2]), Number(zero[3]), false);
-    } else if (frames >= 40) {
+      if (zero[1] !== 'sized') renderer.setSize(Number(zero[2]), Number(zero[3]), false);
+    } else if (frames < 40) {
+      if (zero[4]) draw(0x00ff00);
+    } else {
       if (frames === 40) renderer.setSize(1280, 720, false);
       draw(0x0000ff);
     }
