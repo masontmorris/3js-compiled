@@ -8,7 +8,7 @@
 // Edge runs in a window by default, so both sides present every frame to the desktop compositor;
 // --edge headless measures headless Edge, which renders without presenting.
 // Usage, from the repository root:
-//   node tools/perf/frame-cost.mjs [--scene instancing] [--runs 3] [--max-runs 6] [--warmup 8000] [--frames 24000]
+//   node tools/perf/frame-cost.mjs [--scene instancing] [--runs 3] [--max-runs 6] [--warmup 12000] [--frames 36000]
 //     [--width 1920] [--height 1080] [--edge headed] [--host C:/3jsc/target/release/host.exe] [--out target/perf]
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -21,7 +21,7 @@ import { chromium } from 'playwright-core';
 
 const median = values => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)];
 
-const options = { scene: 'instancing', runs: 3, maxRuns: 6, warmup: 8000, frames: 24000, width: 1920, height: 1080, edge: 'headed', host: 'C:/3jsc/target/release/host.exe', out: 'target/perf' };
+const options = { scene: 'instancing', runs: 3, maxRuns: 6, warmup: 12000, frames: 36000, width: 1920, height: 1080, edge: 'headed', host: 'C:/3jsc/target/release/host.exe', out: 'target/perf' };
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i += 2) {
   const key = args[i].replace(/^--/, '').replace(/-(\w)/g, (_, letter) => letter.toUpperCase());
