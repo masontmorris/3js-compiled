@@ -279,6 +279,7 @@ class RecordingCanvasContext {
     // resizes of the canvas the device draws.
     if (configuration.device.context !== this) this.sizeSets = sizeSets.get(this.canvas);
     configuration.device.context = this;
+    configuration.device.commands.append(Opcode.CONFIGURE_SURFACE);
   }
 
   // The canvas size, and whether a script set it since the last call.

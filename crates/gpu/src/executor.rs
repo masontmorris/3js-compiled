@@ -95,11 +95,11 @@ pub struct Executor {
     /// The canvas texture that the last frame replaced or a resize discarded, which the next
     /// acquire of its size reuses, so frames alternate between two textures.
     spare: Option<wgpu::Texture>,
-    /// Whether the canvas was resized after the shown image was drawn.
-    resized: bool,
-    /// Whether the bound canvas texture was acquired after a resize, so the window shows the
-    /// resized canvas from then on.
-    acquired_resized: bool,
+    /// Whether the canvas context was configured after the shown image was drawn.
+    configured: bool,
+    /// Whether the bound canvas texture was acquired after a configure, so the window shows the
+    /// canvas that configure made from then on.
+    acquired_configured: bool,
     surface_handles: Vec<u32>,
     surface_used: bool,
     trailed: bool,
@@ -202,8 +202,8 @@ impl Executor {
             shown: None,
             next: None,
             spare: None,
-            resized: false,
-            acquired_resized: false,
+            configured: false,
+            acquired_configured: false,
             surface_handles: Vec::new(),
             surface_used: false,
             trailed: false,
@@ -352,7 +352,7 @@ impl Executor {
         self.pass_view = None;
         if let Some(surface) = self.surface.take() {
             self.next = Some(surface);
-            self.resized = false;
+            self.configured = false;
         }
         self.surface_used = self.next.is_some();
         if let (Some(canvas), Some(next)) = (canvas, self.next.take()) {
@@ -1620,7 +1620,7 @@ impl Executor {
                         let canvas = self.canvas_texture(width, height)?;
                         self.surface = Some(canvas.clone());
                         self.surface_clear = SurfaceClear::Needed;
-                        self.acquired_resized = self.resized;
+                        self.acquired_configured = self.configured;
                         canvas
                     }
                 };
@@ -1643,14 +1643,14 @@ impl Executor {
             32 => {
                 size(payload, 8)?;
                 // As in Edge, a resize discards the canvas texture the frame acquired, and the
-                // window keeps its last image. A texture acquired after an earlier resize already
-                // put the resized canvas in the window, so discarding it leaves that canvas
+                // window keeps its last image. A texture acquired after a configure already put the
+                // canvas that configure made in the window, so discarding it leaves that canvas
                 // transparent. A canvas with a zero width or height has no drawing buffer, and a
                 // transparent 1x1 canvas shows the same nothing.
                 if let Some(discarded) = self.surface.take() {
                     self.spare = Some(discarded);
                     self.surface_clear = SurfaceClear::Done;
-                    if self.acquired_resized {
+                    if self.acquired_configured {
                         let (width, height) = match (u32_at(payload, 0), u32_at(payload, 4)) {
                             (0, _) | (_, 0) => (1, 1),
                             size => size,
@@ -1660,7 +1660,11 @@ impl Executor {
                         self.next = Some(canvas);
                     }
                 }
-                self.resized = true;
+                Ok(None)
+            }
+            33 => {
+                size(payload, 0)?;
+                self.configured = true;
                 Ok(None)
             }
             31 => {
