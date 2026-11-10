@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 run = Path(sys.argv[1])
+hz = float(sys.argv[2]) if len(sys.argv) > 2 else 169.0
 limit = 5.0
 rows = list(csv.DictReader((run / 'samples.csv').open()))
 log = (run / 'host.log').read_text()
@@ -13,6 +14,10 @@ hud_at = sum(float(f['interval_ms']) for f in frames[1:shown]) / 1000.0
 ui_log = (run / 'ui-host.log').read_text()
 published, skipped = map(int, re.findall(r'frames published: (\d+), skipped \(no free ring slot\): (\d+)', ui_log)[-1])
 assert len(set(r['pid'] for r in rows if r['proc'] == 'ui-host')) == 1, 'ui-host relaunched during the soak'
+intervals = sorted(float(f['interval_ms']) for f in frames[shown:])
+median = intervals[len(intervals) // 2]
+assert abs(median - 1000.0 / hz) < 0.1 * 1000.0 / hz, f'median frame interval {median:.2f} ms is not vsync at {hz} Hz'
+print(f'{len(intervals)} frames after the HUD, median interval {median:.3f} ms')
 
 failed = False
 for proc in ('host', 'ui-host'):
