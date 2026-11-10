@@ -355,6 +355,7 @@ impl Executor {
                 {
                     return Err("invalid buffer readback".into());
                 }
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: None,
                     size: len,
@@ -364,6 +365,9 @@ impl Executor {
                 let mut encoder = self.device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&buffer.raw, offset, &staging, 0, len);
                 self.queue.submit([encoder.finish()]);
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
                 let slice = staging.slice(..);
                 let (tx, rx) = mpsc::channel();
                 slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -619,6 +623,8 @@ impl Executor {
                 if len > self.device.limits().max_buffer_size {
                     return Err("texture readback is too large".into());
                 }
+                // The scope keeps the copy's first error, which wgpu raises again at submit.
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: None,
                     size: len,
@@ -648,6 +654,9 @@ impl Executor {
                     },
                 );
                 self.queue.submit([encoder.finish()]);
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    return Err(error.to_string());
+                }
                 let slice = staging.slice(..);
                 let (tx, rx) = mpsc::channel();
                 slice.map_async(wgpu::MapMode::Read, move |result| {
