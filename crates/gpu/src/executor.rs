@@ -40,6 +40,18 @@ pub enum Response {
     },
 }
 
+/// What the queue has done to this frame's surface. A browser gives each frame a transparent black
+/// canvas texture, so the first use clears it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SurfaceClear {
+    /// The frame acquired the surface and nothing that clears or writes it has reached the queue.
+    Needed,
+    /// The open encoder holds a pass that clears the surface.
+    Encoded,
+    /// The queue has cleared or written the surface, or the frame did not acquire it.
+    Done,
+}
+
 pub struct Executor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -63,9 +75,7 @@ pub struct Executor {
     surface: Option<wgpu::Texture>,
     surface_handles: Vec<u32>,
     surface_used: bool,
-    /// The frame acquired the surface and nothing has written it yet. A browser gives each frame
-    /// a transparent black canvas texture, so the first use clears it.
-    surface_unwritten: bool,
+    surface_clear: SurfaceClear,
     uncaptured: Arc<Mutex<Vec<String>>>,
 }
 
@@ -139,7 +149,7 @@ impl Executor {
             surface: None,
             surface_handles: Vec::new(),
             surface_used: false,
-            surface_unwritten: false,
+            surface_clear: SurfaceClear::Done,
             uncaptured,
         }
     }
@@ -272,7 +282,7 @@ impl Executor {
     }
 
     fn clear_unwritten_surface(&mut self) {
-        if !std::mem::take(&mut self.surface_unwritten) {
+        if std::mem::replace(&mut self.surface_clear, SurfaceClear::Done) == SurfaceClear::Done {
             return;
         }
         let surface = self
@@ -298,6 +308,17 @@ impl Executor {
             multiview_mask: None,
         });
         self.queue.submit([encoder.finish()]);
+    }
+
+    /// Records that the open encoder left, through the queue when `submitted`.
+    fn encoder_dropped(&mut self, submitted: bool) {
+        if self.surface_clear == SurfaceClear::Encoded {
+            self.surface_clear = if submitted {
+                SurfaceClear::Done
+            } else {
+                SurfaceClear::Needed
+            };
+        }
     }
 
     fn execute(&mut self, opcode: u16, payload: &[u8]) -> Result<Option<Response>, String> {
@@ -1081,13 +1102,14 @@ impl Executor {
                         .views
                         .get(&u32_at(entry, 4))
                         .ok_or("unknown color view handle")?;
-                    let on_surface = self.surface_unwritten && self.is_surface(*parent);
+                    let needs_clear = self.surface_clear == SurfaceClear::Needed;
+                    let on_surface = needs_clear && self.is_surface(*parent);
                     let resolve_target = if flags & 2 != 0 {
                         let (parent, view) = self
                             .views
                             .get(&u32_at(entry, 8))
                             .ok_or("unknown resolve view handle")?;
-                        writes_surface |= self.surface_unwritten && self.is_surface(*parent);
+                        writes_surface |= needs_clear && self.is_surface(*parent);
                         Some(view)
                     } else {
                         None
@@ -1194,7 +1216,9 @@ impl Executor {
                     })
                     .forget_lifetime();
                 self.render_pass_scope = Some(scope);
-                self.surface_unwritten &= !writes_surface;
+                if writes_surface {
+                    self.surface_clear = SurfaceClear::Encoded;
+                }
                 self.valid_pipeline = None;
                 self.pipeline = None;
                 self.pass_view = self.subject(14, payload);
@@ -1350,6 +1374,7 @@ impl Executor {
                     .expect("active pass has an error scope");
                 if let Some(error) = pollster::block_on(scope.pop()) {
                     self.encoder = None;
+                    self.encoder_dropped(false);
                     return Err(error.to_string());
                 }
                 Ok(None)
@@ -1402,7 +1427,9 @@ impl Executor {
                     },
                 );
                 self.surface_handles.push(handle);
-                self.surface_unwritten |= current && !self.surface_used;
+                if current && !self.surface_used {
+                    self.surface_clear = SurfaceClear::Needed;
+                }
                 self.surface_used |= current;
                 Ok(None)
             }
@@ -1451,7 +1478,9 @@ impl Executor {
                     let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                     let commands = encoder.finish();
                     self.queue.submit([commands]);
-                    if let Some(error) = pollster::block_on(scope.pop()) {
+                    let error = pollster::block_on(scope.pop());
+                    self.encoder_dropped(error.is_none());
+                    if let Some(error) = error {
                         return Err(error.to_string());
                     }
                 } else {
