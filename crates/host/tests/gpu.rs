@@ -198,16 +198,24 @@ fn idle_frames_show_the_last_frame_the_game_drew() {
     assert_near(&run, (640, 360), [0, 255, 0]);
 }
 
-/// The bounds of the pixels within 3 of `color`, as left, top, right and bottom edges.
-fn bounds(image: &image::RgbaImage, color: [u8; 3]) -> [f64; 4] {
-    let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
-    for (x, y, pixel) in image.enumerate_pixels() {
-        if (0..3).all(|c| pixel[c].abs_diff(color[c]) <= 3) {
-            (left, top) = (left.min(x), top.min(y));
-            (right, bottom) = (right.max(x + 1), bottom.max(y + 1));
-        }
-    }
-    [left, top, right, bottom].map(f64::from)
+/// `image` scaled to `width` by `height` with bilinear filtering, sampling at pixel centers and
+/// clamping at the edges, as a browser scales a canvas.
+fn bilinear(image: &image::RgbaImage, width: u32, height: u32) -> image::RgbaImage {
+    let (w, h) = image.dimensions();
+    let axis = |out: u32, size: u32, from: u32| {
+        let at = ((f64::from(out) + 0.5) * f64::from(from) / f64::from(size) - 0.5).max(0.0);
+        let low = (at.floor() as u32).min(from - 1);
+        (low, (low + 1).min(from - 1), at - at.floor())
+    };
+    image::RgbaImage::from_fn(width, height, |x, y| {
+        let ((x0, x1, fx), (y0, y1, fy)) = (axis(x, width, w), axis(y, height, h));
+        let texel = |x, y, c| f64::from(image.get_pixel(x, y)[c]);
+        image::Rgba(std::array::from_fn(|c| {
+            let top = texel(x0, y0, c) * (1.0 - fx) + texel(x1, y0, c) * fx;
+            let bottom = texel(x0, y1, c) * (1.0 - fx) + texel(x1, y1, c) * fx;
+            (top * (1.0 - fy) + bottom * fy).round() as u8
+        }))
+    })
 }
 
 #[test]
@@ -232,21 +240,24 @@ fn a_resize_while_idle_stretches_the_last_frame_the_game_drew() {
 {log}"
     );
     let open = |name: &str| image::open(dir.join(name)).unwrap().to_rgba8();
-    let before = bounds(&open("before.png"), [255, 136, 0]);
+    let before = open("before.png");
     for (name, (width, height)) in [("after.png", (800, 600)), ("again.png", (640, 640))] {
-        let image = open(name);
-        assert_eq!(image.dimensions(), (width, height));
+        let shown = open(name);
+        assert_eq!(shown.dimensions(), (width, height));
+        let expected = bilinear(&before, width, height);
+        let (x, y, error) = shown
+            .enumerate_pixels()
+            .map(|(x, y, pixel)| {
+                let error = (0..3).map(|c| pixel[c].abs_diff(expected.get_pixel(x, y)[c]));
+                (x, y, error.max().unwrap())
+            })
+            .max_by_key(|(_, _, error)| *error)
+            .unwrap();
         assert!(
-            (0..3).all(|c| image.get_pixel(4, 4)[c].abs_diff([51, 102, 153][c]) <= 3),
-            "{name} corner is {:?}, not the scene background",
-            image.get_pixel(4, 4)
-        );
-        let scale = [f64::from(width) / 1280.0, f64::from(height) / 720.0];
-        let expected: Vec<_> = (0..4).map(|i| before[i] * scale[i % 2]).collect();
-        let shown = bounds(&image, [255, 136, 0]);
-        assert!(
-            (0..4).all(|i| (shown[i] - expected[i]).abs() <= 2.0),
-            "{name} shows the cube at {shown:?}, expected the frame before the resize scaled to {expected:?}"
+            error <= 3,
+            "{name} pixel ({x}, {y}) is {:?}, where the frame before the resize scaled bilinearly is {:?}",
+            shown.get_pixel(x, y),
+            expected.get_pixel(x, y)
         );
     }
 }
