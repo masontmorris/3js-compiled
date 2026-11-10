@@ -54,6 +54,10 @@ use servo::{DeviceIntRect, RenderingContext};
 #[cfg(feature = "servo")]
 use surfman::{Surface, SurfaceTexture, chains::PreserveBuffer};
 
+/// Surface sizes grow in multiples of this many pixels, so that dragging a window larger
+/// replaces the surfaces a bounded number of times.
+const SURFACE_STEP: u32 = 128;
+
 pub struct ServoWgpuRenderingContext {
     frame_producer: RefCell<SurfmanFrameProducer>,
     swap_chain: SwapChain<Device>,
@@ -244,21 +248,37 @@ impl ServoWgpuRenderingContext {
     /// rect, pinning the page to its previous size. Use this only for the CPU
     /// readback path or other non-WebView consumers.
     pub fn resize_viewport(&self, size: PhysicalSize<u32>) {
-        let surfman_rendering_info = self.frame_producer.borrow().context();
         if self.frame_producer.borrow().size() == size {
             return;
         }
         self.frame_producer.borrow().set_size(size);
-        let device = surfman_rendering_info.device.borrow_mut();
-        let mut context = surfman_rendering_info.context.borrow_mut();
-        let size = euclid::default::Size2D::new(size.width as i32, size.height as i32);
-        let result = self.swap_chain.resize(&*device, &mut *context, size);
+        self.fit_surfaces(size);
+    }
+
+    /// Grows the swap chain's surfaces to hold `size`, rounded up to `SURFACE_STEP`, and keeps
+    /// them when `size` shrinks. Servo renders `size` into the bottom-left corner of the surface.
+    ///
+    /// On an RTX 3060, each ANGLE surface that WebRender drew into and surfman then destroyed
+    /// left about 0.24 MB of write-combined GPU driver memory behind, so replacing the surfaces
+    /// on every resize grew ui-host by about 0.5 MB per resize.
+    fn fit_surfaces(&self, size: PhysicalSize<u32>) {
+        let held = self.swap_chain.size();
+        if size.width as i32 <= held.width && size.height as i32 <= held.height {
+            return;
+        }
+        let step =
+            |want: u32, held: i32| want.max(held as u32).next_multiple_of(SURFACE_STEP) as i32;
+        let grown = Size2D::new(step(size.width, held.width), step(size.height, held.height));
+        let info = self.frame_producer.borrow().context();
+        let device = info.device.borrow_mut();
+        let mut context = info.context.borrow_mut();
+        let result = self.swap_chain.resize(&*device, &mut *context, grown);
         if resize_trace_enabled() {
             let actual = device
                 .context_surface_info(&context)
                 .map(|surface| surface.map(|surface| (surface.id, surface.size)));
             eprintln!(
-                "[servo-resize-trace] resize-viewport requested={size:?} result={result:?} actual={actual:?}"
+                "[servo-resize-trace] resize requested={size:?} surfaces={grown:?} result={result:?} actual={actual:?}"
             );
         }
     }
@@ -301,26 +321,13 @@ impl RenderingContext for ServoWgpuRenderingContext {
     }
 
     fn resize(&self, size: PhysicalSize<u32>) {
-        let surfman_rendering_info = self.frame_producer.borrow().context();
         if self.frame_producer.borrow().size() == size {
             return;
         }
 
         self.trace_surface("before-resize");
         self.frame_producer.borrow().set_size(size);
-
-        let device = surfman_rendering_info.device.borrow_mut();
-        let mut context = surfman_rendering_info.context.borrow_mut();
-        let size = Size2D::new(size.width as i32, size.height as i32);
-        let result = self.swap_chain.resize(&*device, &mut *context, size);
-        if resize_trace_enabled() {
-            let actual = device
-                .context_surface_info(&context)
-                .map(|surface| surface.map(|surface| (surface.id, surface.size)));
-            eprintln!(
-                "[servo-resize-trace] resize requested={size:?} result={result:?} actual={actual:?}"
-            );
-        }
+        self.fit_surfaces(size);
     }
 
     fn present(&self) {
