@@ -232,12 +232,7 @@ fn main() -> Result<()> {
             }
         }
         if let Some(ui) = &mut ui {
-            let delivery = ui.update(
-                &renderer.device,
-                frame + 1,
-                (width, height),
-                pending_patch.take(),
-            )?;
+            let delivery = ui.update(frame + 1, (width, height), pending_patch.take())?;
             for note in &delivery.notes {
                 log(&log_file, note)?;
             }

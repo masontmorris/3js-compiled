@@ -18,8 +18,8 @@ use threejsc_ipc::{self as proto, Msg};
 use windows::{
     Win32::{
         Foundation::{
-            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_PIPE_CONNECTED,
-            ERROR_PIPE_LISTENING, GENERIC_ALL, HANDLE,
+            DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_PIPE_CONNECTED, ERROR_PIPE_LISTENING,
+            GENERIC_ALL, HANDLE,
         },
         Graphics::Direct3D12::{
             D3D12_FENCE_FLAG_SHARED, ID3D12CommandQueue, ID3D12Device, ID3D12Fence, ID3D12Resource,
@@ -50,6 +50,19 @@ struct Slot {
     _texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
 }
+/// What a worker thread needs to wrap a ring's shared textures for compositing.
+#[derive(Clone)]
+struct Importer {
+    d3d: ID3D12Device,
+    device: wgpu::Device,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+}
+/// A ring whose textures a worker is opening, off the game thread.
+struct Import {
+    size: (u32, u32),
+    slots: mpsc::Receiver<Result<Vec<Slot>>>,
+}
 struct Published {
     slot: usize,
     id: u64,
@@ -65,6 +78,7 @@ struct Link {
     tx: mpsc::Sender<Msg>,
     rx: mpsc::Receiver<Incoming>,
     slots: Vec<Slot>,
+    import: Option<Import>,
     published: Vec<Published>,
     current: Option<(usize, u64)>,
     /// The size ui-host was last asked to render at.
@@ -171,7 +185,7 @@ fn dup_into(child: HANDLE, handle: HANDLE) -> Result<u64> {
     Ok(out.0 as u64)
 }
 
-fn dup_from(child: HANDLE, value: u64) -> Result<HANDLE> {
+fn dup_from(child: HANDLE, value: u64) -> Result<OwnedHandle> {
     let mut out = HANDLE::default();
     // SAFETY: the parent holds PROCESS_ALL_ACCESS on the child it spawned.
     unsafe {
@@ -185,7 +199,8 @@ fn dup_from(child: HANDLE, value: u64) -> Result<HANDLE> {
             DUPLICATE_SAME_ACCESS,
         )
     }?;
-    Ok(out)
+    // SAFETY: DuplicateHandle returned a new handle that nothing else owns.
+    Ok(unsafe { OwnedHandle::from_raw_handle(out.0) })
 }
 
 fn launch(
@@ -280,6 +295,7 @@ fn launch(
         tx,
         rx,
         slots: Vec::new(),
+        import: None,
         published: Vec::new(),
         current: None,
         requested: size,
@@ -290,6 +306,86 @@ fn launch(
         last_report: Instant::now(),
         connected_at: Instant::now(),
     })
+}
+impl Importer {
+    fn import(&self, handle: OwnedHandle, width: u32, height: u32) -> Result<Slot> {
+        let mut resource: Option<ID3D12Resource> = None;
+        unsafe {
+            self.d3d
+                .OpenSharedHandle(HANDLE(handle.as_raw_handle()), &mut resource)?
+        };
+        let resource = resource.context("shared UI texture")?;
+        let desc = unsafe { resource.GetDesc() };
+        if (desc.Width, desc.Height) != (u64::from(width), height) {
+            bail!(
+                "shared UI texture is {}x{}, expected {width}x{height}",
+                desc.Width,
+                desc.Height
+            );
+        }
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = unsafe {
+            let hal = wgpu_hal::dx12::Device::texture_from_raw(
+                resource,
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureDimension::D2,
+                extent,
+                1,
+                1,
+            );
+            self.device.create_texture_from_hal::<wgpu_hal::api::Dx12>(
+                hal,
+                &wgpu::TextureDescriptor {
+                    label: Some("ui slot"),
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+                wgpu::TextureUses::UNINITIALIZED,
+            )
+        };
+        let view = texture.create_view(&Default::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ui slot"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        Ok(Slot {
+            _texture: texture,
+            bind_group,
+        })
+    }
+    /// Opens the ring on a worker thread. The handles are already this process's.
+    fn spawn(&self, handles: Vec<OwnedHandle>, size: (u32, u32)) -> Import {
+        let importer = self.clone();
+        let (tx, slots) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(
+                handles
+                    .into_iter()
+                    .map(|handle| importer.import(handle, size.0, size.1))
+                    .collect(),
+            );
+        });
+        Import { size, slots }
+    }
 }
 fn retire(mut link: Link, kill: bool) {
     let _ = link.tx.send(Msg::Shutdown);
@@ -309,8 +405,7 @@ pub struct Ui {
     max_ready: u64,
     failures: u32,
     pipeline: wgpu::RenderPipeline,
-    layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
+    importer: Importer,
     /// The game's latest state, resent to each new ui-host.
     state: Option<String>,
     state_sent: bool,
@@ -418,6 +513,12 @@ impl Ui {
             cache: None,
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+        let importer = Importer {
+            d3d: d3d.device.clone(),
+            device: device.clone(),
+            layout,
+            sampler,
+        };
         let mut ui = Self {
             d3d,
             connection: Connection::Backoff(Instant::now()),
@@ -426,8 +527,7 @@ impl Ui {
             max_ready: 0,
             failures: 0,
             pipeline,
-            layout,
-            sampler,
+            importer,
             state: None,
             state_sent: false,
             can_send: false,
@@ -494,80 +594,8 @@ impl Ui {
         });
         self.connection = Connection::Launching(rx);
     }
-    fn import(
-        &self,
-        device: &wgpu::Device,
-        handle: HANDLE,
-        width: u32,
-        height: u32,
-    ) -> Result<Slot> {
-        let mut resource: Option<ID3D12Resource> = None;
-        unsafe {
-            let opened = self.d3d.device.OpenSharedHandle(handle, &mut resource);
-            let _ = CloseHandle(handle);
-            opened?;
-        }
-        let resource = resource.context("shared UI texture")?;
-        let desc = unsafe { resource.GetDesc() };
-        if (desc.Width, desc.Height) != (u64::from(width), height) {
-            bail!(
-                "shared UI texture is {}x{}, expected {width}x{height}",
-                desc.Width,
-                desc.Height
-            );
-        }
-        let extent = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        let texture = unsafe {
-            let hal = wgpu_hal::dx12::Device::texture_from_raw(
-                resource,
-                wgpu::TextureFormat::Rgba8Unorm,
-                wgpu::TextureDimension::D2,
-                extent,
-                1,
-                1,
-            );
-            device.create_texture_from_hal::<wgpu_hal::api::Dx12>(
-                hal,
-                &wgpu::TextureDescriptor {
-                    label: Some("ui slot"),
-                    size: extent,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                },
-                wgpu::TextureUses::UNINITIALIZED,
-            )
-        };
-        let view = texture.create_view(&Default::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ui slot"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-        Ok(Slot {
-            _texture: texture,
-            bind_group,
-        })
-    }
     pub fn update(
         &mut self,
-        device: &wgpu::Device,
         frame: u64,
         size: (u32, u32),
         patch: Option<String>,
@@ -626,15 +654,14 @@ impl Ui {
                     })) => {
                         if (width, height) == link.requested {
                             let child = HANDLE(link.child.as_raw_handle());
-                            let imported = handles
+                            let owned = handles
                                 .into_iter()
-                                .map(|handle| {
-                                    self.import(device, dup_from(child, handle)?, width, height)
-                                })
+                                .map(|handle| dup_from(child, handle))
                                 .collect::<Result<_>>();
-                            match imported {
-                                Ok(slots) => {
-                                    link.slots = slots;
+                            match owned {
+                                Ok(owned) => {
+                                    link.import = Some(self.importer.spawn(owned, (width, height)));
+                                    link.slots.clear();
                                     link.current = None;
                                     link.published.clear();
                                     link.awaiting_resize = false;
@@ -677,6 +704,22 @@ impl Ui {
                     Err(mpsc::TryRecvError::Disconnected) => {
                         failure = Some("ui-host closed its pipe".into())
                     }
+                }
+            }
+            if failure.is_none()
+                && let Some(import) = &link.import
+            {
+                match import.slots.try_recv() {
+                    Ok(Ok(slots)) if import.size == link.requested => {
+                        link.slots = slots;
+                        link.import = None;
+                    }
+                    Ok(Ok(_)) => link.import = None,
+                    Ok(Err(error)) => failure = Some(format!("ui-host slot import: {error:#}")),
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        failure = Some("ui slot import thread stopped".into())
+                    }
+                    Err(mpsc::TryRecvError::Empty) => {}
                 }
             }
             if let Some(failure) = failure {
@@ -1000,7 +1043,7 @@ mod tests {
         let child = HANDLE(link.child.as_raw_handle());
         let imported: Result<Vec<_>> = replaced
             .into_iter()
-            .map(|handle| ui.import(&device, dup_from(child, handle)?, 800, 450))
+            .map(|handle| ui.importer.import(dup_from(child, handle)?, 800, 450))
             .collect();
         let _ = link.tx.send(Msg::SlotsImported { generation: newest });
         let _ = link.child.kill();
