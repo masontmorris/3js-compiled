@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 /// The stream format version. It changes whenever the same bytes would replay differently.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 const HEADER_LEN: usize = 20;
 const RECORD_LEN: usize = 8;
 

@@ -22,7 +22,7 @@ fn main() {
     }))
     .expect("a software adapter is required");
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let surface = device.create_texture(&wgpu::TextureDescriptor {
+    let mut surface = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("surface"),
         size: wgpu::Extent3d {
             width,
@@ -39,7 +39,7 @@ fn main() {
     let mut executor = Executor::new(device.clone(), queue.clone());
     for (index, path) in frames.iter().enumerate() {
         for response in executor
-            .replay(&std::fs::read(path).unwrap(), Some(&surface))
+            .replay(&std::fs::read(path).unwrap(), Some(&mut surface))
             .unwrap()
         {
             if let Response::Error {

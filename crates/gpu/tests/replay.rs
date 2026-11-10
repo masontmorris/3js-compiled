@@ -395,46 +395,40 @@ fn recorded_draws_fill_targets_with_bound_uniform_color() {
 fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: wgpu::Extent3d {
-            width: 4,
-            height: 4,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Bgra8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
+    let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
     let frame = include_bytes!("fixtures/surface.bin");
-    assert_eq!(
-        executor.replay(frame, Some(&surface)).unwrap(),
-        vec![
-            Response::Validation { request: 2 },
-            Response::Readback {
-                request: 100,
-                bytes: [255, 0, 0, 255].repeat(16)
-            },
-        ]
-    );
+    let drawn = vec![
+        Response::Validation { request: 2 },
+        Response::Readback {
+            request: 100,
+            bytes: [255, 0, 0, 255].repeat(16),
+        },
+    ];
+    assert_eq!(executor.replay(frame, Some(&mut surface)).unwrap(), drawn);
     assert_eq!(
         executor
             .replay(
                 include_bytes!("fixtures/surface-resize.bin"),
-                Some(&surface)
+                Some(&mut surface)
             )
             .unwrap(),
         vec![Response::Readback {
             request: 100,
             bytes: [0, 255, 0, 255].repeat(16)
         }],
-        "a texture acquired before a resize renders offscreen and later draws reach the surface"
+        "a texture acquired before a resize no longer reaches the canvas"
     );
     assert!(executor.surface_used());
+    assert_eq!((surface.width(), surface.height()), (4, 4));
+    let mut larger = surface_texture(device, 8, 8);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    assert_eq!(
+        executor.replay(frame, Some(&mut larger)).unwrap(),
+        drawn,
+        "a canvas acquired at another size reads back at its own size"
+    );
+    assert_eq!((larger.width(), larger.height()), (4, 4));
     let missing = executor.replay(frame, None).unwrap();
     assert!(
         missing.iter().any(|response| matches!(response, Response::Error { message, .. } if message == "no surface for this frame")),
@@ -464,13 +458,13 @@ fn surface_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Text
 fn a_stream_cannot_destroy_the_host_surface() {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 4, 4);
+    let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
     assert_eq!(
         executor
             .replay(
                 include_bytes!("fixtures/surface-destroy.bin"),
-                Some(&surface)
+                Some(&mut surface)
             )
             .unwrap(),
         vec![
@@ -492,7 +486,7 @@ fn a_stream_cannot_destroy_the_host_surface() {
 fn each_frame_that_acquires_the_surface_starts_transparent() {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 4, 4);
+    let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
     let acquire = |texture: u32, view: u32| {
         [
@@ -518,14 +512,18 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
     cleared.extend(pass(2, 1));
     cleared.push(read(1));
     assert_eq!(
-        executor.replay(&stream(&cleared), Some(&surface)).unwrap(),
+        executor
+            .replay(&stream(&cleared), Some(&mut surface))
+            .unwrap(),
         vec![readback(blue)]
     );
     let mut loaded = acquire(3, 4).to_vec();
     loaded.extend(pass(4, 0));
     loaded.push(read(3));
     assert_eq!(
-        executor.replay(&stream(&loaded), Some(&surface)).unwrap(),
+        executor
+            .replay(&stream(&loaded), Some(&mut surface))
+            .unwrap(),
         vec![readback([0; 4])],
         "a pass that loads a newly acquired surface sees transparent black, as in a browser"
     );
@@ -534,14 +532,18 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
     redrawn.extend(pass(6, 0));
     redrawn.push(read(5));
     assert_eq!(
-        executor.replay(&stream(&redrawn), Some(&surface)).unwrap(),
+        executor
+            .replay(&stream(&redrawn), Some(&mut surface))
+            .unwrap(),
         vec![readback(blue)],
         "later passes in the same frame load what the frame drew"
     );
     let mut unused = acquire(7, 8).to_vec();
     unused.push(read(7));
     assert_eq!(
-        executor.replay(&stream(&unused), Some(&surface)).unwrap(),
+        executor
+            .replay(&stream(&unused), Some(&mut surface))
+            .unwrap(),
         vec![readback([0; 4])],
         "an acquired surface that nothing draws reads as transparent black"
     );
@@ -585,7 +587,7 @@ fn read_surface(device: &wgpu::Device, queue: &wgpu::Queue, surface: &wgpu::Text
 fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 4, 4);
+    let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
     let acquire = |texture: u32, view: u32| {
         vec![
@@ -607,17 +609,17 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
         bytes: bytes.repeat(16),
     };
     let mut next = 1;
-    let mut draw_blue = |executor: &mut Executor| {
+    let mut draw_blue = |executor: &mut Executor, surface: &mut wgpu::Texture| {
         let mut records = acquire(next, next + 1);
         records.extend([begin(next + 1, 1), (25, vec![]), (26, vec![])]);
         next += 2;
         assert_eq!(
-            executor.replay(&stream(&records), Some(&surface)).unwrap(),
+            executor.replay(&stream(&records), Some(surface)).unwrap(),
             vec![]
         );
     };
 
-    draw_blue(&mut executor);
+    draw_blue(&mut executor, &mut surface);
     let mut invalid = acquire(101, 102);
     invalid.extend([
         begin(102, 0),
@@ -626,26 +628,30 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
         (26, vec![]),
         read(101),
     ]);
-    let responses = executor.replay(&stream(&invalid), Some(&surface)).unwrap();
+    let responses = executor
+        .replay(&stream(&invalid), Some(&mut surface))
+        .unwrap();
     assert!(
         responses.last() == Some(&readback([0; 4])),
         "a first pass that fails validation leaves the surface transparent: {responses:?}"
     );
 
-    draw_blue(&mut executor);
+    draw_blue(&mut executor, &mut surface);
     let mut early = acquire(201, 202);
     early.extend([begin(202, 0), (25, vec![]), read(201), (26, vec![])]);
     assert_eq!(
-        executor.replay(&stream(&early), Some(&surface)).unwrap(),
+        executor
+            .replay(&stream(&early), Some(&mut surface))
+            .unwrap(),
         vec![readback([0; 4])],
         "a readback before the first pass submits sees transparent black"
     );
 
-    draw_blue(&mut executor);
+    draw_blue(&mut executor, &mut surface);
     let mut unsubmitted = acquire(301, 302);
     unsubmitted.extend([begin(302, 0), (25, vec![])]);
     executor
-        .replay(&stream(&unsubmitted), Some(&surface))
+        .replay(&stream(&unsubmitted), Some(&mut surface))
         .unwrap();
     assert_eq!(
         read_surface(device, queue, &surface),
@@ -664,7 +670,7 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
     ]);
     assert_eq!(
         executor
-            .replay(&stream(&one_encoder), Some(&surface))
+            .replay(&stream(&one_encoder), Some(&mut surface))
             .unwrap(),
         vec![readback([255, 0, 0, 255])],
         "a later pass in the first pass's encoder loads what that pass drew"
@@ -676,11 +682,11 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
 fn errors_outside_error_scopes_become_responses() {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 4, 4);
+    let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
     surface.destroy();
     let responses = executor
-        .replay(include_bytes!("fixtures/surface.bin"), Some(&surface))
+        .replay(include_bytes!("fixtures/surface.bin"), Some(&mut surface))
         .unwrap();
     assert!(
         responses.iter().any(|response| matches!(
@@ -708,10 +714,10 @@ fn parity(
 ) -> Parity {
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 1280, 720);
+    let mut surface = surface_texture(device, 1280, 720);
     let mut executor = Executor::new(device.clone(), queue.clone());
-    let mut responses = executor.replay(frames[0], Some(&surface)).unwrap();
-    responses.extend(executor.replay(frames[1], Some(&surface)).unwrap());
+    let mut responses = executor.replay(frames[0], Some(&mut surface)).unwrap();
+    responses.extend(executor.replay(frames[1], Some(&mut surface)).unwrap());
     let unexpected: Vec<_> = responses
         .iter()
         .filter(|response| match response {
@@ -1076,14 +1082,14 @@ fn mutated_streams_return_errors_and_never_panic() {
     let mut rng = Rng(setting("FUZZ_SEED", 0x9e37_79b9_7f4a_7c15));
     let gpu = device();
     let (device, queue) = &*gpu;
-    let surface = surface_texture(device, 1280, 720);
+    let mut surface = surface_texture(device, 1280, 720);
     for iteration in 0..iterations {
         let (target, setup) = fixtures[iteration as usize % fixtures.len()];
         let mut executor = Executor::new(device.clone(), queue.clone());
         if let Some(setup) = setup {
-            executor.replay(setup, Some(&surface)).unwrap();
+            executor.replay(setup, Some(&mut surface)).unwrap();
         }
         let mutated = stream(&mutate(&mut rng, &records(target)));
-        executor.replay(&mutated, Some(&surface)).unwrap();
+        executor.replay(&mutated, Some(&mut surface)).unwrap();
     }
 }

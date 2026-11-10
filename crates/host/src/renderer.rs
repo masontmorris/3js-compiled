@@ -39,22 +39,16 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
-    /// The canvas the game draws into. A frame that acquires it starts from transparent black, and
-    /// other frames keep the last image, as a browser canvas does.
+    /// The canvas the game draws into, at the size of its drawing buffer. A frame that acquires it
+    /// starts from transparent black, and other frames keep the last image, as a browser canvas does.
     game: wgpu::Texture,
-    shown: Shown,
-    /// Draws a `Shown::Stretched` image over the whole window.
+    /// Whether the game has drawn since the host started.
+    drawn: bool,
+    /// Draws `scaled` over the whole window.
     stretch: wgpu::RenderPipeline,
-}
-/// What each frame copies to the window.
-enum Shown {
-    /// The game has not drawn since the host started.
-    Clear,
-    /// The last image the game drew before the window's size changed, which the window shows
-    /// scaled to its size, as a browser scales a canvas, until the game draws at the new size.
-    Stretched(wgpu::BindGroup),
-    /// The game has drawn into `game` at the window's size.
-    Game,
+    /// A copy of `game` and its bilinear bind group for `stretch`, kept while `game` keeps its
+    /// size. `game` has a canvas's usages, which exclude sampling.
+    scaled: Option<(wgpu::Texture, wgpu::BindGroup)>,
 }
 impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -154,27 +148,27 @@ impl Renderer {
         Self {
             executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
             game: game_texture(&target.device, &target.config),
-            shown: Shown::Clear,
+            drawn: false,
             stretch: stretch_pipeline(&target.device, target.config.format),
+            scaled: None,
             surface: target.surface,
             device: target.device,
             queue: target.queue,
             config: target.config,
         }
     }
-    /// Replays `frame` into the game texture, copies the game texture to a surface texture at the
-    /// frame's size, and presents it. A frame whose commands do not acquire the surface at its
-    /// current size keeps the last frame the game drew, scaled to the window after a resize. Until
-    /// the game first draws, the window shows the frame's clear color.
+    /// Replays `frame` into the game texture and presents it in a surface texture at the frame's
+    /// size, as a browser shows a canvas whose CSS size fills the window: copied when the sizes
+    /// match and scaled with bilinear filtering otherwise. A frame whose commands do not acquire
+    /// the surface keeps the last image the game drew. Until the game first draws, the window
+    /// shows the frame's clear color.
     pub fn frame(&mut self, frame: Frame) -> Result<Rendered> {
         let started = Instant::now();
         self.resize(frame.size);
         let replay = frame
             .commands
-            .map(|commands| self.executor.replay(&commands, Some(&self.game)));
-        if matches!(replay, Some(Ok(_))) && self.executor.surface_used() {
-            self.shown = Shown::Game;
-        }
+            .map(|commands| self.executor.replay(&commands, Some(&mut self.game)));
+        self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
         let acquire_started = Instant::now();
         let surface = self.acquire()?;
         let acquire_wait = acquire_started.elapsed();
@@ -193,53 +187,7 @@ impl Renderer {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
-            if matches!(self.shown, Shown::Game) {
-                self.shown = Shown::Stretched(self.snapshot());
-            }
-            self.game = game_texture(&self.device, &self.config);
         }
-    }
-    /// A copy of `game` bound for `stretch` with bilinear filtering, as a browser scales a canvas.
-    /// `game` has a canvas's usages, which exclude sampling.
-    fn snapshot(&self) -> wgpu::BindGroup {
-        let copy = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("stretched"),
-            size: self.game.size(),
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.game.format(),
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_texture_to_texture(
-            self.game.as_image_copy(),
-            copy.as_image_copy(),
-            self.game.size(),
-        );
-        self.queue.submit([encoder.finish()]);
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("stretched"),
-            layout: &self.stretch.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &copy.create_view(&Default::default()),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        })
     }
     fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
@@ -249,7 +197,7 @@ impl Renderer {
         }
     }
     fn render(
-        &self,
+        &mut self,
         frame: wgpu::SurfaceTexture,
         clear: [f64; 4],
         captures: &[&Path],
@@ -266,22 +214,33 @@ impl Renderer {
             height: self.config.height,
             depth_or_array_layers: 1,
         };
-        match &self.shown {
-            Shown::Game => encoder.copy_texture_to_texture(
+        if !self.drawn {
+            let [r, g, b, a] = clear;
+            window_pass(&mut encoder, &view, wgpu::Color { r, g, b, a });
+        } else if self.game.size() == size {
+            encoder.copy_texture_to_texture(
                 self.game.as_image_copy(),
                 frame.texture.as_image_copy(),
                 size,
-            ),
-            Shown::Stretched(image) => {
-                let mut pass = window_pass(&mut encoder, &view, wgpu::Color::TRANSPARENT);
-                pass.set_pipeline(&self.stretch);
-                pass.set_bind_group(0, image, &[]);
-                pass.draw(0..3, 0..1);
+            );
+        } else {
+            if self
+                .scaled
+                .as_ref()
+                .is_none_or(|(copy, _)| copy.size() != self.game.size())
+            {
+                self.scaled = Some(scaled(&self.device, &self.stretch, &self.game));
             }
-            Shown::Clear => {
-                let [r, g, b, a] = clear;
-                window_pass(&mut encoder, &view, wgpu::Color { r, g, b, a });
-            }
+            let (copy, group) = self.scaled.as_ref().expect("scaled matches the canvas");
+            encoder.copy_texture_to_texture(
+                self.game.as_image_copy(),
+                copy.as_image_copy(),
+                self.game.size(),
+            );
+            let mut pass = window_pass(&mut encoder, &view, wgpu::Color::TRANSPARENT);
+            pass.set_pipeline(&self.stretch);
+            pass.set_bind_group(0, group, &[]);
+            pass.draw(0..3, 0..1);
         }
         // Overlays that composite over the game frame, such as E2's UI, draw here so captures
         // include them.
@@ -404,6 +363,47 @@ fn stretch_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu:
         multiview_mask: None,
         cache: None,
     })
+}
+
+/// A texture with `game`'s size and format that `stretch` samples with bilinear filtering, as a
+/// browser scales a canvas, and its bind group.
+fn scaled(
+    device: &wgpu::Device,
+    stretch: &wgpu::RenderPipeline,
+    game: &wgpu::Texture,
+) -> (wgpu::Texture, wgpu::BindGroup) {
+    let copy = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scaled"),
+        size: game.size(),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: game.format(),
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("scaled"),
+        layout: &stretch.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(
+                    &copy.create_view(&Default::default()),
+                ),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    (copy, group)
 }
 
 /// A texture with the surface's size, format and the usages a stream sees on the surface.

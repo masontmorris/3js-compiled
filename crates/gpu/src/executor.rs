@@ -192,16 +192,18 @@ impl Executor {
         }
     }
 
-    /// Replays one frame. `surface` is the texture that `ACQUIRE_SURFACE` binds for this frame only.
+    /// Replays one frame. `canvas` is the texture that `ACQUIRE_SURFACE` binds for this frame only.
+    /// An acquire at another size replaces it with a texture of that size, as a browser replaces a
+    /// resized canvas's drawing buffer.
     pub fn replay(
         &mut self,
         frame: &[u8],
-        surface: Option<&wgpu::Texture>,
+        canvas: Option<&mut wgpu::Texture>,
     ) -> Result<Vec<Response>, crate::DecodeError> {
         let stream = decode(frame)?;
         let records = stream.records;
         self.frame = stream.frame;
-        self.surface = surface.cloned();
+        self.surface = canvas.as_deref().cloned();
         self.surface_used = false;
         let mut responses = Vec::new();
         for (command, record) in records.iter().enumerate() {
@@ -264,11 +266,13 @@ impl Executor {
         }
         self.pipeline = None;
         self.pass_view = None;
-        self.surface = None;
+        if let (Some(canvas), Some(surface)) = (canvas, self.surface.take()) {
+            *canvas = surface;
+        }
         Ok(responses)
     }
 
-    /// Whether the last replay bound the host's surface, at its current size, with `ACQUIRE_SURFACE`.
+    /// Whether the last replay bound the canvas with `ACQUIRE_SURFACE`.
     pub fn surface_used(&self) -> bool {
         self.surface_used
     }
@@ -1387,15 +1391,13 @@ impl Executor {
                 }
                 let surface = self.surface.clone().ok_or("no surface for this frame")?;
                 let (width, height) = (u32_at(payload, 4), u32_at(payload, 8));
-                let current = (surface.width(), surface.height()) == (width, height);
-                // A canvas texture acquired before a resize renders offscreen, as a browser
-                // discards it, so the frame's later draws still reach the resized surface.
-                let raw = if current {
-                    surface
-                } else {
+                let resized = (surface.width(), surface.height()) != (width, height);
+                // A texture acquired before the resize keeps its handle but no longer reaches
+                // the window, as a browser discards it.
+                let raw = if resized {
                     let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-                    let stale = self.device.create_texture(&wgpu::TextureDescriptor {
-                        label: Some("stale surface"),
+                    let canvas = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("canvas"),
                         size: wgpu::Extent3d {
                             width,
                             height,
@@ -1411,7 +1413,10 @@ impl Executor {
                     if let Some(error) = pollster::block_on(scope.pop()) {
                         return Err(error.to_string());
                     }
-                    stale
+                    self.surface = Some(canvas.clone());
+                    canvas
+                } else {
+                    surface
                 };
                 self.textures.insert(
                     handle,
@@ -1427,10 +1432,10 @@ impl Executor {
                     },
                 );
                 self.surface_handles.push(handle);
-                if current && !self.surface_used {
+                if resized || !self.surface_used {
                     self.surface_clear = SurfaceClear::Needed;
                 }
-                self.surface_used |= current;
+                self.surface_used = true;
                 Ok(None)
             }
             31 => {

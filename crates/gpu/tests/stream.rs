@@ -42,7 +42,8 @@ fn a_stream_of_an_earlier_version_is_rejected_by_version() {
     old[4..6].copy_from_slice(&2u16.to_le_bytes());
     let message = decode(&old).unwrap_err().to_string();
     assert!(
-        message.contains("version 2") && message.contains("version 3"),
+        message.contains("version 2")
+            && message.contains(&format!("version {}", threejsc_gpu::VERSION)),
         "{message}"
     );
 }
