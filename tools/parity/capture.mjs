@@ -61,7 +61,7 @@ if (!browserOnly) {
   const script = resolve(temp, 'steps.json');
   await writeFile(script, JSON.stringify([{ type: 'wait', frames: 5 }, { type: 'capture', path: nativePath }, { type: 'close' }]));
   const code = await new Promise((resolveExit, reject) => {
-    const child = spawn(host, ['--entry', 'examples/scenes/index.js', '--scene', scene, '--script', script], { cwd: root, stdio: 'inherit' });
+    const child = spawn(host, ['--entry', resolve(root, 'examples/scenes/index.js'), '--scene', scene, '--script', script], { cwd: out, stdio: 'inherit' });
     child.on('error', reject);
     child.on('exit', (status, signal) => signal ? reject(new Error(`Host terminated: ${signal}`)) : resolveExit(status));
   });
