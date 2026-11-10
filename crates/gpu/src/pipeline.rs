@@ -78,6 +78,20 @@ impl Pipeline {
         vertex_module: &wgpu::ShaderModule,
         fragment_module: Option<&wgpu::ShaderModule>,
     ) -> Result<wgpu::RenderPipeline, String> {
+        // wgpu adds each attribute's offset and size without overflow checks.
+        if self
+            .buffers
+            .iter()
+            .flat_map(|buffer| &buffer.attributes)
+            .any(|attribute| {
+                attribute
+                    .offset
+                    .checked_add(attribute.format.size())
+                    .is_none()
+            })
+        {
+            return Err("vertex attribute offset overflows".into());
+        }
         let buffers: Vec<_> = self
             .buffers
             .iter()

@@ -687,3 +687,177 @@ fn a_partial_depth_readback_reports_its_error_once() {
     let first = message.lines().next().unwrap();
     assert_eq!(message.matches(first).count(), 1, "{message}");
 }
+
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+const WORDS: [u32; 16] = [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    7,
+    8,
+    16,
+    255,
+    256,
+    16384,
+    65535,
+    0x7fff_ffff,
+    0x8000_0000,
+    0xffff_ffff,
+];
+const NUMBERS: [&str; 8] = [
+    "0",
+    "4294967295",
+    "4294967296",
+    "9007199254740993",
+    "18446744073709551612",
+    "18446744073709551615",
+    "-1",
+    "1e40",
+];
+
+/// The largest texture a mutation may create: width, height, layers, and samples times 16 bytes
+/// per texel and twice that for mips. WARP commits system memory for every texture it creates.
+const TEXTURE_BUDGET: u64 = 256 << 20;
+
+fn texture_bytes(payload: &[u8]) -> u64 {
+    [4, 8, 12, 20]
+        .iter()
+        .map(|at| u64::from(u32::from_le_bytes(payload[*at..at + 4].try_into().unwrap())))
+        .fold(32, u64::saturating_mul)
+}
+
+/// Changes one to three records: duplicates, removes, or swaps a record, replaces one `u32` word
+/// of its payload, or replaces one number in the JSON of one of the stream's render pipelines. It
+/// never changes a draw, whose instance count alone can keep WARP allocating for minutes, and it
+/// keeps each texture within `TEXTURE_BUDGET`.
+fn mutate(rng: &mut Rng, base: &[(u16, Vec<u8>)]) -> Vec<(u16, Vec<u8>)> {
+    let mut records = base.to_vec();
+    for _ in 0..1 + rng.below(3) {
+        let index = rng.below(records.len());
+        match rng.below(10) {
+            0 => {
+                let record = records[index].clone();
+                records.insert(rng.below(records.len() + 1), record);
+            }
+            1 if records.len() > 1 => {
+                records.remove(index);
+            }
+            2 => {
+                let other = rng.below(records.len());
+                records.swap(index, other);
+            }
+            3 | 4 => {
+                let pipelines: Vec<_> = (0..records.len())
+                    .filter(|at| records[*at].0 == 13)
+                    .collect();
+                if pipelines.is_empty() {
+                    continue;
+                }
+                let payload = &mut records[pipelines[rng.below(pipelines.len())]].1;
+                let Ok(json) = String::from_utf8(payload[8..].to_vec()) else {
+                    continue;
+                };
+                let digits: Vec<_> = json
+                    .match_indices(|c: char| c.is_ascii_digit())
+                    .map(|(at, _)| at)
+                    .filter(|at| *at == 0 || !json.as_bytes()[at - 1].is_ascii_digit())
+                    .collect();
+                if digits.is_empty() {
+                    continue;
+                }
+                let start = digits[rng.below(digits.len())];
+                let end = start
+                    + json[start..]
+                        .find(|c: char| !c.is_ascii_digit())
+                        .unwrap_or(json.len() - start);
+                let mutated = format!(
+                    "{}{}{}",
+                    &json[..start],
+                    NUMBERS[rng.below(NUMBERS.len())],
+                    &json[end..]
+                );
+                payload.truncate(8);
+                payload.extend_from_slice(mutated.as_bytes());
+            }
+            _ => {
+                let (opcode, payload) = &mut records[index];
+                if payload.len() < 4 || matches!(*opcode, 23 | 24) {
+                    continue;
+                }
+                let original = payload.clone();
+                let at = rng.below(payload.len() / 4) * 4;
+                let value = match rng.below(3) {
+                    0 => WORDS[rng.below(WORDS.len())],
+                    1 => {
+                        u32::from_le_bytes(payload[at..at + 4].try_into().unwrap())
+                            ^ (1 << rng.below(32))
+                    }
+                    _ => [f32::NAN, f32::INFINITY, -1.0, 1e30, -0.0][rng.below(5)].to_bits(),
+                };
+                payload[at..at + 4].copy_from_slice(&value.to_le_bytes());
+                if *opcode == 4 && payload.len() >= 24 && texture_bytes(payload) > TEXTURE_BUDGET {
+                    *payload = original;
+                }
+            }
+        }
+    }
+    records
+}
+
+/// `FUZZ_ITERATIONS` and `FUZZ_SEED` override the run length and seed. A panic fails the test,
+/// so debug builds also check wgpu's arithmetic.
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn mutated_streams_return_errors_and_never_panic() {
+    let fixtures: [(&[u8], Option<&[u8]>); 9] = [
+        (
+            include_bytes!("fixtures/basic-cube-1.bin"),
+            Some(include_bytes!("fixtures/basic-cube-0.bin")),
+        ),
+        (
+            include_bytes!("fixtures/standard-shadow-1.bin"),
+            Some(include_bytes!("fixtures/standard-shadow-0.bin")),
+        ),
+        (include_bytes!("fixtures/draw.bin"), None),
+        (include_bytes!("fixtures/msaa-pass.bin"), None),
+        (include_bytes!("fixtures/bindings.bin"), None),
+        (include_bytes!("fixtures/textures.bin"), None),
+        (include_bytes!("fixtures/pipeline.bin"), None),
+        (include_bytes!("fixtures/readback-formats.bin"), None),
+        (include_bytes!("fixtures/surface.bin"), None),
+    ];
+    let setting = |name: &str, default: u64| {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    };
+    let iterations = setting("FUZZ_ITERATIONS", 270);
+    let mut rng = Rng(setting("FUZZ_SEED", 0x9e37_79b9_7f4a_7c15));
+    let (device, queue) = device();
+    let surface = surface_texture(&device, 1280, 720);
+    for iteration in 0..iterations {
+        let (target, setup) = fixtures[iteration as usize % fixtures.len()];
+        let mut executor = Executor::new(device.clone(), queue.clone());
+        if let Some(setup) = setup {
+            executor.replay(setup, Some(&surface)).unwrap();
+        }
+        let mutated = stream(&mutate(&mut rng, &records(target)));
+        executor.replay(&mutated, Some(&surface)).unwrap();
+    }
+}
