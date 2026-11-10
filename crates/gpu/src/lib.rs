@@ -104,4 +104,4 @@ pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
 }
 mod executor;
 mod pipeline;
-pub use executor::{Executor, Response};
+pub use executor::{Executor, Response, Trailer};

@@ -34,21 +34,31 @@ pub struct Target {
 }
 /// Lives on the render thread, because wgpu error scopes belong to the thread that pushes them.
 pub struct Renderer {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
+    window: Presenter,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
     /// The canvas the game draws into, at the size of its drawing buffer. A frame that acquires it
     /// starts from transparent black, and other frames keep the last image, as a browser canvas does.
     game: wgpu::Texture,
     /// Whether the game has drawn since the host started.
     drawn: bool,
+}
+/// The window's surface and what draws the canvas into it.
+struct Presenter {
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    config: wgpu::SurfaceConfiguration,
     /// Draws `scaled` over the whole window.
     stretch: wgpu::RenderPipeline,
     /// A copy of `game` and its bilinear bind group for `stretch`, kept while `game` keeps its
     /// size. `game` has a canvas's usages, which exclude sampling.
     scaled: Option<(wgpu::Texture, wgpu::BindGroup)>,
+}
+/// A frame's surface texture, and the buffer that receives a copy of it for the frame's captures.
+struct Shown {
+    surface: wgpu::SurfaceTexture,
+    acquire_wait: Duration,
+    capture: Option<wgpu::Buffer>,
 }
 impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
@@ -149,39 +159,73 @@ impl Renderer {
             executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
             game: game_texture(&target.device, &target.config),
             drawn: false,
-            stretch: stretch_pipeline(&target.device, target.config.format),
-            scaled: None,
-            surface: target.surface,
-            device: target.device,
+            window: Presenter {
+                stretch: stretch_pipeline(&target.device, target.config.format),
+                scaled: None,
+                surface: target.surface,
+                device: target.device,
+                config: target.config,
+            },
             queue: target.queue,
-            config: target.config,
         }
     }
     /// Replays `frame` into the game texture and presents it in a surface texture at the frame's
     /// size, as a browser shows a canvas whose CSS size fills the window: copied when the sizes
     /// match and scaled with bilinear filtering otherwise. A frame whose commands do not acquire
     /// the surface keeps the last image the game drew. Until the game first draws, the window
-    /// shows the frame's clear color.
+    /// shows the frame's clear color. The commands that show the canvas go to the queue with the
+    /// frame's last submission when the executor can take them.
     pub fn frame(&mut self, frame: Frame) -> Result<Rendered> {
         let started = Instant::now();
-        self.resize(frame.size);
-        let replay = frame
-            .commands
-            .map(|commands| self.executor.replay(&commands, Some(&mut self.game)));
+        self.window.resize(frame.size);
+        let capture = !frame.captures.is_empty();
+        let mut acquired = None;
+        let replay = frame.commands.map(|commands| {
+            let (window, drawn) = (&mut self.window, self.drawn);
+            let mut trailer = |canvas: &wgpu::Texture, used: bool| {
+                let shown = acquired.insert(window.acquire()).as_mut().ok()?;
+                let (commands, buffer) =
+                    window.encode(shown, canvas, drawn || used, frame.clear, capture);
+                shown.capture = buffer;
+                Some(commands)
+            };
+            self.executor
+                .replay_then(&commands, Some(&mut self.game), Some(&mut trailer))
+        });
         self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
-        let acquire_started = Instant::now();
-        let surface = self.acquire()?;
-        let acquire_wait = acquire_started.elapsed();
-        let captures: Vec<_> = frame.captures.iter().map(PathBuf::as_path).collect();
-        let surface = self.render(surface, frame.clear, &captures)?;
-        self.queue.present(surface);
+        let acquired_in_replay = acquired.is_some();
+        let mut shown = match acquired {
+            Some(shown) => shown?,
+            None => self.window.acquire()?,
+        };
+        if !(acquired_in_replay && self.executor.trailed()) {
+            let scope = self
+                .window
+                .device
+                .push_error_scope(wgpu::ErrorFilter::Validation);
+            let (commands, buffer) =
+                self.window
+                    .encode(&shown, &self.game, self.drawn, frame.clear, capture);
+            shown.capture = buffer;
+            self.queue.submit([commands]);
+            if let Some(error) = pollster::block_on(scope.pop()) {
+                bail!("host frame rendering failed: {error}");
+            }
+        }
+        if let Some(buffer) = &shown.capture {
+            let captures: Vec<_> = frame.captures.iter().map(PathBuf::as_path).collect();
+            self.window.save(buffer, &captures)?;
+        }
+        self.queue.present(shown.surface);
         Ok(Rendered {
             index: frame.index,
             replay,
-            cpu: started.elapsed() - acquire_wait,
+            cpu: started.elapsed() - shown.acquire_wait,
             latency: frame.started.elapsed(),
         })
     }
+}
+impl Presenter {
     fn resize(&mut self, (width, height): (u32, u32)) {
         if width != self.config.width || height != self.config.height {
             self.config.width = width;
@@ -189,21 +233,29 @@ impl Renderer {
             self.surface.configure(&self.device, &self.config);
         }
     }
-    fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
+    fn acquire(&self) -> Result<Shown> {
+        let started = Instant::now();
         match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(frame),
+            wgpu::CurrentSurfaceTexture::Success(surface)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(surface) => Ok(Shown {
+                surface,
+                acquire_wait: started.elapsed(),
+                capture: None,
+            }),
             other => bail!("surface texture unavailable: {other:?}"),
         }
     }
-    fn render(
+    /// Encodes showing `canvas` in the frame's surface texture, or the clear color while the game
+    /// has not drawn, and a copy of the result into a new buffer when `capture` is set.
+    fn encode(
         &mut self,
-        frame: wgpu::SurfaceTexture,
+        shown: &Shown,
+        canvas: &wgpu::Texture,
+        drawn: bool,
         clear: [f64; 4],
-        captures: &[&Path],
-    ) -> Result<wgpu::SurfaceTexture> {
-        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let view = frame.texture.create_view(&Default::default());
+        capture: bool,
+    ) -> (wgpu::CommandBuffer, Option<wgpu::Buffer>) {
+        let frame = &shown.surface;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -214,12 +266,13 @@ impl Renderer {
             height: self.config.height,
             depth_or_array_layers: 1,
         };
-        if !self.drawn {
+        if !drawn {
             let [r, g, b, a] = clear;
+            let view = frame.texture.create_view(&Default::default());
             window_pass(&mut encoder, &view, wgpu::Color { r, g, b, a });
-        } else if self.game.size() == size {
+        } else if canvas.size() == size {
             encoder.copy_texture_to_texture(
-                self.game.as_image_copy(),
+                canvas.as_image_copy(),
                 frame.texture.as_image_copy(),
                 size,
             );
@@ -227,16 +280,17 @@ impl Renderer {
             if self
                 .scaled
                 .as_ref()
-                .is_none_or(|(copy, _)| copy.size() != self.game.size())
+                .is_none_or(|(copy, _)| copy.size() != canvas.size())
             {
-                self.scaled = Some(scaled(&self.device, &self.stretch, &self.game));
+                self.scaled = Some(scaled(&self.device, &self.stretch, canvas));
             }
             let (copy, group) = self.scaled.as_ref().expect("scaled matches the canvas");
             encoder.copy_texture_to_texture(
-                self.game.as_image_copy(),
+                canvas.as_image_copy(),
                 copy.as_image_copy(),
-                self.game.size(),
+                canvas.size(),
             );
+            let view = frame.texture.create_view(&Default::default());
             let mut pass = window_pass(&mut encoder, &view, wgpu::Color::TRANSPARENT);
             pass.set_pipeline(&self.stretch);
             pass.set_bind_group(0, group, &[]);
@@ -244,14 +298,10 @@ impl Renderer {
         }
         // Overlays that composite over the game frame, such as E2's UI, draw here so captures
         // include them.
-        let stride = (self.config.width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
-            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let buffer = if captures.is_empty() {
-            None
-        } else {
+        let capture = capture.then(|| {
             let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("capture"),
-                size: u64::from(stride) * u64::from(self.config.height),
+                size: u64::from(self.stride()) * u64::from(self.config.height),
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
@@ -266,53 +316,55 @@ impl Renderer {
                     buffer: &buffer,
                     layout: wgpu::TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(stride),
+                        bytes_per_row: Some(self.stride()),
                         rows_per_image: Some(self.config.height),
                     },
                 },
                 size,
             );
-            Some(buffer)
-        };
-        self.queue.submit(Some(encoder.finish()));
-        if let Some(error) = pollster::block_on(scope.pop()) {
-            bail!("host frame rendering failed: {error}");
-        }
-        if let Some(buffer) = buffer {
-            let slice = buffer.slice(..);
-            let (tx, rx) = mpsc::channel();
-            slice.map_async(wgpu::MapMode::Read, move |result| {
-                let _ = tx.send(result);
-            });
-            self.device.poll(wgpu::PollType::wait_indefinitely())?;
-            rx.recv()??;
-            let data = slice.get_mapped_range()?;
-            let mut rgba =
-                Vec::with_capacity((self.config.width * self.config.height * 4) as usize);
-            for row in data
-                .chunks(stride as usize)
-                .take(self.config.height as usize)
-            {
-                for pixel in row[..(self.config.width * 4) as usize].as_chunks::<4>().0 {
-                    rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-                }
+            buffer
+        });
+        (encoder.finish(), capture)
+    }
+    fn stride(&self) -> u32 {
+        (self.config.width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+    }
+    /// Writes the window copy in `buffer`, which a submission has filled, to each capture path.
+    fn save(&self, buffer: &wgpu::Buffer, captures: &[&Path]) -> Result<()> {
+        let stride = self.stride();
+        let slice = buffer.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
+        rx.recv()??;
+        let data = slice.get_mapped_range()?;
+        let mut rgba = Vec::with_capacity((self.config.width * self.config.height * 4) as usize);
+        for row in data
+            .chunks(stride as usize)
+            .take(self.config.height as usize)
+        {
+            for pixel in row[..(self.config.width * 4) as usize].as_chunks::<4>().0 {
+                rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
             }
-            for path in captures {
-                if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                    std::fs::create_dir_all(parent)?;
-                }
-                image::save_buffer(
-                    path,
-                    &rgba,
-                    self.config.width,
-                    self.config.height,
-                    image::ColorType::Rgba8,
-                )?;
-            }
-            drop(data);
-            buffer.unmap();
         }
-        Ok(frame)
+        for path in captures {
+            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)?;
+            }
+            image::save_buffer(
+                path,
+                &rgba,
+                self.config.width,
+                self.config.height,
+                image::ColorType::Rgba8,
+            )?;
+        }
+        drop(data);
+        buffer.unmap();
+        Ok(())
     }
 }
 

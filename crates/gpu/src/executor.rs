@@ -52,6 +52,10 @@ enum SurfaceClear {
     Done,
 }
 
+/// Encodes host work that reads the canvas after a frame, such as showing it in the window. It
+/// receives the canvas and whether the frame acquired it, and returns `None` when it cannot encode.
+pub type Trailer<'a> = &'a mut dyn FnMut(&wgpu::Texture, bool) -> Option<wgpu::CommandBuffer>;
+
 pub struct Executor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -75,6 +79,7 @@ pub struct Executor {
     surface: Option<wgpu::Texture>,
     surface_handles: Vec<u32>,
     surface_used: bool,
+    trailed: bool,
     surface_clear: SurfaceClear,
     uncaptured: Arc<Mutex<Vec<String>>>,
 }
@@ -149,6 +154,7 @@ impl Executor {
             surface: None,
             surface_handles: Vec::new(),
             surface_used: false,
+            trailed: false,
             surface_clear: SurfaceClear::Done,
             uncaptured,
         }
@@ -200,6 +206,19 @@ impl Executor {
         frame: &[u8],
         canvas: Option<&mut wgpu::Texture>,
     ) -> Result<Vec<Response>, crate::DecodeError> {
+        self.replay_then(frame, canvas, None)
+    }
+
+    /// Replays one frame like `replay`. When the frame ends with `SUBMIT` and the canvas needs no
+    /// clear after it, `trailer`'s commands go to the queue in that submission, which saves the
+    /// host a submission per frame. `trailed` says whether they reached the queue.
+    pub fn replay_then(
+        &mut self,
+        frame: &[u8],
+        canvas: Option<&mut wgpu::Texture>,
+        mut trailer: Option<Trailer<'_>>,
+    ) -> Result<Vec<Response>, crate::DecodeError> {
+        self.trailed = false;
         let stream = decode(frame)?;
         let records = stream.records;
         self.frame = stream.frame;
@@ -209,7 +228,11 @@ impl Executor {
         for (command, record) in records.iter().enumerate() {
             let subject = self.subject(record.opcode, record.payload);
             let before = self.label(subject);
-            let mut result = self.execute(record.opcode, record.payload);
+            let mut result = if record.opcode == 26 && command + 1 == records.len() {
+                self.submit(record.payload, trailer.take())
+            } else {
+                self.execute(record.opcode, record.payload)
+            };
             let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
             if !uncaptured.is_empty() {
                 let first = result.err().into_iter();
@@ -275,6 +298,41 @@ impl Executor {
     /// Whether the last replay bound the canvas with `ACQUIRE_SURFACE`.
     pub fn surface_used(&self) -> bool {
         self.surface_used
+    }
+
+    /// Whether the last replay submitted its trailer's commands.
+    pub fn trailed(&self) -> bool {
+        self.trailed
+    }
+
+    fn submit(
+        &mut self,
+        payload: &[u8],
+        trailer: Option<Trailer<'_>>,
+    ) -> Result<Option<Response>, String> {
+        size(payload, 0)?;
+        if self.render_pass.is_some() {
+            return Err("cannot submit an active render pass".into());
+        }
+        let trailer = trailer.filter(|_| self.surface_clear != SurfaceClear::Needed);
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let commands = self.encoder.take().map(wgpu::CommandEncoder::finish);
+        let encoded = commands.is_some();
+        let trailing = match (trailer, &self.surface) {
+            (Some(trailer), Some(surface)) => trailer(surface, self.surface_used),
+            _ => None,
+        };
+        let trailed = trailing.is_some();
+        self.queue.submit(commands.into_iter().chain(trailing));
+        let error = pollster::block_on(scope.pop());
+        if encoded {
+            self.encoder_dropped(error.is_none());
+        }
+        self.trailed = trailed && error.is_none();
+        match error {
+            Some(error) => Err(error.to_string()),
+            None => Ok(None),
+        }
     }
 
     fn is_surface(&self, texture: u32) -> bool {
@@ -1474,25 +1532,7 @@ impl Executor {
                 self.labels.remove(&handle);
                 Ok(None)
             }
-            26 => {
-                size(payload, 0)?;
-                if self.render_pass.is_some() {
-                    return Err("cannot submit an active render pass".into());
-                }
-                if let Some(encoder) = self.encoder.take() {
-                    let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-                    let commands = encoder.finish();
-                    self.queue.submit([commands]);
-                    let error = pollster::block_on(scope.pop());
-                    self.encoder_dropped(error.is_none());
-                    if let Some(error) = error {
-                        return Err(error.to_string());
-                    }
-                } else {
-                    self.queue.submit([]);
-                }
-                Ok(None)
-            }
+            26 => self.submit(payload, None),
             _ => Err(format!("GPU opcode {opcode} is not implemented")),
         }
     }
