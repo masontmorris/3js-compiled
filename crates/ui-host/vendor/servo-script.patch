@@ -1,3 +1,59 @@
+--- a/dom/document/document_event_handler.rs
++++ b/dom/document/document_event_handler.rs
+@@ -18,7 +18,7 @@
+ use embedder_traits::{
+     GamepadEvent as EmbedderGamepadEvent, GamepadSupportedHapticEffects, GamepadUpdateType,
+ };
+-use euclid::{Point2D, Vector2D};
++use euclid::{Point2D, Size2D, Vector2D};
+ use js::context::{JSContext, NoGC};
+ use keyboard_types::{
+     Code, Key, KeyState, KeyboardEvent as KeyboardTypesEvent, Modifiers, NamedKey,
+@@ -167,8 +167,9 @@
+     coalesced_wheel_event_ids: DomRefCell<Vec<InputEventId>>,
+     /// <https://w3c.github.io/uievents/#event-type-dblclick>
+     click_counting_info: DomRefCell<ClickCountingInfo>,
++    /// The point of the last primary down and the viewport size it was hit-tested at.
+     #[no_trace]
+-    last_mouse_button_down_point: Cell<Option<Point2D<f32, CSSPixel>>>,
++    last_mouse_button_down_point: Cell<Option<(Point2D<f32, CSSPixel>, Size2D<f32, CSSPixel>)>>,
+     /// The current button state of the mouse. This is used to ensure that
+     /// `pointerup` and `pointerdown` events are only sent when transitioning from
+     /// having no mouse buttons pressed to having any and vice-versa.
+@@ -1010,8 +1011,10 @@
+ 
+         match mouse_button_event.action {
+             MouseButtonAction::Down => {
+-                self.last_mouse_button_down_point
+-                    .set(Some(hit_test_result.point_in_frame));
++                self.last_mouse_button_down_point.set(Some((
++                    hit_test_result.point_in_frame,
++                    self.window.viewport_details().size,
++                )));
+ 
+                 // Step 6. Dispatch pointerdown event.
+                 let pointer_event_name = if self.mouse_button_state.get().is_empty() {
+@@ -1185,13 +1188,18 @@
+             return;
+         }
+ 
+-        let Some(last_mouse_button_down_point) = self.last_mouse_button_down_point.take() else {
++        let Some((last_mouse_button_down_point, down_viewport)) =
++            self.last_mouse_button_down_point.take()
++        else {
+             return;
+         };
+ 
++        // A down and an up hit-tested in viewports of different sizes are points in different
++        // layouts, so their distance says nothing about whether the pointer moved.
+         let distance = last_mouse_button_down_point.distance_to(hit_test_result.point_in_frame);
+         let maximum_click_distance = 10.0 * self.window.device_pixel_ratio().get();
+-        if distance > maximum_click_distance {
++        if down_viewport == self.window.viewport_details().size && distance > maximum_click_distance
++        {
+             return;
+         }
+ 
 --- a/dom/globalscope/script_execution.rs
 +++ b/dom/globalscope/script_execution.rs
 @@ -357,10 +357,12 @@

@@ -18,6 +18,14 @@ The patch passes `Rc::as_ptr` so that the hook holds the only reference. With it
 
 Upstream issue: not filed yet. Servo main at ced24a6 (2026-11-09) still passes `Rc::into_raw` at both sites. There the record type is `BaseScript`, which has no owner, so a leaked record keeps no global alive.
 
+## servo-script: fire a click on a press that spans a resize
+
+`maybe_trigger_click_for_mouse_button_down_event` fires `click` only when the up is within 10 px of the last primary down, measured as points in the viewport. When the viewport is resized between the down and the up, the page is laid out again and an element can move far from where it was pressed, so a press that starts and ends on the same element gets no click. The host places each event of a press on the element it was made over in the layout Servo processes it in, so after a resize mid-press the up lands on the pressed element at a different viewport point.
+
+The patch records the viewport size with the down point and applies the 10 px rule only when the up is hit-tested in a viewport of the same size. Within one viewport size nothing changes.
+
+Upstream issue: not filed. Servo's policy forbids AI-written issues.
+
 ## servo-fonts: bound the shaped text cache
 
 `Font::shape_text` caches every shaped string in a per-font map that is never trimmed. Text that changes on every rendering update, such as a frame counter, adds one entry each time.
