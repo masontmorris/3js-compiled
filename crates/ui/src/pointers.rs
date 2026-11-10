@@ -8,9 +8,6 @@ use std::time::Instant;
 pub(crate) type Size = (u32, u32);
 type Rect = [f64; 4];
 
-/// Viewport sizes whose layout the host keeps: enough for the shown frame and Servo's newest.
-const LAYOUTS: usize = 4;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Pointer {
     pub action: u8,
@@ -43,21 +40,21 @@ struct Held {
 /// has been measured at Servo's size and moved to the same point of the same rect there.
 #[derive(Default)]
 pub(crate) struct Pointers {
-    layouts: VecDeque<(Size, Vec<Rect>)>,
+    /// The rects the page listed at the sizes of the shown frame, of Servo and of its latest
+    /// reply.
+    layouts: Vec<(Size, Vec<Rect>)>,
     held: VecDeque<Held>,
 }
 
 impl Pointers {
     /// The page replied while laid out at `size`, listing `rects` when they changed.
-    pub fn measured(&mut self, _view: View, size: Size, rects: Option<Vec<Rect>>) {
+    pub fn measured(&mut self, view: View, size: Size, rects: Option<Vec<Rect>>) {
         let Some(rects) = rects else {
             return;
         };
-        self.layouts.retain(|(at, _)| *at != size);
-        if self.layouts.len() == LAYOUTS {
-            self.layouts.pop_front();
-        }
-        self.layouts.push_back((size, rects));
+        self.layouts
+            .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
+        self.layouts.push((size, rects));
     }
     fn layout(&self, size: Size) -> Option<&[Rect]> {
         self.layouts
@@ -292,18 +289,33 @@ mod tests {
         assert_eq!(host.take(), [Page(at(1, 1510.0)), Page(at(2, 1510.0))]);
     }
 
+    /// Adversary round 4: while the window is dragged larger, ui-host announces a ring per
+    /// resize and the page reports a layout at each size before any frame of them is shown.
+    #[test]
+    fn a_click_on_the_kept_frame_during_a_drag_presses_the_drawn_button() {
+        let mut host = Host::new(OLD, right_button(1280));
+        for step in 1..=8 {
+            let size = (1280 + 8 * step, 720);
+            host.resize(size);
+            host.reply(size, Some(right_button(size.0)));
+        }
+        assert_eq!(host.view().shown, Some(OLD));
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1224.0)), Page(at(2, 1224.0))],
+            "drawn at x=1060..1260 on screen; at 1344 the button is at 1124..1324"
+        );
+    }
+
     #[test]
     fn keeps_a_bounded_number_of_layouts() {
-        let mut pointers = Pointers::default();
-        for width in 0..10 {
-            let size = (width, 720);
-            let view = View {
-                shown: Some(OLD),
-                servo: Some(size),
-                requested: size,
-            };
-            pointers.measured(view, size, Some(right_button(width)));
+        let mut host = Host::new(OLD, right_button(1280));
+        for width in 1281..1400 {
+            host.resize((width, 720));
+            host.reply((width, 720), Some(right_button(width)));
+            host.reply((width - 1, 720), Some(right_button(width - 1)));
         }
-        assert!(pointers.layouts.len() <= LAYOUTS);
+        assert!(host.pointers.layouts.len() <= 3);
     }
 }
