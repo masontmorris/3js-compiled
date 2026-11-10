@@ -356,7 +356,8 @@ export function decodeCommands(bytes) {
   if (bytes.byteLength < HEADER_SIZE) throw new RangeError('Truncated command stream header');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint32(0, true) !== MAGIC) throw new Error('Invalid command stream magic');
-  if (view.getUint16(4, true) !== VERSION) throw new Error('Unsupported command stream version');
+  const version = view.getUint16(4, true);
+  if (version !== VERSION) throw new Error(`Command stream version ${version} is not supported: this decoder reads version ${VERSION}`);
   if (view.getUint16(6, true) !== 0) throw new Error('Unsupported command stream flags');
   if (view.getUint32(8, true) !== bytes.byteLength) throw new RangeError('Invalid command stream length');
   const count = view.getUint32(16, true);
