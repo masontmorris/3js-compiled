@@ -237,7 +237,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. Uncapped frames per second, and total CPU time per frame summed over every process involved: `host.exe` natively, and every `msedge` process in Edge, including the GPU process, measured from process CPU counters over the run. The 2,000-mesh `instancing` scene at 1920x1080 with vsync off.
-- [ ] Probe. `node tools/perf/frame-cost.mjs` under the GPU lease. Three runs each, interleaved, each run at least 1,500 frames after a 300-frame warm-up.
+- [ ] Probe. `node tools/perf/frame-cost.mjs` under the GPU lease. Three counted runs each, interleaved. A run counts when its warm-up lasts at least 3 seconds and its measured frames at least 10 seconds (the defaults are 24,000 frames after an 8,000-frame warm-up), the GPU stays at P0 throughout its measured window, and other processes average under one core over it. The GPU ramps from idle over about 2 seconds, so a shorter run measures the ramp.
 - [ ] Baseline. Trunk has no backend. Record that, then use Edge as the baseline.
 - [ ] Rule. E3 fails when native is worse than Edge by more than 10 percent on either number. JavaScript render-call time stays in the report as information.
 

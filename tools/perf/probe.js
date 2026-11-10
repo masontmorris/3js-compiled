@@ -7,6 +7,7 @@
   const request = globalThis.requestAnimationFrame.bind(globalThis);
   const callbackTimes = [];
   let count = 0;
+  let first = 0;
   let start = 0;
   let frameTime = null;
   let frameCallbacks = 0;
@@ -18,9 +19,10 @@
     count++;
     globalThis.__perfCount = count;
     if (count > warmup && count <= warmup + frames) callbackTimes.push(frameCallbacks);
+    if (count === 1) first = now;
     if (count === warmup) {
       start = now;
-      console.log(`perf start ${JSON.stringify({ drawingBuffer: size() })}`);
+      console.log(`perf start ${JSON.stringify({ drawingBuffer: size(), warmupMs: now - first })}`);
     } else if (count === warmup + frames) {
       const sorted = callbackTimes.toSorted((a, b) => a - b);
       const at = share => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * share))];

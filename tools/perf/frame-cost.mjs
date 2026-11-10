@@ -1,10 +1,14 @@
 // Compares the native host with Edge on uncapped frame rate and on CPU time per frame, summed over
 // every process involved: host.exe natively, and every msedge process (browser, GPU, renderer,
 // utility) in Edge. Runs alternate Edge and native. Run it under the GPU lease.
+// A run counts only when its warm-up lasts at least 3 s, its measured frames at least 10 s, the GPU
+// stays at P0 in every nvidia-smi sample of the measured window, and other processes average under
+// one core over it. The tool runs Edge and native pairs until each side has --runs counted runs, or
+// --max-runs pairs have run, and the rule's verdict uses counted runs only.
 // Edge runs in a window by default, so both sides present every frame to the desktop compositor;
 // --edge headless measures headless Edge, which renders without presenting.
 // Usage, from the repository root:
-//   node tools/perf/frame-cost.mjs [--scene instancing] [--runs 3] [--warmup 300] [--frames 1500]
+//   node tools/perf/frame-cost.mjs [--scene instancing] [--runs 3] [--max-runs 6] [--warmup 8000] [--frames 24000]
 //     [--width 1920] [--height 1080] [--edge headed] [--host C:/3jsc/target/release/host.exe] [--out target/perf]
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -15,14 +19,17 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 
-const options = { scene: 'instancing', runs: 3, warmup: 300, frames: 1500, width: 1920, height: 1080, edge: 'headed', host: 'C:/3jsc/target/release/host.exe', out: 'target/perf' };
+const median = values => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)];
+
+const options = { scene: 'instancing', runs: 3, maxRuns: 6, warmup: 8000, frames: 24000, width: 1920, height: 1080, edge: 'headed', host: 'C:/3jsc/target/release/host.exe', out: 'target/perf' };
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i += 2) {
-  const key = args[i].replace(/^--/, '');
+  const key = args[i].replace(/^--/, '').replace(/-(\w)/g, (_, letter) => letter.toUpperCase());
   if (!(key in options) || args[i + 1] === undefined) throw new Error(`Unknown or incomplete argument: ${args[i]}`);
   options[key] = typeof options[key] === 'number' ? Number(args[i + 1]) : args[i + 1];
 }
-if (options.frames < 1500 || options.warmup < 300) throw new Error('The E3 rule needs at least 1,500 frames after a 300-frame warm-up');
+const minimum = { warmupMs: 3000, windowMs: 10000, otherCores: 1 };
+if (!(options.frames >= 1 && options.warmup >= 1 && options.runs >= 1 && options.maxRuns >= options.runs)) throw new Error('--frames, --warmup and --runs must be positive, and --max-runs at least --runs');
 if (!['headed', 'headless'].includes(options.edge)) throw new Error('--edge is headed or headless');
 const root = resolve('.');
 const out = resolve(options.out);
@@ -40,6 +47,16 @@ async function ask(line) {
 }
 const cpu = async ids => ids.length ? Number(await ask(`cpu ${ids.join(',')}`)) : 0;
 const discover = async text => (await ask(`discover ${text}`)).split(',').filter(Boolean).map(Number);
+const everyCpu = async () => new Map((await ask('all')).split(',').filter(Boolean).map(pair => pair.split(':').map(Number)));
+
+// GPU state every 250 ms, stamped on arrival.
+const gpuSamples = [];
+const gpu = spawn('nvidia-smi', ['--query-gpu=pstate,clocks.gr', '--format=csv,noheader,nounits', '-lms', '250'], { stdio: ['ignore', 'pipe', 'ignore'] });
+gpu.on('error', () => {});
+createInterface({ input: gpu.stdout }).on('line', line => {
+  const [pstate, clock] = line.split(',').map(part => part.trim());
+  gpuSamples.push({ at: Date.now(), pstate, clock: Number(clock) });
+});
 
 // Resolves each "perf <name> <json>" line once, in order of arrival.
 function marks() {
@@ -64,24 +81,44 @@ function marks() {
 }
 
 // Samples CPU at the start and end marks. Processes that appear during the window count in full.
+// Every other process that runs through the window counts toward the other load, except the sampler.
 async function measure(mark, ids, more) {
   const startMark = await mark.wait('start');
+  const startedAt = Date.now();
   const before = await cpu(ids);
+  const othersBefore = await everyCpu();
   const end = await mark.wait('end');
+  const endedAt = Date.now();
   const after = await cpu(ids);
+  const othersAfter = await everyCpu();
   const late = (await more()).filter(id => !ids.includes(id));
   const cpuMs = after - before + await cpu(late);
-  return {
+  const measured = new Set([...ids, ...late, sampler.pid]);
+  let otherMs = 0;
+  for (const [id, ms] of othersAfter) if (!measured.has(id) && othersBefore.has(id)) otherMs += Math.max(0, ms - othersBefore.get(id));
+  const window = gpuSamples.filter(sample => sample.at >= startedAt && sample.at <= endedAt);
+  const clocks = window.map(sample => sample.clock).toSorted((a, b) => a - b);
+  const run = {
     drawingBuffer: startMark.drawingBuffer,
     processes: ids.length + late.length,
     fps: options.frames / (end.elapsedMs / 1000),
     cpuMsPerFrame: cpuMs / options.frames,
     callbackP50: end.callbackP50,
     callbackP95: end.callbackP95,
+    warmupMs: startMark.warmupMs,
+    windowMs: end.elapsedMs,
+    otherCores: otherMs / (endedAt - startedAt),
+    gpu: { samples: window.length, pstates: [...new Set(window.map(sample => sample.pstate))], clockMin: clocks[0], clockMedian: median(clocks), clockMax: clocks.at(-1) },
   };
+  const rejected = [
+    run.warmupMs < minimum.warmupMs && `warm-up ${run.warmupMs.toFixed(0)} ms is under ${minimum.warmupMs} ms`,
+    run.windowMs < minimum.windowMs && `measured window ${run.windowMs.toFixed(0)} ms is under ${minimum.windowMs} ms`,
+    (window.length === 0 || window.some(sample => sample.pstate !== 'P0')) && `GPU not at P0 in every sample (${run.gpu.pstates.join('/') || 'no samples'})`,
+    run.otherCores >= minimum.otherCores && `other processes averaged ${run.otherCores.toFixed(2)} cores`,
+  ].filter(Boolean);
+  return { ...run, counted: rejected.length === 0, rejected };
 }
 
-const median = values => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)];
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.glb': 'model/gltf-binary' };
 const page = `<!doctype html><html><head><meta charset="utf-8"><title>frame cost</title></head><body style="margin:0"><canvas width="${options.width}" height="${options.height}"></canvas><script type="module" src="/examples/scenes/index.js"></script></body></html>`;
 const server = createServer(async (request, response) => {
@@ -170,31 +207,41 @@ async function native(run) {
 }
 
 const results = [];
+const counted = side => results.filter(result => result.side === side && result.counted);
 try {
-  for (let run = 1; run <= options.runs; run++) {
+  for (let run = 1; run <= options.maxRuns && (counted('edge').length < options.runs || counted('native').length < options.runs); run++) {
     for (const side of [edge, native]) {
       const result = await side(run);
       results.push(result);
       console.log(`${result.side} run ${run}: ${result.fps.toFixed(0)} fps, ${result.cpuMsPerFrame.toFixed(3)} CPU ms per frame over ${result.processes} processes, callback p50 ${result.callbackP50.toFixed(3)} ms, drawing buffer ${result.drawingBuffer}${result.side === 'native' ? `, game thread CPU p50 ${result.hostCpuMsP50.toFixed(3)} ms, render thread CPU p50 ${result.renderCpuMsP50.toFixed(3)} ms, interval p50 ${result.hostIntervalMsP50.toFixed(3)} ms` : ''}`);
+      console.log(`  warm-up ${(result.warmupMs / 1000).toFixed(1)} s, window ${(result.windowMs / 1000).toFixed(1)} s, GPU ${result.gpu.pstates.join('/') || 'unknown'} at ${result.gpu.clockMin}-${result.gpu.clockMax} MHz over ${result.gpu.samples} samples, other processes ${result.otherCores.toFixed(2)} cores: ${result.counted ? 'counted' : `not counted (${result.rejected.join('; ')})`}`);
     }
   }
 } finally {
   sampler.stdin.end();
+  gpu.kill();
   await new Promise(resolveClose => server.close(resolveClose));
 }
 const summary = Object.fromEntries(['edge', 'native'].map(side => {
-  const runs = results.filter(result => result.side === side);
+  const runs = counted(side);
   return [side, {
+    runs: runs.length,
     fps: median(runs.map(result => result.fps)),
     cpuMsPerFrame: median(runs.map(result => result.cpuMsPerFrame)),
     callbackP50: median(runs.map(result => result.callbackP50)),
   }];
 }));
-const fpsWorse = 1 - summary.native.fps / summary.edge.fps;
-const cpuWorse = summary.native.cpuMsPerFrame / summary.edge.cpuMsPerFrame - 1;
-const verdict = fpsWorse > 0.1 || cpuWorse > 0.1 ? 'FAIL' : 'PASS';
+const enough = summary.edge.runs >= options.runs && summary.native.runs >= options.runs;
+const fpsWorse = enough ? 1 - summary.native.fps / summary.edge.fps : null;
+const cpuWorse = enough ? summary.native.cpuMsPerFrame / summary.edge.cpuMsPerFrame - 1 : null;
+const verdict = !enough ? 'INCONCLUSIVE' : fpsWorse > 0.1 || cpuWorse > 0.1 ? 'FAIL' : 'PASS';
 const report = { options, results, summary, nativeFpsShortfall: fpsWorse, nativeCpuExcess: cpuWorse, verdict };
 await writeFile(resolve(out, 'frame-cost.json'), JSON.stringify(report, null, 2));
+if (!enough) {
+  console.log(`counted runs: Edge ${summary.edge.runs}, native ${summary.native.runs}; the rule needs ${options.runs} each`);
+  console.log('E3 perf rule: INCONCLUSIVE');
+  process.exit(2);
+}
 console.log(`median fps: Edge ${summary.edge.fps.toFixed(0)}, native ${summary.native.fps.toFixed(0)} (native ${(fpsWorse * 100).toFixed(1)}% lower)`);
 console.log(`median CPU ms per frame: Edge ${summary.edge.cpuMsPerFrame.toFixed(3)}, native ${summary.native.cpuMsPerFrame.toFixed(3)} (native ${(cpuWorse * 100).toFixed(1)}% higher)`);
 console.log(`median JavaScript frame callback p50 (information only): Edge ${summary.edge.callbackP50.toFixed(3)} ms, native ${summary.native.callbackP50.toFixed(3)} ms`);
