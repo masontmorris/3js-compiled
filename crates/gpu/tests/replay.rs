@@ -840,7 +840,7 @@ fn stream(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
         body.extend_from_slice(payload);
     }
     let mut bytes = b"3JSC".to_vec();
-    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&threejsc_gpu::VERSION.to_le_bytes());
     bytes.extend_from_slice(&0u16.to_le_bytes());
     bytes.extend_from_slice(&(20 + body.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());

@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+/// The stream format version. It changes whenever the same bytes would replay differently.
+pub const VERSION: u16 = 3;
 const HEADER_LEN: usize = 20;
 const RECORD_LEN: usize = 8;
 
@@ -20,7 +22,7 @@ pub struct Stream<'a> {
 pub enum DecodeError {
     Truncated,
     Magic,
-    Version,
+    Version { found: u16 },
     Flags,
     Length,
     Opcode,
@@ -28,7 +30,13 @@ pub enum DecodeError {
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid GPU command stream: {self:?}")
+        match self {
+            Self::Version { found } => write!(
+                f,
+                "GPU command stream version {found} is not supported: this host replays version {VERSION}, so build the game with the three-native package from the same release as the host"
+            ),
+            _ => write!(f, "invalid GPU command stream: {self:?}"),
+        }
     }
 }
 
@@ -54,8 +62,9 @@ pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
     if &bytes[..4] != b"3JSC" {
         return Err(DecodeError::Magic);
     }
-    if u16_at(bytes, 4) != 2 {
-        return Err(DecodeError::Version);
+    let version = u16_at(bytes, 4);
+    if version != VERSION {
+        return Err(DecodeError::Version { found: version });
     }
     if u16_at(bytes, 6) != 0 {
         return Err(DecodeError::Flags);
