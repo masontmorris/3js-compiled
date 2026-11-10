@@ -3,7 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Longest the host holds input for the page while it waits for the page's layout at
+/// Servo's size. Older held input goes to the page placed on the rects the page listed last.
+pub(crate) const HOLD_LIMIT: Duration = Duration::from_millis(250);
 
 pub(crate) type Size = (u32, u32);
 type Rect = [f64; 4];
@@ -32,6 +36,7 @@ struct Held {
     pointer: Pointer,
     rect: usize,
     offset: (f64, f64),
+    at: Instant,
 }
 
 /// Routes pointer input by the HUD frame on screen. After a resize the host may show a frame
@@ -43,18 +48,21 @@ pub(crate) struct Pointers {
     /// The rects the page listed at the sizes of the shown frame, of Servo and of its latest
     /// reply.
     layouts: Vec<(Size, Vec<Rect>)>,
+    /// The rects the page listed last.
+    last: Vec<Rect>,
     held: VecDeque<Held>,
 }
 
 impl Pointers {
-    /// The page replied while laid out at `size`, listing `rects` when they changed.
+    /// The page replied while laid out at `size`, listing `rects` when they changed since the
+    /// rects it listed last.
     pub fn measured(&mut self, view: View, size: Size, rects: Option<Vec<Rect>>) {
-        let Some(rects) = rects else {
-            return;
-        };
+        if let Some(rects) = rects {
+            self.last = rects;
+        }
         self.layouts
             .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
-        self.layouts.push((size, rects));
+        self.layouts.push((size, self.last.clone()));
     }
     fn layout(&self, size: Size) -> Option<&[Rect]> {
         self.layouts
@@ -64,7 +72,7 @@ impl Pointers {
     }
     /// Whether `pointer` lands on a rect of the frame on screen. Input that does waits for
     /// `release`; the rest belongs to the game.
-    pub fn pointer(&mut self, view: View, pointer: Pointer, _now: Instant) -> bool {
+    pub fn pointer(&mut self, view: View, pointer: Pointer, now: Instant) -> bool {
         let Some((rect, r)) = view
             .shown
             .and_then(|shown| self.layout(shown))
@@ -84,18 +92,29 @@ impl Pointers {
             pointer,
             rect,
             offset,
+            at: now,
         });
         true
     }
     /// The held input, in order, placed on the page's layout at Servo's size once Servo lays
-    /// the page out at the size the host asked for and the page has been measured there. A
-    /// rect the new layout lacks keeps the input's own point.
-    pub fn release(&mut self, view: View, _now: Instant) -> Vec<Pointer> {
-        if view.servo != Some(view.requested) {
-            return Vec::new();
-        }
-        let Some((_, rects)) = self.layouts.iter().find(|(at, _)| *at == view.requested) else {
-            return Vec::new();
+    /// the page out at the size the host asked for and the page has replied there, or on the
+    /// rects the page listed last once the oldest has waited `HOLD_LIMIT`. A rect the layout
+    /// lacks keeps the input's own point.
+    pub fn release(&mut self, view: View, now: Instant) -> Vec<Pointer> {
+        let rects = match self
+            .layouts
+            .iter()
+            .find(|(at, _)| view.servo == Some(view.requested) && *at == view.requested)
+        {
+            Some((_, rects)) => rects,
+            None if self
+                .held
+                .front()
+                .is_some_and(|held| now.duration_since(held.at) >= HOLD_LIMIT) =>
+            {
+                &self.last
+            }
+            None => return Vec::new(),
         };
         self.held
             .drain(..)
@@ -118,6 +137,7 @@ impl Pointers {
     }
     pub fn clear(&mut self) {
         self.layouts.clear();
+        self.last.clear();
         self.held.clear();
     }
 }
@@ -126,7 +146,6 @@ impl Pointers {
 mod tests {
     use super::*;
     use crate::rings::Rings;
-    use std::time::Duration;
 
     const OLD: Size = (1280, 720);
     const NEW: Size = (1680, 720);
@@ -305,6 +324,44 @@ mod tests {
             host.take(),
             [Page(at(1, 1224.0)), Page(at(2, 1224.0))],
             "drawn at x=1060..1260 on screen; at 1344 the button is at 1124..1324"
+        );
+    }
+
+    /// Adversary round 4: a page whose replies leave out `rects` when they are unchanged. Its
+    /// left-anchored button has the same rect at every width.
+    #[test]
+    fn a_page_that_lists_unchanged_rects_once_keeps_its_buttons_after_a_resize() {
+        let left = vec![[40.0, 20.0, 200.0, 80.0]];
+        let mut host = Host::new(OLD, left);
+        host.resize(NEW);
+        host.click(100.0);
+        host.reply(NEW, None);
+        host.publish();
+        host.click(100.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 100.0)),
+                Page(at(2, 100.0)),
+                Page(at(1, 100.0)),
+                Page(at(2, 100.0)),
+            ],
+            "both clicks are on a drawn button"
+        );
+    }
+
+    #[test]
+    fn a_held_click_reaches_the_page_when_the_page_never_reports_the_new_size() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.click(1160.0);
+        host.wait(HOLD_LIMIT.as_millis() as u64 - 1);
+        assert_eq!(host.take(), []);
+        host.wait(1);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1160.0)), Page(at(2, 1160.0))],
+            "placed on the rects the page listed last"
         );
     }
 
