@@ -372,7 +372,7 @@ impl Importer {
 }
 /// Composites a blank texture into a scratch target, so that the first HUD frame does not
 /// pay for the pipeline's first use: without this, the game's submission after its first
-/// composite pass took about 0.4 ms longer. `Ui::new` runs off the game thread.
+/// composite pass took about 0.5 ms longer. `Ui::new` runs off the game thread.
 fn warm_up(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -436,7 +436,6 @@ fn warm_up(
         queue.submit(Some(encoder.finish()));
     }
 }
-
 fn retire(mut link: Link, kill: bool) {
     let _ = link.tx.send(Msg::Shutdown);
     std::thread::spawn(move || {
