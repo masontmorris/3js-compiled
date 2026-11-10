@@ -4,7 +4,8 @@
 // A PresentMon capture through --presentmon spans each run and counts the presents of that run's
 // processes inside the measured window. A run counts only when its warm-up lasts at least 3 s, its
 // measured frames at least 10 s, the GPU stays at P0 in every nvidia-smi sample of the measured
-// window, other processes average under one core over it, and its capture spans the window. The
+// window, other processes average under one core over it, and its capture spans the window with
+// no gap between presents over 100 ms, because PresentMon can lose events without saying so. The
 // tool runs Edge and native pairs until each side has --runs counted runs, or --max-runs pairs have
 // run, or a capture is unavailable, and the rule's verdict uses counted runs only.
 // Edge runs in a window by default, so both sides present to the desktop compositor; --edge
@@ -33,7 +34,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (!(key in options) || args[i + 1] === undefined) throw new Error(`Unknown or incomplete argument: ${args[i]}`);
   options[key] = typeof options[key] === 'number' ? Number(args[i + 1]) : args[i + 1];
 }
-const minimum = { warmupMs: 3000, windowMs: 10000, otherCores: 1 };
+const minimum = { warmupMs: 3000, windowMs: 10000, otherCores: 1, presentGapMs: 100 };
 if (!(options.frames >= 1 && options.warmup >= 1 && options.runs >= 1 && options.maxRuns >= options.runs)) throw new Error('--frames, --warmup and --runs must be positive, and --max-runs at least --runs');
 if (!(Number.isInteger(options.captureSeconds) && options.captureSeconds >= 1 && options.captureSeconds <= 120)) throw new Error('--capture-seconds is a whole number from 1 to 120');
 if (!['headed', 'headless'].includes(options.edge)) throw new Error('--edge is headed or headless');
@@ -141,6 +142,7 @@ async function withPresents(result, capture, ids, idle) {
     const seconds = (result.qpcEnd - result.qpcStart) / 1000;
     presents = { presentedFps: window.presented / seconds, displayedFps: window.displayed / seconds, ...window };
     if (idle) presents.idlePresentsPerSecond = countPresents(text, ids, idle.from, idle.to).presented / ((idle.to - idle.from) / 1000);
+    if (window.largestGapMs > minimum.presentGapMs) rejected.push(`the capture has ${window.largestGapMs.toFixed(0)} ms without a present inside the window, so it may have lost presents`);
     if (window.before === 0) rejected.push('the capture has no present of the run before its window, so it may have started late');
     if (Math.max(result.qpcEnd, idle?.to ?? 0) > capture.capturedUntil) rejected.push(`the capture may end before the window; raise --capture-seconds above ${options.captureSeconds}`);
   } catch (error) {
@@ -266,7 +268,7 @@ try {
       if (presents) {
         const processes = Object.entries(presents.processes).map(([id, count]) => `${id}${result.gpuProcesses?.includes(Number(id)) ? ' (GPU process)' : ''} ${count}`);
         const modes = Object.entries(presents.presentModes).map(([mode, count]) => `${mode} ${count}`);
-        console.log(`  PresentMon: ${presents.presentedFps.toFixed(0)} presented fps, ${presents.displayedFps.toFixed(0)} displayed fps; presents by process ${processes.join(', ') || 'none'}; ${Object.keys(presents.swapChains).length} swap chains; ${modes.join(', ')}${result.side === 'edge' ? `; ${presents.idlePresentsPerSecond.toFixed(0)} presents per second after the page stopped drawing` : ''}`);
+        console.log(`  PresentMon: ${presents.presentedFps.toFixed(0)} presented fps, ${presents.displayedFps.toFixed(0)} displayed fps, largest gap ${presents.largestGapMs.toFixed(1)} ms; presents by process ${processes.join(', ') || 'none'}; ${Object.keys(presents.swapChains).length} swap chains; ${modes.join(', ')}${result.side === 'edge' ? `; ${presents.idlePresentsPerSecond.toFixed(0)} presents per second after the page stopped drawing` : ''}`);
       }
       console.log(`  warm-up ${(result.warmupMs / 1000).toFixed(1)} s, window ${(result.windowMs / 1000).toFixed(1)} s, GPU ${result.gpu.pstates.join('/') || 'unknown'} at ${result.gpu.clockMin}-${result.gpu.clockMax} MHz over ${result.gpu.samples} samples, other processes ${result.otherCores.toFixed(2)} cores: ${result.counted ? 'counted' : `not counted (${result.rejected.join('; ')})`}`);
       if (!presents) {

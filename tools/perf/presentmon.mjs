@@ -28,7 +28,9 @@ export async function startCapture(script, processes, seconds, out) {
 
 // Counts the presents of the given process IDs between from and to. A present is displayed when MsUntilDisplayed
 // is a number, and PresentMon writes NA for a frame that never reached the screen. `before` and `after` count the
-// same processes' presents outside the window, so a caller can check that the capture spans it.
+// same processes' presents outside the window, so a caller can check that the capture spans it. `largestGapMs` is
+// the longest time between consecutive presents in the window. PresentMon can lose events without reporting it, and
+// a long gap in a program that presents continuously is how that shows.
 export function countPresents(text, ids, from, to) {
   const [header, ...lines] = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   const columns = header.split(',');
@@ -38,8 +40,9 @@ export function countPresents(text, ids, from, to) {
     return index;
   };
   const [pid, at, untilDisplayed, mode, swapChain] = ['ProcessID', 'CPUStartQPCTimeInMs', 'MsUntilDisplayed', 'PresentMode', 'SwapChainAddress'].map(column);
-  const counts = { before: 0, after: 0, presented: 0, displayed: 0, processes: {}, swapChains: {}, presentModes: {} };
+  const counts = { before: 0, after: 0, presented: 0, displayed: 0, largestGapMs: 0, processes: {}, swapChains: {}, presentModes: {} };
   const add = (map, key) => { map[key] = (map[key] ?? 0) + 1; };
+  let previous = null;
   for (const line of lines) {
     const row = line.split(',');
     if (!ids.has(Number(row[pid]))) continue;
@@ -48,6 +51,8 @@ export function countPresents(text, ids, from, to) {
     else if (time > to) counts.after++;
     else {
       counts.presented++;
+      if (previous !== null) counts.largestGapMs = Math.max(counts.largestGapMs, time - previous);
+      previous = time;
       if (row[untilDisplayed] !== '' && Number.isFinite(Number(row[untilDisplayed]))) counts.displayed++;
       add(counts.processes, row[pid]);
       add(counts.swapChains, row[swapChain]);

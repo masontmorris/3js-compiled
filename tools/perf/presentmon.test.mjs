@@ -18,6 +18,7 @@ test('counts presented and displayed frames of the given processes inside the wi
   assert.equal(counts.displayed, 2);
   assert.equal(counts.before, 1);
   assert.equal(counts.after, 1);
+  assert.equal(counts.largestGapMs, 0.5);
   assert.deepEqual(counts.processes, { 10: 3 });
   assert.deepEqual(counts.presentModes, { 'Hardware: Independent Flip': 2, 'Composed: Flip': 1 });
 });
