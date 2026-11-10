@@ -358,6 +358,41 @@ test('a canvas resize records RESIZE_SURFACE in order among the frame commands',
   }
 });
 
+test('every set of the canvas size records RESIZE_SURFACE, even one that ends at the size it had', async () => {
+  const canvas = { width: 1280, height: 720, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  renderer.setSize(1280, 720, false);
+  await renderer.init();
+  try {
+    const { Scene, PerspectiveCamera } = await import('three/webgpu');
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const resizes = frame => decodeCommands(frame).flatMap(item => {
+      const name = { [Opcode.ACQUIRE_SURFACE]: 'acquire', [Opcode.RESIZE_SURFACE]: 'resize' }[item.opcode];
+      const words = new Uint32Array(item.payload.buffer, item.payload.byteOffset, item.payload.byteLength / 4);
+      return name ? [`${name} ${words.at(-2)}x${words.at(-1)}`] : [];
+    });
+    renderer.render(scene, camera);
+    assert.deepEqual(resizes(backend.takeFrame()), ['acquire 1280x720'], 'a set before init is not a resize');
+    renderer.render(scene, camera);
+    assert.deepEqual(resizes(backend.takeFrame()), ['acquire 1280x720']);
+    renderer.render(scene, camera);
+    renderer.setSize(640, 360, false);
+    renderer.setSize(1280, 720, false);
+    assert.deepEqual(resizes(backend.takeFrame()), ['acquire 1280x720', 'resize 1280x720']);
+    renderer.render(scene, camera);
+    renderer.setSize(1280, 720, false);
+    assert.deepEqual(resizes(backend.takeFrame()), ['acquire 1280x720', 'resize 1280x720']);
+    canvas.height = 720;
+    renderer.render(scene, camera);
+    assert.deepEqual(resizes(backend.takeFrame()), ['resize 1280x720', 'acquire 1280x720']);
+    assert.deepEqual([canvas.width, canvas.height, Object.keys(canvas).includes('width')], [1280, 720, true]);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
 test('render target readbacks return the typed array three returns for the format', async () => {
   const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
   const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });

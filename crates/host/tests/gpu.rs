@@ -556,3 +556,25 @@ fn a_canvas_resize_in_a_frame_that_draws_nothing_keeps_the_last_image() {
         "Edge keeps the last red frame"
     );
 }
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_resize_and_back_after_a_draw_discards_that_frame() {
+    let shown = canvas_resize("draw-resize-back");
+    assert_eq!(
+        shown.get_pixel(640, 360).0,
+        [255, 0, 0, 255],
+        "Edge keeps the last red frame"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn setting_the_canvas_size_it_has_after_a_draw_discards_that_frame() {
+    let shown = canvas_resize("draw-setsize-same");
+    assert_eq!(
+        shown.get_pixel(640, 360).0,
+        [255, 0, 0, 255],
+        "Edge keeps the last red frame"
+    );
+}
