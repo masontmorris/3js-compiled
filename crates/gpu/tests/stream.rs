@@ -35,3 +35,14 @@ fn damaged_or_truncated_frames_are_rejected() {
     damaged[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(decode(&damaged), Err(DecodeError::Truncated));
 }
+
+#[test]
+fn a_stream_of_an_earlier_version_is_rejected_by_version() {
+    let mut old = include_bytes!("fixtures/frame.bin").to_vec();
+    old[4..6].copy_from_slice(&2u16.to_le_bytes());
+    let message = decode(&old).unwrap_err().to_string();
+    assert!(
+        message.contains("version 2") && message.contains("version 3"),
+        "{message}"
+    );
+}
