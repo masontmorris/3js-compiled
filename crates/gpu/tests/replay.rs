@@ -1,3 +1,8 @@
+use std::{
+    ops::{Deref, DerefMut},
+    sync::{Mutex, MutexGuard, PoisonError},
+};
+
 use threejsc_gpu::{Executor, Response};
 
 // Each bound sits just above the scene's difference from Edge on llvmpipe and WARP, so a replay
@@ -7,7 +12,30 @@ const SHADOW_BOUND: f64 = 0.0001;
 const SHADOW_REGION_BOUND: f64 = 0.00015;
 const INVALID_WGSL_BOUND: f64 = 0.00001;
 
-fn device() -> (wgpu::Device, wgpu::Queue) {
+/// A value that uses the software adapter while no other test in this process does. WARP's shader
+/// JIT can fault when several devices in one process compile and destroy shaders at once, so a test
+/// keeps its turn until its device is dropped. docs/testing.md has the crash evidence.
+struct Exclusive<T> {
+    value: T,
+    _turn: MutexGuard<'static, ()>,
+}
+
+impl<T> Deref for Exclusive<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for Exclusive<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+fn device() -> Exclusive<(wgpu::Device, wgpu::Queue)> {
+    static ADAPTER: Mutex<()> = Mutex::new(());
+    let turn = ADAPTER.lock().unwrap_or_else(PoisonError::into_inner);
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
         flags: wgpu::InstanceFlags::default(),
@@ -21,12 +49,21 @@ fn device() -> (wgpu::Device, wgpu::Queue) {
     }))
     .expect("a software adapter is required");
     assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
-    pollster::block_on(adapter.request_device(&Default::default())).unwrap()
+    Exclusive {
+        value: pollster::block_on(adapter.request_device(&Default::default())).unwrap(),
+        _turn: turn,
+    }
 }
 
-fn executor() -> Executor {
-    let (device, queue) = device();
-    Executor::new(device, queue)
+fn executor() -> Exclusive<Executor> {
+    let Exclusive {
+        value: (device, queue),
+        _turn,
+    } = device();
+    Exclusive {
+        value: Executor::new(device.clone(), queue.clone()),
+        _turn,
+    }
 }
 
 fn error(command: usize, request: Option<u32>, message: &str) -> Response {
@@ -356,7 +393,8 @@ fn recorded_draws_fill_targets_with_bound_uniform_color() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
-    let (device, queue) = device();
+    let gpu = device();
+    let (device, queue) = &*gpu;
     let surface = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
@@ -371,7 +409,7 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let mut executor = Executor::new(device, queue);
+    let mut executor = Executor::new(device.clone(), queue.clone());
     let frame = include_bytes!("fixtures/surface.bin");
     assert_eq!(
         executor.replay(frame, Some(&surface)).unwrap(),
@@ -424,9 +462,10 @@ fn surface_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Text
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn a_stream_cannot_destroy_the_host_surface() {
-    let (device, queue) = device();
-    let surface = surface_texture(&device, 4, 4);
-    let mut executor = Executor::new(device, queue);
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
     assert_eq!(
         executor
             .replay(
@@ -451,9 +490,10 @@ fn a_stream_cannot_destroy_the_host_surface() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn each_frame_that_acquires_the_surface_starts_transparent() {
-    let (device, queue) = device();
-    let surface = surface_texture(&device, 4, 4);
-    let mut executor = Executor::new(device, queue);
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
     let acquire = |texture: u32, view: u32| {
         [
             (30, words(&[texture, 4, 4])),
@@ -510,9 +550,10 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn errors_outside_error_scopes_become_responses() {
-    let (device, queue) = device();
-    let surface = surface_texture(&device, 4, 4);
-    let mut executor = Executor::new(device, queue);
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
     surface.destroy();
     let responses = executor
         .replay(include_bytes!("fixtures/surface.bin"), Some(&surface))
@@ -541,9 +582,10 @@ fn parity(
     region: [u32; 4],
     expected_error: Option<&str>,
 ) -> Parity {
-    let (device, queue) = device();
-    let surface = surface_texture(&device, 1280, 720);
-    let mut executor = Executor::new(device, queue);
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 1280, 720);
+    let mut executor = Executor::new(device.clone(), queue.clone());
     let mut responses = executor.replay(frames[0], Some(&surface)).unwrap();
     responses.extend(executor.replay(frames[1], Some(&surface)).unwrap());
     let unexpected: Vec<_> = responses
@@ -908,8 +950,9 @@ fn mutated_streams_return_errors_and_never_panic() {
     };
     let iterations = setting("FUZZ_ITERATIONS", 270);
     let mut rng = Rng(setting("FUZZ_SEED", 0x9e37_79b9_7f4a_7c15));
-    let (device, queue) = device();
-    let surface = surface_texture(&device, 1280, 720);
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 1280, 720);
     for iteration in 0..iterations {
         let (target, setup) = fixtures[iteration as usize % fixtures.len()];
         let mut executor = Executor::new(device.clone(), queue.clone());
