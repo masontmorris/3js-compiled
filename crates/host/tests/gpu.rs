@@ -508,3 +508,40 @@ fn closing_the_window_joins_every_thread() {
     assert!(frames > 0, "{log}");
     assert_eq!(rows.lines().count(), frames + 1, "every frame has a row");
 }
+
+/// Runs `canvas-resize.js` in `mode` and captures the window 20 frames after its last draw.
+fn canvas_resize(mode: &str) -> image::RgbaImage {
+    let dir = workdir(mode);
+    let capture = dir.join("capture.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 40},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("canvas-resize"), &steps, &["--scene", mode]);
+    assert!(status.success(), "{mode}: host exited with {status}\n{log}");
+    assert!(log.contains("frame 20 ends"), "{mode}: {log}");
+    image::open(&capture).unwrap().to_rgba8()
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_resize_after_a_draw_discards_that_frame() {
+    let shown = canvas_resize("draw-then-resize");
+    assert_eq!(
+        shown.get_pixel(640, 360).0,
+        [255, 0, 0, 255],
+        "Edge keeps the last red frame"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_resized_after_its_last_draw_is_transparent() {
+    let shown = canvas_resize("resize-after-draw");
+    assert_eq!(
+        shown.get_pixel(640, 360).0,
+        [0, 0, 0, 0],
+        "Edge shows a transparent canvas"
+    );
+}

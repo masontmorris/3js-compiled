@@ -323,6 +323,39 @@ test('a canvas resize within a frame acquires a texture of the new size', async 
   await renderer.dispose();
 });
 
+test('a canvas resize records RESIZE_SURFACE in order among the frame commands', async () => {
+  const canvas = { width: 1280, height: 720, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  try {
+    const { Scene, PerspectiveCamera } = await import('three/webgpu');
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const sized = frame => {
+      const records = decodeCommands(frame);
+      const submit = records.findLastIndex(item => item.opcode === Opcode.SUBMIT);
+      return records.flatMap((item, index) => {
+        const name = { [Opcode.ACQUIRE_SURFACE]: 'acquire', [Opcode.RESIZE_SURFACE]: 'resize' }[item.opcode];
+        const words = new Uint32Array(item.payload.buffer, item.payload.byteOffset, item.payload.byteLength / 4);
+        return name ? [`${name} ${words.at(-2)}x${words.at(-1)}${index > submit ? ' after submit' : ''}`] : [];
+      });
+    };
+    renderer.render(scene, camera);
+    renderer.setSize(640, 360, false);
+    assert.deepEqual(sized(backend.takeFrame()), ['acquire 1280x720', 'resize 640x360 after submit']);
+    renderer.setSize(320, 180, false);
+    renderer.setSize(1280, 720, false);
+    assert.deepEqual(sized(backend.takeFrame()), ['resize 1280x720 after submit']);
+    renderer.setSize(640, 360, false);
+    renderer.render(scene, camera);
+    renderer.setSize(1280, 720, false);
+    assert.deepEqual(sized(backend.takeFrame()), ['resize 640x360', 'acquire 640x360', 'resize 1280x720 after submit']);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
 test('render target readbacks return the typed array three returns for the format', async () => {
   const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
   const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
