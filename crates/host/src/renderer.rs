@@ -43,7 +43,8 @@ pub struct Renderer {
     /// other frames keep the last image, as a browser canvas does.
     game: wgpu::Texture,
     shown: Shown,
-    stretch: wgpu::util::TextureBlitter,
+    /// Draws a `Shown::Stretched` image over the whole window.
+    stretch: wgpu::RenderPipeline,
 }
 /// What each frame copies to the window.
 enum Shown {
@@ -51,7 +52,7 @@ enum Shown {
     Clear,
     /// The last image the game drew before the window's size changed, which the window shows
     /// scaled to its size, as a browser scales a canvas, until the game draws at the new size.
-    Stretched(wgpu::TextureView),
+    Stretched(wgpu::BindGroup),
     /// The game has drawn into `game` at the window's size.
     Game,
 }
@@ -154,9 +155,7 @@ impl Renderer {
             executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
             game: game_texture(&target.device, &target.config),
             shown: Shown::Clear,
-            stretch: wgpu::util::TextureBlitterBuilder::new(&target.device, target.config.format)
-                .sample_type(wgpu::FilterMode::Linear)
-                .build(),
+            stretch: stretch_pipeline(&target.device, target.config.format),
             surface: target.surface,
             device: target.device,
             queue: target.queue,
@@ -200,8 +199,9 @@ impl Renderer {
             self.game = game_texture(&self.device, &self.config);
         }
     }
-    /// A copy of `game` that the blitter can sample. `game` has a canvas's usages, which exclude it.
-    fn snapshot(&self) -> wgpu::TextureView {
+    /// A copy of `game` bound for `stretch` with bilinear filtering, as a browser scales a canvas.
+    /// `game` has a canvas's usages, which exclude sampling.
+    fn snapshot(&self) -> wgpu::BindGroup {
         let copy = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("stretched"),
             size: self.game.size(),
@@ -219,7 +219,27 @@ impl Renderer {
             self.game.size(),
         );
         self.queue.submit([encoder.finish()]);
-        copy.create_view(&Default::default())
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("stretched"),
+            layout: &self.stretch.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &copy.create_view(&Default::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        })
     }
     fn acquire(&self) -> Result<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
@@ -252,29 +272,15 @@ impl Renderer {
                 frame.texture.as_image_copy(),
                 size,
             ),
-            Shown::Stretched(last) => self.stretch.copy(&self.device, &mut encoder, last, &view),
+            Shown::Stretched(image) => {
+                let mut pass = window_pass(&mut encoder, &view, wgpu::Color::TRANSPARENT);
+                pass.set_pipeline(&self.stretch);
+                pass.set_bind_group(0, image, &[]);
+                pass.draw(0..3, 0..1);
+            }
             Shown::Clear => {
-                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("clear"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: clear[0],
-                                g: clear[1],
-                                b: clear[2],
-                                a: clear[3],
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
+                let [r, g, b, a] = clear;
+                window_pass(&mut encoder, &view, wgpu::Color { r, g, b, a });
             }
         }
         // Overlays that composite over the game frame, such as E2's UI, draw here so captures
@@ -349,6 +355,55 @@ impl Renderer {
         }
         Ok(frame)
     }
+}
+
+/// A render pass over the window that starts from `clear`.
+fn window_pass<'a>(
+    encoder: &'a mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    clear: wgpu::Color,
+) -> wgpu::RenderPass<'a> {
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("window"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(clear),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    })
+}
+
+fn stretch_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("stretch.wgsl"));
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("stretch"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: None,
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: None,
+            compilation_options: Default::default(),
+            targets: &[Some(format.into())],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 /// A texture with the surface's size, format and the usages a stream sees on the surface.
