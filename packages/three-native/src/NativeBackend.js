@@ -651,6 +651,9 @@ export class NativeBackend extends WebGPUBackend {
   // init() holds nothing. Renderer.dispose() awaits before it reaches backend.dispose(), and games
   // often create the next renderer without awaiting it, so calling dispose() releases the surface.
   async init(renderer) {
+    // WebGPURenderer retries a failed init() on WebGL, which the host does not have, and rejects with
+    // that error in place of this one.
+    renderer._getFallback = null;
     assertSurfaceFree();
     const device = new RecordingDevice(this.capabilities, host);
     host.device = this.recordingDevice = this.parameters.device = device;
