@@ -4,10 +4,11 @@
 // A PresentMon capture through --presentmon spans each run and counts the presents of that run's
 // processes inside the measured window. A run counts only when its warm-up lasts at least 3 s, its
 // measured frames at least 10 s, the GPU stays at P0 in every nvidia-smi sample of the measured
-// window, other processes average under one core over it, and its capture spans the window with
-// no gap between presents over 100 ms, because PresentMon can lose events without saying so. The
-// tool runs Edge and native pairs until each side has --runs counted runs, or --max-runs pairs have
-// run, or a capture is unavailable, and the rule's verdict uses counted runs only.
+// window, the rest of the machine averages under one core over it, and its capture spans the
+// window with no gap between presents over 100 ms, because PresentMon can lose events without
+// saying so. The tool runs Edge and native pairs until each side has --runs counted runs, or
+// --max-runs pairs have run, or a capture is unavailable, and the rule's verdict uses counted runs
+// only.
 // Edge runs in a window by default, so both sides present to the desktop compositor; --edge
 // headless measures headless Edge, which presents nothing, so its runs never count.
 // Usage, from the repository root:
@@ -17,7 +18,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 import { basename, extname, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -54,7 +55,8 @@ async function ask(line) {
 }
 const cpu = async ids => ids.length ? Number(await ask(`cpu ${ids.join(',')}`)) : 0;
 const discover = async text => (await ask(`discover ${text}`)).split(',').filter(Boolean).map(Number);
-const everyCpu = async () => new Map((await ask('all')).split(',').filter(Boolean).map(pair => pair.split(':').map(Number)));
+// The busy CPU milliseconds of every processor, which counts every process, including elevated and short-lived ones.
+const machineMs = () => cpus().reduce((sum, { times }) => sum + times.user + times.sys, 0);
 
 // GPU state every 250 ms, stamped on arrival.
 const gpuSamples = [];
@@ -88,23 +90,20 @@ function marks() {
 }
 
 // Samples CPU at the start and end marks. Processes that appear during the window count in full.
-// Every other process that runs through the window counts toward the other load, except the sampler.
+// The other load is the machine's busy time over the window less the measured processes' CPU time.
 async function measure(mark, ids, more) {
   const startMark = await mark.wait('start');
   const startedAt = Date.now();
   const qpcStart = qpcNow();
   const before = await cpu(ids);
-  const othersBefore = await everyCpu();
+  const machineBefore = machineMs();
   const end = await mark.wait('end');
   const endedAt = Date.now();
   const qpcEnd = qpcNow();
   const after = await cpu(ids);
-  const othersAfter = await everyCpu();
+  const machineAfter = machineMs();
   const late = (await more()).filter(id => !ids.includes(id));
   const cpuMs = after - before + await cpu(late);
-  const measured = new Set([...ids, ...late, sampler.pid]);
-  let otherMs = 0;
-  for (const [id, ms] of othersAfter) if (!measured.has(id) && othersBefore.has(id)) otherMs += Math.max(0, ms - othersBefore.get(id));
   const window = gpuSamples.filter(sample => sample.at >= startedAt && sample.at <= endedAt);
   const clocks = window.map(sample => sample.clock).toSorted((a, b) => a - b);
   const run = {
@@ -118,14 +117,14 @@ async function measure(mark, ids, more) {
     windowMs: end.elapsedMs,
     qpcStart,
     qpcEnd,
-    otherCores: otherMs / (endedAt - startedAt),
+    otherCores: (machineAfter - machineBefore - cpuMs) / (endedAt - startedAt),
     gpu: { samples: window.length, pstates: [...new Set(window.map(sample => sample.pstate))], clockMin: clocks[0], clockMedian: median(clocks), clockMax: clocks.at(-1) },
   };
   const rejected = [
     run.warmupMs < minimum.warmupMs && `warm-up ${run.warmupMs.toFixed(0)} ms is under ${minimum.warmupMs} ms`,
     run.windowMs < minimum.windowMs && `measured window ${run.windowMs.toFixed(0)} ms is under ${minimum.windowMs} ms`,
     (window.length === 0 || window.some(sample => sample.pstate !== 'P0')) && `GPU not at P0 in every sample (${run.gpu.pstates.join('/') || 'no samples'})`,
-    run.otherCores >= minimum.otherCores && `other processes averaged ${run.otherCores.toFixed(2)} cores`,
+    run.otherCores >= minimum.otherCores && `the rest of the machine averaged ${run.otherCores.toFixed(2)} cores`,
   ].filter(Boolean);
   return { ...run, counted: rejected.length === 0, rejected };
 }
@@ -270,7 +269,7 @@ try {
         const modes = Object.entries(presents.presentModes).map(([mode, count]) => `${mode} ${count}`);
         console.log(`  PresentMon: ${presents.presentedFps.toFixed(0)} presented fps, ${presents.displayedFps.toFixed(0)} displayed fps, largest gap ${presents.largestGapMs.toFixed(1)} ms; presents by process ${processes.join(', ') || 'none'}; ${Object.keys(presents.swapChains).length} swap chains; ${modes.join(', ')}${result.side === 'edge' ? `; ${presents.idlePresentsPerSecond.toFixed(0)} presents per second after the page stopped drawing` : ''}`);
       }
-      console.log(`  warm-up ${(result.warmupMs / 1000).toFixed(1)} s, window ${(result.windowMs / 1000).toFixed(1)} s, GPU ${result.gpu.pstates.join('/') || 'unknown'} at ${result.gpu.clockMin}-${result.gpu.clockMax} MHz over ${result.gpu.samples} samples, other processes ${result.otherCores.toFixed(2)} cores: ${result.counted ? 'counted' : `not counted (${result.rejected.join('; ')})`}`);
+      console.log(`  warm-up ${(result.warmupMs / 1000).toFixed(1)} s, window ${(result.windowMs / 1000).toFixed(1)} s, GPU ${result.gpu.pstates.join('/') || 'unknown'} at ${result.gpu.clockMin}-${result.gpu.clockMax} MHz over ${result.gpu.samples} samples, rest of the machine ${result.otherCores.toFixed(2)} cores: ${result.counted ? 'counted' : `not counted (${result.rejected.join('; ')})`}`);
       if (!presents) {
         unavailable = result.rejected.find(reason => reason.startsWith('PresentMon'));
         break runs;
