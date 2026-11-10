@@ -82,11 +82,16 @@ pub struct Executor {
     /// The canvas the host shows, as the replay started.
     shown: Option<wgpu::Texture>,
     /// What replaces the shown canvas at the end of the replay: the bound canvas texture, or a
-    /// transparent one after a resize while nothing was bound.
+    /// transparent one after a resize discards a texture acquired after an earlier resize.
     next: Option<wgpu::Texture>,
     /// The canvas texture that the last frame replaced or a resize discarded, which the next
     /// acquire of its size reuses, so frames alternate between two textures.
     spare: Option<wgpu::Texture>,
+    /// Whether the canvas was resized after the shown image was drawn.
+    resized: bool,
+    /// Whether the bound canvas texture was acquired after a resize, so the window shows the
+    /// resized canvas from then on.
+    acquired_resized: bool,
     surface_handles: Vec<u32>,
     surface_used: bool,
     trailed: bool,
@@ -165,6 +170,8 @@ impl Executor {
             shown: None,
             next: None,
             spare: None,
+            resized: false,
+            acquired_resized: false,
             surface_handles: Vec::new(),
             surface_used: false,
             trailed: false,
@@ -306,6 +313,7 @@ impl Executor {
         self.pass_view = None;
         if let Some(surface) = self.surface.take() {
             self.next = Some(surface);
+            self.resized = false;
         }
         self.surface_used = self.next.is_some();
         if let (Some(canvas), Some(next)) = (canvas, self.next.take()) {
@@ -316,7 +324,7 @@ impl Executor {
     }
 
     /// Whether the last replay replaced the shown canvas: with the canvas texture it bound with
-    /// `ACQUIRE_SURFACE`, or with a transparent one after `RESIZE_SURFACE`.
+    /// `ACQUIRE_SURFACE`, or with a transparent one after `RESIZE_SURFACE` discarded it.
     pub fn surface_used(&self) -> bool {
         self.surface_used
     }
@@ -1514,6 +1522,7 @@ impl Executor {
                         let canvas = self.canvas_texture(width, height)?;
                         self.surface = Some(canvas.clone());
                         self.surface_clear = SurfaceClear::Needed;
+                        self.acquired_resized = self.resized;
                         canvas
                     }
                 };
@@ -1535,17 +1544,20 @@ impl Executor {
             }
             32 => {
                 size(payload, 8)?;
-                // As in a browser, a resize discards the canvas texture the frame acquired, and
-                // the window keeps the last image. With none acquired, the canvas becomes
-                // transparent at its new size.
+                // As in Edge, a resize discards the canvas texture the frame acquired, and the
+                // window keeps its last image. A texture acquired after an earlier resize already
+                // put the resized canvas in the window, so discarding it leaves that canvas
+                // transparent.
                 if let Some(discarded) = self.surface.take() {
                     self.spare = Some(discarded);
                     self.surface_clear = SurfaceClear::Done;
-                } else {
-                    let canvas = self.canvas_texture(u32_at(payload, 0), u32_at(payload, 4))?;
-                    self.clear(&canvas);
-                    self.next = Some(canvas);
+                    if self.acquired_resized {
+                        let canvas = self.canvas_texture(u32_at(payload, 0), u32_at(payload, 4))?;
+                        self.clear(&canvas);
+                        self.next = Some(canvas);
+                    }
                 }
+                self.resized = true;
                 Ok(None)
             }
             31 => {
