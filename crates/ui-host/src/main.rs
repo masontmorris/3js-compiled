@@ -120,6 +120,7 @@ struct Slot {
     surface_texture: Option<surfman::SurfaceTexture>,
     framebuffer: glow::NativeFramebuffer,
     pub_id: u64,
+    published: Instant,
     used: bool,
     last_use: u64,
 }
@@ -331,6 +332,7 @@ struct Stats {
     rings: u64,
     resizes_held: u64,
     pointers_unplaced: u64,
+    gpu_waits: u64,
     since: Option<(Instant, Duration, u64)>,
 }
 
@@ -496,6 +498,10 @@ fn main() {
     let mut ring_at = Instant::now();
     // The start of the current run of frames skipped for no free slot, and its length.
     let mut skipping: Option<(Instant, u64)> = None;
+    // The ready value of this process's latest publication, and whether a due frame waits for
+    // the GPU to finish it.
+    let mut last_ready: Option<u64> = None;
+    let mut gpu_wait = false;
 
     let preferences = Preferences {
         shell_background_color_rgba: [0.0, 0.0, 0.0, 0.0],
@@ -547,12 +553,11 @@ fn main() {
     loop {
         let mut events = Vec::new();
         let now = Instant::now();
+        let longest = Duration::from_millis(if gpu_wait { 1 } else { 16 });
         let wait = pacer
             .borrow()
             .deadline(now)
-            .map_or(Duration::from_millis(16), |at| {
-                (at - now).min(Duration::from_millis(16))
-            });
+            .map_or(longest, |at| (at - now).min(longest));
         match rx.recv_timeout(wait) {
             Ok(e) => events.push(e),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -722,7 +727,10 @@ fn main() {
                 give(&webview, &unhandled, pointer);
             }
         }
-        let due = new_frame.get() || relaid || last_paint.elapsed() >= Duration::from_millis(100);
+        let due = new_frame.get()
+            || relaid
+            || gpu_wait
+            || last_paint.elapsed() >= Duration::from_millis(100);
         // Until the first patch is applied, a published frame would show the page without
         // state, so these paints are not published. The first paint of the loaded page takes
         // 70 to 110 ms; the host sends state only after it, so the first patch is current
@@ -735,6 +743,7 @@ fn main() {
             }
         };
         if due && (warming || relaying) {
+            gpu_wait = false;
             let fresh = new_frame.replace(false);
             last_paint = Instant::now();
             webview.paint();
@@ -743,7 +752,17 @@ fn main() {
             if warmed_at.is_none() && webview.load_status() == LoadStatus::Complete {
                 warmed_at = Some(Instant::now());
             }
+        } else if due
+            && last_ready.is_some_and(|value| unsafe { ready_fence.GetCompletedValue() } < value)
+        {
+            // The GPU has not finished this process's latest publication. The host cannot pick a
+            // frame published now before then, and the frame would hold a slot meanwhile.
+            if !gpu_wait {
+                stats.borrow_mut().gpu_waits += 1;
+            }
+            gpu_wait = true;
         } else if due {
+            gpu_wait = false;
             let done_completed = unsafe { done_fence.GetCompletedValue() };
             let free = slots
                 .iter()
@@ -757,7 +776,8 @@ fn main() {
             if let Some(index) = free {
                 if let Some((since, n)) = skipping.take() {
                     eprintln!(
-                        "[ui-host] skipped {n} frames for no free ring slot over {} ms",
+                        "[ui-host] skipped {n} frames for no free ring slot over {} ms; then \
+                         picked {picked}, done fence {done_completed}",
                         since.elapsed().as_millis()
                     );
                 }
@@ -782,8 +802,10 @@ fn main() {
                 painted(fresh);
 
                 next_pub += 1;
+                last_ready = Some(ready_value);
                 let slot = &mut slots[index];
                 slot.pub_id = next_pub;
+                slot.published = Instant::now();
                 slot.used = false;
                 send(&Msg::FrameReady {
                     slot: index as u8,
@@ -807,12 +829,18 @@ fn main() {
                         skipping = Some((Instant::now(), 1));
                         let state: Vec<_> = slots
                             .iter()
-                            .map(|s| (s.pub_id, s.used, s.last_use))
+                            .map(|s| {
+                                let age = s.published.elapsed().as_millis();
+                                (s.pub_id, s.used, s.last_use, age)
+                            })
                             .collect();
+                        // SAFETY: the fence belongs to ANGLE's D3D11 device; same thread as GL.
+                        let ready = unsafe { ready_fence.GetCompletedValue() };
                         eprintln!(
                             "[ui-host] no free ring slot in ring {} ({}x{}, {} ms old, handles {}): \
-                             picked {picked}, done fence {done_completed}, slots (pub_id, used, \
-                             last_use) {state:?}",
+                             picked {picked}, done fence {done_completed}, ready fence {ready} \
+                             of {ready_value}, slots (pub_id, used, last_use, ms since \
+                             published) {state:?}",
                             stats.rings,
                             size.width,
                             size.height,
@@ -882,6 +910,10 @@ fn report_stats(s: &mut Stats) {
     report += &format!(
         "ui-host pointer events placed without the page's layout at its size: {}\n",
         s.pointers_unplaced
+    );
+    report += &format!(
+        "ui-host frames that waited for the GPU to finish the previous publication: {}\n",
+        s.gpu_waits
     );
     report += &format!(
         "ui-host per published frame ms: paint {}\n",
@@ -1016,6 +1048,7 @@ fn create_slot(
             surface_texture: Some(surface_texture),
             framebuffer,
             pub_id: 0,
+            published: Instant::now(),
             used: false,
             last_use: 0,
         },
