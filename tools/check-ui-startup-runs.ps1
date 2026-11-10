@@ -2,8 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$HostExe,
     [Parameter(Mandatory=$true)][string]$Out,
     [Parameter(Mandatory=$true)][double]$Hz,
-    [int]$UiRuns = 10,
-    [int]$NoUiRuns = 10,
+    [int]$UiRuns = 30,
+    [int]$NoUiRuns = 30,
     [switch]$Record
 )
 $ErrorActionPreference = 'Stop'
@@ -19,6 +19,7 @@ while ($ui -lt $UiRuns -or $noUi -lt $NoUiRuns) {
     if ($noUi -lt $NoUiRuns) { $order += 'noui'; $noUi++ }
 }
 $over = @{ ui = 0; noui = 0 }
+$hudOver = 0
 $failed = 0
 $index = 0
 foreach ($mode in $order) {
@@ -43,8 +44,9 @@ foreach ($mode in $order) {
     $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -ne 0) { $failed++ }
     if ("$result" -match 'over=(\d+)') { $over[$mode] += [int]$Matches[1] }
+    if ("$result" -match 'hud_over=(\d+)') { $hudOver += [int]$Matches[1] }
     Write-Output "$index $mode $(if ($LASTEXITCODE -eq 0) { 'pass' } else { 'FAIL' }) (machine load before run $load%): $result"
 }
 $pass = $failed -eq 0 -and $over.ui -le $over.noui
-Write-Output "first-second intervals over $([math]::Round(2000 / $Hz, 3)) ms: UI $($over.ui) in $UiRuns runs, --no-ui $($over.noui) in $NoUiRuns runs; failed runs $failed; rule $(if ($pass) { 'PASS' } else { 'FAIL' })"
+Write-Output "first-second intervals over $([math]::Round(2000 / $Hz, 3)) ms: UI $($over.ui) in $UiRuns runs, --no-ui $($over.noui) in $NoUiRuns runs; UI intervals over it from the HUD's first frame through 30 frames after: $hudOver; failed runs $failed; rule $(if ($pass) { 'PASS' } else { 'FAIL' })"
 if (-not $pass -and -not $Record) { exit 1 }
