@@ -63,6 +63,9 @@ pub struct Executor {
     surface: Option<wgpu::Texture>,
     surface_handles: Vec<u32>,
     surface_used: bool,
+    /// The frame acquired the surface and nothing has written it yet. A browser gives each frame
+    /// a transparent black canvas texture, so the first use clears it.
+    surface_unwritten: bool,
     uncaptured: Arc<Mutex<Vec<String>>>,
 }
 
@@ -136,6 +139,7 @@ impl Executor {
             surface: None,
             surface_handles: Vec::new(),
             surface_used: false,
+            surface_unwritten: false,
             uncaptured,
         }
     }
@@ -231,6 +235,7 @@ impl Executor {
                 self.labels.remove(&handle);
             }
         }
+        self.clear_unwritten_surface();
         if self.render_pass.is_some() || self.encoder.is_some() {
             self.render_pass = None;
             self.render_pass_scope = None;
@@ -256,6 +261,43 @@ impl Executor {
     /// Whether the last replay bound the host's surface, at its current size, with `ACQUIRE_SURFACE`.
     pub fn surface_used(&self) -> bool {
         self.surface_used
+    }
+
+    fn is_surface(&self, texture: u32) -> bool {
+        self.surface.as_ref().is_some_and(|surface| {
+            self.textures
+                .get(&texture)
+                .is_some_and(|texture| texture.raw == *surface)
+        })
+    }
+
+    fn clear_unwritten_surface(&mut self) {
+        if !std::mem::take(&mut self.surface_unwritten) {
+            return;
+        }
+        let surface = self
+            .surface
+            .as_ref()
+            .expect("an unwritten surface is bound");
+        let view = surface.create_view(&Default::default());
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("canvas clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.queue.submit([encoder.finish()]);
     }
 
     fn execute(&mut self, opcode: u16, payload: &[u8]) -> Result<Option<Response>, String> {
@@ -576,6 +618,9 @@ impl Executor {
             }
             28 => {
                 size(payload, 32)?;
+                if self.is_surface(u32_at(payload, 4)) {
+                    self.clear_unwritten_surface();
+                }
                 let request = u32_at(payload, 0);
                 let texture = self
                     .textures
@@ -1022,6 +1067,7 @@ impl Executor {
                     return Err("invalid color attachment count".into());
                 }
                 let mut colors = Vec::new();
+                let mut writes_surface = false;
                 for entry in payload[4..payload.len() - 32].as_chunks::<52>().0 {
                     let flags = u32_at(entry, 0);
                     if flags == 0 {
@@ -1031,22 +1077,22 @@ impl Executor {
                     if flags != 1 && flags != 3 {
                         return Err("invalid color attachment flags".into());
                     }
-                    let view = &self
+                    let (parent, view) = self
                         .views
                         .get(&u32_at(entry, 4))
-                        .ok_or("unknown color view handle")?
-                        .1;
+                        .ok_or("unknown color view handle")?;
+                    let on_surface = self.surface_unwritten && self.is_surface(*parent);
                     let resolve_target = if flags & 2 != 0 {
-                        Some(
-                            &self
-                                .views
-                                .get(&u32_at(entry, 8))
-                                .ok_or("unknown resolve view handle")?
-                                .1,
-                        )
+                        let (parent, view) = self
+                            .views
+                            .get(&u32_at(entry, 8))
+                            .ok_or("unknown resolve view handle")?;
+                        writes_surface |= self.surface_unwritten && self.is_surface(*parent);
+                        Some(view)
                     } else {
                         None
                     };
+                    writes_surface |= on_surface;
                     let component = |offset| f64::from_bits(u64_at(entry, offset));
                     let clear = wgpu::Color {
                         r: component(20),
@@ -1061,6 +1107,7 @@ impl Executor {
                         return Err("invalid clear color".into());
                     }
                     let load = match u32_at(entry, 12) {
+                        0 if on_surface => wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         0 => wgpu::LoadOp::Load,
                         1 => wgpu::LoadOp::Clear(clear),
                         _ => return Err("invalid color load operation".into()),
@@ -1147,6 +1194,7 @@ impl Executor {
                     })
                     .forget_lifetime();
                 self.render_pass_scope = Some(scope);
+                self.surface_unwritten &= !writes_surface;
                 self.valid_pipeline = None;
                 self.pipeline = None;
                 self.pass_view = self.subject(14, payload);
@@ -1354,6 +1402,7 @@ impl Executor {
                     },
                 );
                 self.surface_handles.push(handle);
+                self.surface_unwritten |= current && !self.surface_used;
                 self.surface_used |= current;
                 Ok(None)
             }

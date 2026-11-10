@@ -39,8 +39,9 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     executor: threejsc_gpu::Executor,
-    /// The canvas the game draws into. It keeps the last frame the game drew, as a browser canvas
-    /// does, and each frame copies it to the window.
+    /// The canvas the game draws into. Each frame copies it to the window. A frame that acquires
+    /// it starts from transparent black, and other frames keep the last image, as a browser
+    /// canvas does.
     game: wgpu::Texture,
     /// Whether the game has drawn into `game` since it was created at the window's size.
     drawn: bool,
