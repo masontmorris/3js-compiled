@@ -12,11 +12,11 @@ The script reads each `.crate` from the Cargo cache or from static.crates.io, ch
 
 ## servo-script: release script records
 
-`maybe_associate_with_script` (classic scripts, including every `WebView::evaluate_javascript` call) and `ModuleTree::compile_module_script` pass `Rc::into_raw` to `SetScriptPrivate` and `SetModulePrivate`. SpiderMonkey's `setPrivate` also calls Servo's add-ref hook, which takes a second reference, and the release hook drops only that one when the script's source object is finalized. Each compiled script therefore leaks one `ModuleScript`. A module script's record also holds a `Trusted<GlobalScope>`, so a leaked one keeps a reference to its global.
+`maybe_associate_with_script` (classic scripts, including every `WebView::evaluate_javascript` call) and `ModuleTree::create_a_javascript_module_script` pass `Rc::into_raw` to `SetScriptPrivate` and `SetModulePrivate`. SpiderMonkey's `setPrivate` also calls Servo's add-ref hook, which takes a second reference, and the release hook drops only that one when the script's source object is finalized. Each compiled script therefore leaks one `ModuleScript`. A module script's record also holds a `Trusted<GlobalScope>`, so a leaked one keeps a reference to its global.
 
 The patch passes `Rc::as_ptr` so that the hook holds the only reference. With it, eval records are freed at each GC and module records are freed after navigation.
 
-Upstream issue: not filed yet. The same code is on Servo main at ced24a6 (2026-11-09).
+Upstream issue: not filed yet. Servo main at ced24a6 (2026-11-09) still passes `Rc::into_raw` at both sites. There the record type is `BaseScript`, which has no owner, so a leaked record keeps no global alive.
 
 ## servo-fonts: bound the shaped text cache
 
@@ -24,7 +24,7 @@ Upstream issue: not filed yet. The same code is on Servo main at ced24a6 (2026-1
 
 The patch clears the map when it reaches 4,096 entries.
 
-Upstream issue: not filed yet. The same code is on Servo main at ced24a6 (2026-11-09).
+Upstream issue: not filed yet. On Servo main at ced24a6 (2026-11-09) the map is still never trimmed. Its key also has `language_override`.
 
 ## servo-layout: keep one layout entry per pseudo-element
 
