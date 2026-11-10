@@ -547,6 +547,130 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
     );
 }
 
+fn read_surface(device: &wgpu::Device, queue: &wgpu::Queue, surface: &wgpu::Texture) -> Vec<u8> {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 256 * 4,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    encoder.copy_texture_to_buffer(
+        surface.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+    buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    let data = buffer.slice(..).get_mapped_range().unwrap();
+    data.chunks(256)
+        .flat_map(|row| row[..16].to_vec())
+        .collect()
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let acquire = |texture: u32, view: u32| {
+        vec![
+            (30, words(&[texture, 4, 4])),
+            (7, words(&[view, texture, 0, 0, 0, 0, 0, 0, 0])),
+        ]
+    };
+    let begin = |view: u32, load: u32| {
+        let mut payload = words(&[1, 1, view, 0, load, 1]);
+        for component in [0.0f64, 0.0, 1.0, 1.0] {
+            payload.extend_from_slice(&component.to_bits().to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 32]);
+        (14, payload)
+    };
+    let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
+    let readback = |bytes: [u8; 4]| Response::Readback {
+        request: 100,
+        bytes: bytes.repeat(16),
+    };
+    let mut next = 1;
+    let mut draw_blue = |executor: &mut Executor| {
+        let mut records = acquire(next, next + 1);
+        records.extend([begin(next + 1, 1), (25, vec![]), (26, vec![])]);
+        next += 2;
+        assert_eq!(
+            executor.replay(&stream(&records), Some(&surface)).unwrap(),
+            vec![]
+        );
+    };
+
+    draw_blue(&mut executor);
+    let mut invalid = acquire(101, 102);
+    invalid.extend([
+        begin(102, 0),
+        (20, words(&[0, 0, 100, 100])),
+        (25, vec![]),
+        (26, vec![]),
+        read(101),
+    ]);
+    let responses = executor.replay(&stream(&invalid), Some(&surface)).unwrap();
+    assert!(
+        responses.last() == Some(&readback([0; 4])),
+        "a first pass that fails validation leaves the surface transparent: {responses:?}"
+    );
+
+    draw_blue(&mut executor);
+    let mut early = acquire(201, 202);
+    early.extend([begin(202, 0), (25, vec![]), read(201), (26, vec![])]);
+    assert_eq!(
+        executor.replay(&stream(&early), Some(&surface)).unwrap(),
+        vec![readback([0; 4])],
+        "a readback before the first pass submits sees transparent black"
+    );
+
+    draw_blue(&mut executor);
+    let mut unsubmitted = acquire(301, 302);
+    unsubmitted.extend([begin(302, 0), (25, vec![])]);
+    executor
+        .replay(&stream(&unsubmitted), Some(&surface))
+        .unwrap();
+    assert_eq!(
+        read_surface(device, queue, &surface),
+        [0; 4].repeat(16),
+        "a frame whose first pass never submits shows transparent black"
+    );
+
+    let mut one_encoder = acquire(401, 402);
+    one_encoder.extend([
+        begin(402, 1),
+        (25, vec![]),
+        begin(402, 0),
+        (25, vec![]),
+        (26, vec![]),
+        read(401),
+    ]);
+    assert_eq!(
+        executor
+            .replay(&stream(&one_encoder), Some(&surface))
+            .unwrap(),
+        vec![readback([255, 0, 0, 255])],
+        "a later pass in the first pass's encoder loads what that pass drew"
+    );
+}
+
 #[test]
 #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
 fn errors_outside_error_scopes_become_responses() {
