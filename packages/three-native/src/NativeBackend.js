@@ -634,14 +634,32 @@ export class RecordingDevice {
   }
 }
 
+function assertSurfaceFree() {
+  if (host.device && !host.device.destroyed) throw new Error('Only one live NativeBackend is supported, because the native host has one window surface. Dispose the current renderer first.');
+}
+
 export class NativeBackend extends WebGPUBackend {
   constructor(parameters = {}, capabilities = {}) {
-    if (host.device && !host.device.destroyed) throw new Error('Only one live NativeBackend is supported, because the native host has one window surface. Dispose the current renderer first.');
-    const device = new RecordingDevice(capabilities, host);
-    host.device = device;
-    super({ outputType: UnsignedByteType, ...parameters, device, context: new RecordingCanvasContext(parameters.canvas) });
-    this.recordingDevice = device;
+    assertSurfaceFree();
+    super({ outputType: UnsignedByteType, ...parameters, context: new RecordingCanvasContext(parameters.canvas) });
+    this.capabilities = capabilities;
+    this.recordingDevice = null;
     this.isNativeBackend = true;
+  }
+
+  // The backend takes the host's surface when its renderer initializes, so a renderer disposed before
+  // init() holds nothing. Renderer.dispose() awaits before it reaches backend.dispose(), and games
+  // often create the next renderer without awaiting it, so calling dispose() releases the surface.
+  async init(renderer) {
+    assertSurfaceFree();
+    const device = new RecordingDevice(this.capabilities, host);
+    host.device = this.recordingDevice = this.parameters.device = device;
+    const dispose = renderer.dispose;
+    renderer.dispose = function () {
+      device.destroy();
+      return dispose.call(this);
+    };
+    await super.init(renderer);
   }
 
   takeFrame() {
