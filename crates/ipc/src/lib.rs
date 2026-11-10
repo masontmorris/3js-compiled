@@ -273,6 +273,16 @@ impl Msg {
     }
 }
 
+/// The size of the ring ui-host creates after reading `requested` sizes in one batch: the
+/// last one, unless its current ring already has that size. A batch of resizes therefore
+/// gets at most one `Slots`, and a resize and a resize back get none.
+pub fn next_ring_size(
+    current: (u32, u32),
+    requested: impl IntoIterator<Item = (u32, u32)>,
+) -> Option<(u32, u32)> {
+    requested.into_iter().last().filter(|&size| size != current)
+}
+
 pub fn write_msg(w: &mut impl Write, msg: &Msg) -> io::Result<()> {
     let bytes = msg.encode();
     if bytes.len() - 4 > MAX_PAYLOAD {

@@ -469,7 +469,7 @@ fn main() {
         }
         events.extend(rx.try_iter());
 
-        let mut resize = None;
+        let mut resizes = Vec::new();
         for event in events {
             match event {
                 Event::Msg(Msg::Patch { seq, json }) => {
@@ -514,7 +514,7 @@ fn main() {
                     webview.notify_input_event(input);
                 }
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
-                    resize = Some(PhysicalSize::new(width, height));
+                    resizes.push((width, height));
                 }
                 Event::Msg(Msg::Report { text }) => eprintln!("{text}"),
                 Event::Msg(Msg::Shutdown) => shutting_down = true,
@@ -525,8 +525,8 @@ fn main() {
         if shutting_down {
             break;
         }
-        if let Some(new_size) = resize.filter(|&new_size| new_size != size) {
-            size = new_size;
+        if let Some((width, height)) = proto::next_ring_size((size.width, size.height), resizes) {
+            size = PhysicalSize::new(width, height);
             webview.resize(size);
             destroy_slots(&frame_ctx, &mut slots);
             slots = new_ring(size, &mut unimported);

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 mod reply;
+mod rings;
 
 use anyhow::{Context, Result, bail};
 use std::{
@@ -60,13 +61,8 @@ struct Importer {
 }
 /// A ring whose textures a worker is opening, off the game thread.
 struct Import {
-    size: (u32, u32),
+    generation: u64,
     slots: mpsc::Receiver<Result<Vec<Slot>>>,
-}
-struct Published {
-    slot: usize,
-    id: u64,
-    ready: u64,
 }
 /// A message from ui-host. The pipe reader parses replies so the game thread does not.
 enum Incoming {
@@ -77,13 +73,10 @@ struct Link {
     child: Child,
     tx: mpsc::Sender<Msg>,
     rx: mpsc::Receiver<Incoming>,
-    slots: Vec<Slot>,
+    rings: rings::Rings<Slot>,
     import: Option<Import>,
-    published: Vec<Published>,
-    current: Option<(usize, u64)>,
     /// The size ui-host was last asked to render at.
     requested: (u32, u32),
-    awaiting_resize: bool,
     shown: bool,
     sent_patches: VecDeque<(u64, Instant)>,
     rtt_ms: Vec<f64>,
@@ -294,12 +287,9 @@ fn launch(
         child,
         tx,
         rx,
-        slots: Vec::new(),
+        rings: rings::Rings::default(),
         import: None,
-        published: Vec::new(),
-        current: None,
         requested: size,
-        awaiting_resize: false,
         shown: false,
         sent_patches: VecDeque::new(),
         rtt_ms: Vec::new(),
@@ -373,7 +363,7 @@ impl Importer {
         })
     }
     /// Opens the ring on a worker thread. The handles are already this process's.
-    fn spawn(&self, handles: Vec<OwnedHandle>, size: (u32, u32)) -> Import {
+    fn spawn(&self, handles: Vec<OwnedHandle>, generation: u64, size: (u32, u32)) -> Import {
         let importer = self.clone();
         let (tx, slots) = mpsc::channel();
         std::thread::spawn(move || {
@@ -384,7 +374,7 @@ impl Importer {
                     .collect(),
             );
         });
-        Import { size, slots }
+        Import { generation, slots }
     }
 }
 fn retire(mut link: Link, kill: bool) {
@@ -635,9 +625,6 @@ impl Ui {
                     height: self.size.1,
                 });
                 link.requested = self.size;
-                link.awaiting_resize = true;
-                link.current = None;
-                link.published.clear();
             }
             let mut failure = match link.child.try_wait() {
                 Ok(Some(status)) => Some(format!("ui-host exited: {status}")),
@@ -652,26 +639,18 @@ impl Ui {
                         width,
                         height,
                     })) => {
-                        if (width, height) == link.requested {
-                            let child = HANDLE(link.child.as_raw_handle());
-                            let owned = handles
-                                .into_iter()
-                                .map(|handle| dup_from(child, handle))
-                                .collect::<Result<_>>();
-                            match owned {
-                                Ok(owned) => {
-                                    link.import = Some(self.importer.spawn(owned, (width, height)));
-                                    link.slots.clear();
-                                    link.current = None;
-                                    link.published.clear();
-                                    link.awaiting_resize = false;
-                                }
-                                Err(error) => {
-                                    failure = Some(format!("ui-host slot import: {error:#}"))
-                                }
+                        let child = HANDLE(link.child.as_raw_handle());
+                        let owned = handles
+                            .into_iter()
+                            .map(|handle| dup_from(child, handle))
+                            .collect::<Result<_>>();
+                        match owned {
+                            Ok(owned) => {
+                                link.import =
+                                    Some(self.importer.spawn(owned, generation, (width, height)));
+                                link.rings.announced(generation);
                             }
-                        } else {
-                            link.awaiting_resize = true;
+                            Err(error) => failure = Some(format!("ui-host slot import: {error:#}")),
                         }
                         let _ = link.tx.send(Msg::SlotsImported { generation });
                     }
@@ -681,13 +660,7 @@ impl Ui {
                         ready_value,
                     })) => {
                         self.max_ready = self.max_ready.max(ready_value);
-                        if !link.awaiting_resize {
-                            link.published.push(Published {
-                                slot: slot as usize,
-                                id: pub_id,
-                                ready: ready_value,
-                            });
-                        }
+                        link.rings.published(slot as usize, pub_id, ready_value);
                     }
                     Ok(Incoming::Msg(Msg::Ready)) => self.can_send = true,
                     Ok(Incoming::Reply(seq, reply)) => {
@@ -710,11 +683,10 @@ impl Ui {
                 && let Some(import) = &link.import
             {
                 match import.slots.try_recv() {
-                    Ok(Ok(slots)) if import.size == link.requested => {
-                        link.slots = slots;
+                    Ok(Ok(slots)) => {
+                        link.rings.opened(import.generation, slots);
                         link.import = None;
                     }
-                    Ok(Ok(_)) => link.import = None,
                     Ok(Err(error)) => failure = Some(format!("ui-host slot import: {error:#}")),
                     Err(mpsc::TryRecvError::Disconnected) => {
                         failure = Some("ui slot import thread stopped".into())
@@ -733,23 +705,14 @@ impl Ui {
                 self.retry(failure)
             } else {
                 let ready = unsafe { self.d3d.ready.GetCompletedValue() };
-                let current = link.current.map_or(0, |(_, id)| id);
-                if let Some(candidate) = link
-                    .published
-                    .iter()
-                    .filter(|p| p.id > current && p.ready <= ready && p.slot < link.slots.len())
-                    .max_by_key(|p| p.id)
-                {
-                    let pick = (candidate.slot, candidate.id);
+                if let Some(pub_id) = link.rings.pick(ready) {
                     if !link.shown {
                         link.shown = true;
                         self.notes
                             .push(format!("ui-host first frame shown at game frame {frame}"));
                     }
-                    link.current = Some(pick);
-                    link.published.retain(|p| p.id > pick.1);
                     let _ = link.tx.send(Msg::Picked {
-                        pub_id: pick.1,
+                        pub_id,
                         first_frame: frame,
                     });
                 }
@@ -845,7 +808,7 @@ impl Ui {
     }
     pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         if let Connection::Running(link) = &self.connection
-            && let Some(slot) = link.current.and_then(|(i, _)| link.slots.get(i))
+            && let Some(slot) = link.rings.shown()
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ui composite"),
