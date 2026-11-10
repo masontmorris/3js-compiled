@@ -493,6 +493,9 @@ fn main() {
         slots
     };
     let mut slots = new_ring(size, &mut unimported);
+    let mut ring_at = Instant::now();
+    // The start of the current run of frames skipped for no free slot, and its length.
+    let mut skipping: Option<(Instant, u64)> = None;
 
     let preferences = Preferences {
         shell_background_color_rgba: [0.0, 0.0, 0.0, 0.0],
@@ -607,6 +610,7 @@ fn main() {
             *relayout.borrow_mut() = Some(Relayout::new((width, height), Instant::now()));
             destroy_slots(&frame_ctx, &mut slots);
             slots = new_ring(size, &mut unimported);
+            ring_at = Instant::now();
             picked = 0;
         }
         if input_handled.take() {
@@ -751,6 +755,12 @@ fn main() {
                 .min_by_key(|(_, s)| s.pub_id)
                 .map(|(i, _)| i);
             if let Some(index) = free {
+                if let Some((since, n)) = skipping.take() {
+                    eprintln!(
+                        "[ui-host] skipped {n} frames for no free ring slot over {} ms",
+                        since.elapsed().as_millis()
+                    );
+                }
                 let fresh = new_frame.replace(false);
                 last_paint = Instant::now();
 
@@ -789,7 +799,32 @@ fn main() {
                 s.total.push(t3 - t0);
                 s.published += 1;
             } else {
-                stats.borrow_mut().skipped_no_free_slot += 1;
+                let mut stats = stats.borrow_mut();
+                stats.skipped_no_free_slot += 1;
+                match &mut skipping {
+                    Some((_, n)) => *n += 1,
+                    None => {
+                        skipping = Some((Instant::now(), 1));
+                        let state: Vec<_> = slots
+                            .iter()
+                            .map(|s| (s.pub_id, s.used, s.last_use))
+                            .collect();
+                        eprintln!(
+                            "[ui-host] no free ring slot in ring {} ({}x{}, {} ms old, handles {}): \
+                             picked {picked}, done fence {done_completed}, slots (pub_id, used, \
+                             last_use) {state:?}",
+                            stats.rings,
+                            size.width,
+                            size.height,
+                            ring_at.elapsed().as_millis(),
+                            if unimported.iter().any(|(g, _)| *g == stats.rings) {
+                                "not yet duplicated by the host"
+                            } else {
+                                "duplicated by the host"
+                            },
+                        );
+                    }
+                }
             }
         }
         if warmed_at.is_some() && pacer.borrow_mut().ready(Instant::now()) {

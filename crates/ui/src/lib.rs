@@ -62,6 +62,7 @@ struct Importer {
 struct Import {
     generation: u64,
     slots: mpsc::Receiver<Result<Vec<Slot>>>,
+    started: Instant,
 }
 /// A message from ui-host. The pipe reader parses replies so the game thread does not.
 enum Incoming {
@@ -372,7 +373,11 @@ impl Importer {
                     .collect(),
             );
         });
-        Import { generation, slots }
+        Import {
+            generation,
+            slots,
+            started: Instant::now(),
+        }
     }
 }
 /// Composites a blank texture into a scratch target, so that the first HUD frame does not
@@ -739,6 +744,14 @@ impl Ui {
             {
                 match import.slots.try_recv() {
                     Ok(Ok(slots)) => {
+                        let took = import.started.elapsed();
+                        if took >= Duration::from_millis(40) {
+                            self.notes.push(format!(
+                                "UI ring {} opened {} ms after its handles arrived",
+                                import.generation,
+                                took.as_millis()
+                            ));
+                        }
                         link.rings.opened(import.generation, slots);
                         link.import = None;
                     }
