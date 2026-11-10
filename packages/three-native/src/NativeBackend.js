@@ -234,18 +234,31 @@ class RecordingCommandEncoder {
   }
 }
 
-// Calls `assigned` after each set of the canvas width or height, which a browser treats as a resize
-// even when the value does not change.
-function watchSize(canvas, assigned) {
+// How many times a script set each watched canvas's width or height, which a browser treats as a
+// resize even when the value does not change.
+const sizeSets = new WeakMap();
+
+// Counts the sets of the canvas width and height. Each canvas is wrapped once, however many
+// renderers use it, and the wrapper holds no renderer. A size the canvas cannot redefine, or that a
+// script cannot set, stays as it is, and acquires and frames still record its changes.
+function watchSize(canvas) {
+  if (sizeSets.has(canvas)) return;
+  sizeSets.set(canvas, 0);
   for (const key of ['width', 'height']) {
     let owner = canvas;
     while (owner && !Object.hasOwn(owner, key)) owner = Object.getPrototypeOf(owner);
-    let { value, get = () => value, set = next => { value = next; } } = owner ? Object.getOwnPropertyDescriptor(owner, key) : {};
+    const descriptor = owner ? Object.getOwnPropertyDescriptor(owner, key) : undefined;
+    const redefinable = owner === canvas ? descriptor.configurable : Object.isExtensible(canvas);
+    if (!redefinable || (descriptor && !descriptor.writable && !descriptor.set)) continue;
+    let { value, get = () => value, set = next => { value = next; } } = descriptor ?? {};
     Object.defineProperty(canvas, key, {
       configurable: true,
       enumerable: true,
       get() { return get.call(this); },
-      set(next) { set.call(this, next); assigned(); },
+      set(next) {
+        set.call(this, next);
+        sizeSets.set(canvas, sizeSets.get(canvas) + 1);
+      },
     });
   }
 }
@@ -254,8 +267,8 @@ class RecordingCanvasContext {
   constructor(canvas) {
     this.canvas = canvas;
     this.configuration = null;
-    this.assigned = false;
-    watchSize(canvas, () => { this.assigned = true; });
+    watchSize(canvas);
+    this.sizeSets = sizeSets.get(canvas);
   }
 
   configure(configuration) {
@@ -264,14 +277,15 @@ class RecordingCanvasContext {
     this.configuration = configuration;
     // three configures again after each resize, and only sets before the first configure are not
     // resizes of the canvas the device draws.
-    if (configuration.device.context !== this) this.assigned = false;
+    if (configuration.device.context !== this) this.sizeSets = sizeSets.get(this.canvas);
     configuration.device.context = this;
   }
 
   // The canvas size, and whether a script set it since the last call.
   takeSize() {
-    const assigned = this.assigned;
-    this.assigned = false;
+    const sets = sizeSets.get(this.canvas);
+    const assigned = sets !== this.sizeSets;
+    this.sizeSets = sets;
     return [this.canvas.width, this.canvas.height, assigned];
   }
 
@@ -660,6 +674,7 @@ export class RecordingDevice {
     for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
     this.destroyed = true;
+    if (host.device === this) host.device = null;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
     // A lost WebGPU device resolves its error scopes with no error and rejects its readbacks.
     for (const pending of this.pending.values()) {
