@@ -178,8 +178,7 @@ fn a_renderer_replaces_one_disposed_without_await_or_before_init() {
         "late readback rejected: Device is destroyed",
         "a second live renderer was rejected: Only one live NativeBackend is supported",
     ] {
-        assert!(run.log.contains(line), "missing {line:?}
-{}", run.log);
+        assert!(run.log.contains(line), "missing {line:?}: {}", run.log);
     }
     assert!(!run.log.contains("GPU error"), "{}", run.log);
     assert!(!run.log.contains("new renderer error"), "{}", run.log);
