@@ -703,7 +703,8 @@ fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() 
             executor.replay(&stream(&red), Some(&mut surface)).unwrap(),
             vec![]
         );
-        let mut green = vec![resize(8, 8)];
+        // three configures the context again before its first draw after setSize().
+        let mut green = vec![resize(8, 8), (33, vec![])];
         green.extend(draw(3, (8, 8), [0.0, 1.0, 0.0]));
         green.push(resize(zero.0, zero.1));
         assert_eq!(
@@ -730,6 +731,67 @@ fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() 
             "the canvas draws again once resized from {zero:?}"
         );
     }
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_resize_leaves_the_canvas_transparent_only_after_a_configure() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let draw = |texture: u32, [r, g, b]: [f64; 3]| {
+        let mut payload = words(&[1, 1, texture + 1, 0, 1, 1]);
+        for component in [r, g, b, 1.0] {
+            payload.extend_from_slice(&component.to_bits().to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 32]);
+        vec![
+            (30, words(&[texture, 4, 4])),
+            (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
+            (14, payload),
+            (25, vec![]),
+            (26, vec![]),
+        ]
+    };
+    let (configure, resize) = ((33, vec![]), (32, words(&[4, 4])));
+    let mut surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let mut red = vec![configure.clone()];
+    red.extend(draw(1, [1.0, 0.0, 0.0]));
+    assert_eq!(
+        executor.replay(&stream(&red), Some(&mut surface)).unwrap(),
+        vec![]
+    );
+    // As in Edge, frames that draw and then set the canvas size, with no configure() between,
+    // keep the last image however many follow one another.
+    for frame in 0..3 {
+        let mut set = draw(3 + 2 * frame, [0.0, 1.0, 0.0]);
+        set.push(resize.clone());
+        assert_eq!(
+            executor.replay(&stream(&set), Some(&mut surface)).unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            read_surface(device, queue, &surface),
+            [0, 0, 255, 255].repeat(16),
+            "draw-then-set frame {frame} keeps the last red image, as in Edge"
+        );
+    }
+    let mut configured = vec![configure];
+    configured.extend(draw(11, [0.0, 1.0, 0.0]));
+    configured.push(resize);
+    assert_eq!(
+        executor
+            .replay(&stream(&configured), Some(&mut surface))
+            .unwrap(),
+        vec![]
+    );
+    assert!(
+        executor.surface_used()
+            && read_surface(device, queue, &surface)
+                .iter()
+                .all(|byte| *byte == 0),
+        "a resize that discards a texture acquired after a configure() leaves the canvas transparent, as in Edge"
+    );
 }
 
 #[test]

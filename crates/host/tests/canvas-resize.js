@@ -10,7 +10,12 @@
 // without drawing, and `--scene sized-zero-WxH` resizes to WxH and draws green. A `-draw` suffix
 // keeps drawing green at the zero size in frames 21 to 39. The canvas has no drawing buffer until
 // frame 40 resizes to 1280x720 and draws blue from then on. Draws stop after frame 20 in the other
-// modes. Every frame submits its stream, and every uncaptured GPU error is logged with the frame.
+// modes. `--scene twice-width` draws green in frame 20 and blue in frame 21, and sets the width the
+// canvas has after each draw, and `--scene twice-setsize` calls setSize() with the size it has
+// instead, which makes three configure the canvas again before its next draw. `--scene
+// width-draw-width` sets the width, draws green and sets the width in frame 20, and `--scene
+// setsize-draw-width` calls setSize() with the size it has, draws green and sets the width.
+// Every frame submits its stream, and every uncaptured GPU error is logged with the frame.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
@@ -54,6 +59,18 @@ function frame() {
       if (frames === 40) renderer.setSize(1280, 720, false);
       draw(0x0000ff);
     }
+  } else if ((frames === 20 || frames === 21) && mode.startsWith('twice-')) {
+    draw(frames === 20 ? 0x00ff00 : 0x0000ff);
+    if (mode === 'twice-setsize') renderer.setSize(1280, 720, false);
+    else canvas.width = canvas.width;
+  } else if (frames === 20 && mode === 'width-draw-width') {
+    canvas.width = canvas.width;
+    draw(0x00ff00);
+    canvas.width = canvas.width;
+  } else if (frames === 20 && mode === 'setsize-draw-width') {
+    renderer.setSize(1280, 720, false);
+    draw(0x00ff00);
+    canvas.width = canvas.width;
   } else if (frames === 20 && mode === 'draw-then-resize') {
     draw(0x00ff00);
     renderer.setSize(640, 360, false);

@@ -395,6 +395,27 @@ test('every set of the canvas size records RESIZE_SURFACE, even one that ends at
   }
 });
 
+test('each configure of the canvas records CONFIGURE_SURFACE before the acquire that follows it', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const { backend, renderer, render } = await boxRenderer(canvas, 0xff0000);
+  const surface = frame => decodeCommands(frame).flatMap(item => ({ [Opcode.CONFIGURE_SURFACE]: 'configure', [Opcode.RESIZE_SURFACE]: 'resize', [Opcode.ACQUIRE_SURFACE]: 'acquire' })[item.opcode] ?? []);
+  try {
+    render();
+    const first = surface(backend.takeFrame());
+    assert.deepEqual([first[0], first.at(-1)], ['configure', 'acquire'], 'the first draw configures the canvas before it acquires');
+    render();
+    assert.deepEqual(surface(backend.takeFrame()), ['acquire']);
+    canvas.width = 4;
+    render();
+    assert.deepEqual(surface(backend.takeFrame()), ['resize', 'acquire'], 'a set of the canvas size alone does not configure it');
+    renderer.setSize(4, 4, false);
+    render();
+    assert.deepEqual(surface(backend.takeFrame()), ['configure', 'resize', 'acquire'], 'three configures again after setSize()');
+  } finally {
+    await renderer.dispose();
+  }
+});
+
 test('renderers that come and go wrap the canvas size once and leave no disposed device reachable', async () => {
   setFlagsFromString('--expose-gc');
   const gc = runInNewContext('gc');

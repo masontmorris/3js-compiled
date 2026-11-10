@@ -579,6 +579,25 @@ fn setting_the_canvas_size_it_has_after_a_draw_discards_that_frame() {
     );
 }
 
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_set_after_a_draw_keeps_the_last_image_unless_three_configured_the_canvas() {
+    // Edge keeps the last red frame however many frames draw and then set the canvas size, and shows
+    // a transparent canvas when the discarded texture was acquired after configure().
+    for (mode, shown) in [
+        ("twice-width", [255, 0, 0, 255]),
+        ("width-draw-width", [255, 0, 0, 255]),
+        ("twice-setsize", [0, 0, 0, 0]),
+        ("setsize-draw-width", [0, 0, 0, 0]),
+    ] {
+        assert_eq!(
+            canvas_resize(mode).get_pixel(640, 360).0,
+            shown,
+            "{mode}: as in Edge"
+        );
+    }
+}
+
 /// Runs `canvas-resize.js` in a zero-size `mode` and captures the window while the canvas has a
 /// zero size and after it draws blue at 1280x720 again. `errors` holds the number of GPU errors in
 /// each frame that raises any, and the run must raise no others.
