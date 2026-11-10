@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Out,
     [Parameter(Mandatory=$true)][double]$Hz,
     [int]$UiRuns = 10,
-    [int]$NoUiRuns = 5,
+    [int]$NoUiRuns = 10,
     [switch]$Record
 )
 $ErrorActionPreference = 'Stop'
@@ -15,10 +15,11 @@ $order = @()
 $ui = 0
 $noUi = 0
 while ($ui -lt $UiRuns -or $noUi -lt $NoUiRuns) {
-    foreach ($slot in 1..2) { if ($ui -lt $UiRuns) { $order += 'ui'; $ui++ } }
+    if ($ui -lt $UiRuns) { $order += 'ui'; $ui++ }
     if ($noUi -lt $NoUiRuns) { $order += 'noui'; $noUi++ }
 }
-$passed = @{ ui = 0; noui = 0 }
+$over = @{ ui = 0; noui = 0 }
+$failed = 0
 $index = 0
 foreach ($mode in $order) {
     $index++
@@ -40,8 +41,10 @@ foreach ($mode in $order) {
     $ErrorActionPreference = 'Continue'
     $result = python @checkArgs 2>&1 | Select-Object -Last 1
     $ErrorActionPreference = 'Stop'
-    $ok = $LASTEXITCODE -eq 0
-    if ($ok) { $passed[$mode]++ }
-    Write-Output "$index $mode $(if ($ok) { 'pass' } else { 'FAIL' }) (machine load before run $load%): $result"
+    if ($LASTEXITCODE -ne 0) { $failed++ }
+    if ("$result" -match 'over=(\d+)') { $over[$mode] += [int]$Matches[1] }
+    Write-Output "$index $mode $(if ($LASTEXITCODE -eq 0) { 'pass' } else { 'FAIL' }) (machine load before run $load%): $result"
 }
-Write-Output "UI runs passing: $($passed.ui) of $UiRuns; --no-ui runs passing: $($passed.noui) of $NoUiRuns"
+$pass = $failed -eq 0 -and $over.ui -le $over.noui
+Write-Output "first-second intervals over $([math]::Round(2000 / $Hz, 3)) ms: UI $($over.ui) in $UiRuns runs, --no-ui $($over.noui) in $NoUiRuns runs; failed runs $failed; rule $(if ($pass) { 'PASS' } else { 'FAIL' })"
+if (-not $pass -and -not $Record) { exit 1 }
