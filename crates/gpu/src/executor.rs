@@ -76,7 +76,17 @@ pub struct Executor {
     render_pass: Option<wgpu::RenderPass<'static>>,
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
     valid_pipeline: Option<bool>,
+    /// The canvas texture that `ACQUIRE_SURFACE` bound in this frame, which replaces the shown
+    /// canvas at the end of the replay unless a resize discards it first.
     surface: Option<wgpu::Texture>,
+    /// The canvas the host shows, as the replay started.
+    shown: Option<wgpu::Texture>,
+    /// What replaces the shown canvas at the end of the replay: the bound canvas texture, or a
+    /// transparent one after a resize while nothing was bound.
+    next: Option<wgpu::Texture>,
+    /// The canvas texture that the last frame replaced or a resize discarded, which the next
+    /// acquire of its size reuses, so frames alternate between two textures.
+    spare: Option<wgpu::Texture>,
     surface_handles: Vec<u32>,
     surface_used: bool,
     trailed: bool,
@@ -152,6 +162,9 @@ impl Executor {
             render_pass_scope: None,
             valid_pipeline: None,
             surface: None,
+            shown: None,
+            next: None,
+            spare: None,
             surface_handles: Vec::new(),
             surface_used: false,
             trailed: false,
@@ -222,7 +235,9 @@ impl Executor {
         let stream = decode(frame)?;
         let records = stream.records;
         self.frame = stream.frame;
-        self.surface = canvas.as_deref().cloned();
+        self.shown = canvas.as_deref().cloned();
+        self.surface = None;
+        self.next = None;
         self.surface_used = false;
         let mut responses = Vec::new();
         for (command, record) in records.iter().enumerate() {
@@ -289,13 +304,19 @@ impl Executor {
         }
         self.pipeline = None;
         self.pass_view = None;
-        if let (Some(canvas), Some(surface)) = (canvas, self.surface.take()) {
-            *canvas = surface;
+        if let Some(surface) = self.surface.take() {
+            self.next = Some(surface);
         }
+        self.surface_used = self.next.is_some();
+        if let (Some(canvas), Some(next)) = (canvas, self.next.take()) {
+            self.spare = Some(std::mem::replace(canvas, next));
+        }
+        self.shown = None;
         Ok(responses)
     }
 
-    /// Whether the last replay bound the canvas with `ACQUIRE_SURFACE`.
+    /// Whether the last replay replaced the shown canvas: with the canvas texture it bound with
+    /// `ACQUIRE_SURFACE`, or with a transparent one after `RESIZE_SURFACE`.
     pub fn surface_used(&self) -> bool {
         self.surface_used
     }
@@ -318,8 +339,9 @@ impl Executor {
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let commands = self.encoder.take().map(wgpu::CommandEncoder::finish);
         let encoded = commands.is_some();
-        let trailing = match (trailer, &self.surface) {
-            (Some(trailer), Some(surface)) => trailer(surface, self.surface_used),
+        let canvas = self.surface.as_ref().or(self.next.as_ref());
+        let trailing = match (trailer, canvas.or(self.shown.as_ref())) {
+            (Some(trailer), Some(shown)) => trailer(shown, canvas.is_some()),
             _ => None,
         };
         let trailed = trailing.is_some();
@@ -343,15 +365,49 @@ impl Executor {
         })
     }
 
+    /// A canvas texture of the given size with the shown canvas's format and usages: the spare
+    /// one when it has that size, or a new one.
+    fn canvas_texture(&mut self, width: u32, height: u32) -> Result<wgpu::Texture, String> {
+        let shown = self.shown.as_ref().ok_or("no surface for this frame")?;
+        if let Some(spare) = self
+            .spare
+            .take()
+            .filter(|spare| (spare.width(), spare.height()) == (width, height))
+        {
+            return Ok(spare);
+        }
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let canvas = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("canvas"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: shown.format(),
+            usage: shown.usage(),
+            view_formats: &[],
+        });
+        match pollster::block_on(scope.pop()) {
+            Some(error) => Err(error.to_string()),
+            None => Ok(canvas),
+        }
+    }
+
     fn clear_unwritten_surface(&mut self) {
         if std::mem::replace(&mut self.surface_clear, SurfaceClear::Done) == SurfaceClear::Done {
             return;
         }
-        let surface = self
-            .surface
-            .as_ref()
-            .expect("an unwritten surface is bound");
-        let view = surface.create_view(&Default::default());
+        let surface = self.surface.clone().expect("an unwritten surface is bound");
+        self.clear(&surface);
+    }
+
+    /// Clears `texture` to transparent black through the queue.
+    fn clear(&self, texture: &wgpu::Texture) {
+        let view = texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("canvas clear"),
@@ -1447,34 +1503,19 @@ impl Executor {
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate surface handle".into());
                 }
-                let surface = self.surface.clone().ok_or("no surface for this frame")?;
                 let (width, height) = (u32_at(payload, 4), u32_at(payload, 8));
-                let resized = (surface.width(), surface.height()) != (width, height);
-                // A texture acquired before the resize keeps its handle but no longer reaches
-                // the window, as a browser discards it.
-                let raw = if resized {
-                    let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-                    let canvas = self.device.create_texture(&wgpu::TextureDescriptor {
-                        label: Some("canvas"),
-                        size: wgpu::Extent3d {
-                            width,
-                            height,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: wgpu::TextureDimension::D2,
-                        format: surface.format(),
-                        usage: surface.usage(),
-                        view_formats: &[],
-                    });
-                    if let Some(error) = pollster::block_on(scope.pop()) {
-                        return Err(error.to_string());
+                // A texture acquired before an acquire at another size keeps its handle but no
+                // longer reaches the window, as a browser discards it on resize.
+                let raw = match &self.surface {
+                    Some(surface) if (surface.width(), surface.height()) == (width, height) => {
+                        surface.clone()
                     }
-                    self.surface = Some(canvas.clone());
-                    canvas
-                } else {
-                    surface
+                    _ => {
+                        let canvas = self.canvas_texture(width, height)?;
+                        self.surface = Some(canvas.clone());
+                        self.surface_clear = SurfaceClear::Needed;
+                        canvas
+                    }
                 };
                 self.textures.insert(
                     handle,
@@ -1490,10 +1531,21 @@ impl Executor {
                     },
                 );
                 self.surface_handles.push(handle);
-                if resized || !self.surface_used {
-                    self.surface_clear = SurfaceClear::Needed;
+                Ok(None)
+            }
+            32 => {
+                size(payload, 8)?;
+                // As in a browser, a resize discards the canvas texture the frame acquired, and
+                // the window keeps the last image. With none acquired, the canvas becomes
+                // transparent at its new size.
+                if let Some(discarded) = self.surface.take() {
+                    self.spare = Some(discarded);
+                    self.surface_clear = SurfaceClear::Done;
+                } else {
+                    let canvas = self.canvas_texture(u32_at(payload, 0), u32_at(payload, 4))?;
+                    self.clear(&canvas);
+                    self.next = Some(canvas);
                 }
-                self.surface_used = true;
                 Ok(None)
             }
             31 => {

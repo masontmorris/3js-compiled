@@ -684,7 +684,12 @@ fn errors_outside_error_scopes_become_responses() {
     let (device, queue) = &*gpu;
     let mut surface = surface_texture(device, 4, 4);
     let mut executor = Executor::new(device.clone(), queue.clone());
-    surface.destroy();
+    let replaced = surface.clone();
+    executor
+        .replay(include_bytes!("fixtures/surface.bin"), Some(&mut surface))
+        .unwrap();
+    // The next frame draws into the canvas texture that the first frame replaced.
+    replaced.destroy();
     let responses = executor
         .replay(include_bytes!("fixtures/surface.bin"), Some(&mut surface))
         .unwrap();

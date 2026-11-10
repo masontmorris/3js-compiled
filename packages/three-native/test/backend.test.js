@@ -342,6 +342,8 @@ test('a canvas resize records RESIZE_SURFACE in order among the frame commands',
       });
     };
     renderer.render(scene, camera);
+    backend.takeFrame();
+    renderer.render(scene, camera);
     renderer.setSize(640, 360, false);
     assert.deepEqual(sized(backend.takeFrame()), ['acquire 1280x720', 'resize 640x360 after submit']);
     renderer.setSize(320, 180, false);

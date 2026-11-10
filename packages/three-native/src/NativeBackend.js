@@ -244,6 +244,7 @@ class RecordingCanvasContext {
     if (!(configuration.device instanceof RecordingDevice)) throw new Error('Invalid canvas device');
     if (configuration.format !== 'bgra8unorm') throw new Error('The native surface format is bgra8unorm');
     this.configuration = configuration;
+    configuration.device.canvas = this.canvas;
   }
 
   unconfigure() {
@@ -256,13 +257,15 @@ class RecordingCanvasContext {
 
   getCurrentTexture() {
     if (!this.configuration) throw new Error('Canvas context is not configured');
-    return this.configuration.device.surfaceTexture(this.canvas.width, this.canvas.height, this.configuration);
+    const { device } = this.configuration;
+    device.resizeSurface(this.canvas.width, this.canvas.height);
+    return device.surfaceTexture(this.canvas.width, this.canvas.height, this.configuration);
   }
 }
 
 // The handle space, frame count and command stream that devices recording for one executor share.
 function stream() {
-  return { handles: new Handles(), commands: new CommandEncoder(), frame: 0 };
+  return { handles: new Handles(), commands: new CommandEncoder(), frame: 0, canvasSize: null };
 }
 
 // The host replays every NativeBackend in the realm with one executor, and it has one window surface.
@@ -578,6 +581,17 @@ export class RecordingDevice {
     return texture;
   }
 
+  // Records a change of the canvas size since the last acquire or frame, which discards the frame's
+  // canvas texture, as a browser discards it when a canvas is resized.
+  resizeSurface(width, height) {
+    const last = this.output.canvasSize;
+    this.output.canvasSize = [width, height];
+    if (!last || (last[0] === width && last[1] === height)) return;
+    this.surface?.destroy();
+    this.surface = null;
+    this.commands.words(Opcode.RESIZE_SURFACE, [width, height]);
+  }
+
   surfaceTexture(width, height, { format, usage }) {
     if (this.destroyed) throw new Error('Device is destroyed');
     if (this.surface && (this.surface.width !== width || this.surface.height !== height)) {
@@ -628,6 +642,7 @@ export class RecordingDevice {
 
   takeFrame() {
     if (this.destroyed) throw new Error('Device is destroyed');
+    if (this.canvas) this.resizeSurface(this.canvas.width, this.canvas.height);
     this.surface?.destroy();
     this.surface = null;
     return this.commands.finish(this.output.frame++);

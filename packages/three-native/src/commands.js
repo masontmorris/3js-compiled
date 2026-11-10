@@ -30,11 +30,12 @@ export const Opcode = Object.freeze({
   DESTROY_RESOURCE: 29,
   ACQUIRE_SURFACE: 30,
   GET_BIND_GROUP_LAYOUT: 31,
+  RESIZE_SURFACE: 32,
 });
 
 const MAGIC = 0x43534a33;
 // threejsc_gpu::VERSION. docs/native-gpu-commands.md says when it changes.
-const VERSION = 4;
+const VERSION = 5;
 const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));

@@ -47,3 +47,13 @@ fn a_stream_of_an_earlier_version_is_rejected_by_version() {
         "{message}"
     );
 }
+
+#[test]
+fn resize_surface_is_the_last_opcode() {
+    let mut frame = include_bytes!("fixtures/frame.bin").to_vec();
+    let last = frame.len() - 8;
+    frame[last..last + 2].copy_from_slice(&32u16.to_le_bytes());
+    assert_eq!(decode(&frame).unwrap().records[2].opcode, 32);
+    frame[last..last + 2].copy_from_slice(&33u16.to_le_bytes());
+    assert_eq!(decode(&frame), Err(DecodeError::Opcode));
+}
