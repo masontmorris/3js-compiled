@@ -20,7 +20,7 @@ try {
 }
 Start-Sleep -Seconds 1
 $early = @(Select-String -Path host.log -SimpleMatch 'ui-host exited before pipe connection').Count
-$left = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $stub }).Count
+$left = @(Get-CimInstance Win32_Process -Filter "Name='ui-host.exe' AND ParentProcessId=$($p.Id)").Count
 Remove-Item -Recurse -Force $dir
 Write-Output "early exits $early; threads $($first.threads) -> $($last.threads); handles $($first.handles) -> $($last.handles); stub processes left $left"
 if ($early -lt 2) { throw 'host.log records fewer than two ui-host exits before the pipe connected' }

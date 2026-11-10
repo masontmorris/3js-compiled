@@ -22,19 +22,23 @@ $over = @{ ui = 0; noui = 0 }
 $hudOver = 0
 $failed = 0
 $index = 0
+$previous = $null
 foreach ($mode in $order) {
     $index++
     $deadline = (Get-Date).AddSeconds(10)
-    while ((Get-Process ui-host -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+    while ($previous -and (Get-CimInstance Win32_Process -Filter "Name='ui-host.exe' AND ParentProcessId=$previous") -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 200
+    }
     $dir = Join-Path $Out ('{0:D2}-{1}' -f $index, $mode)
     New-Item -ItemType Directory -Force $dir | Out-Null
     $hostArgs = @('--entry', 'examples/hud/game.js', '--script', $script)
     if ($mode -eq 'noui') { $hostArgs += '--no-ui' }
     if ($Record) { $hostArgs += @('--record', (Join-Path $dir 'frames')) }
     $load = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
-    $ErrorActionPreference = 'Continue'
-    & $HostExe @hostArgs *> (Join-Path $dir 'host-console.log')
-    $ErrorActionPreference = 'Stop'
+    $hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList $hostArgs `
+        -RedirectStandardOutput (Join-Path $dir 'host-console.log') -RedirectStandardError (Join-Path $dir 'host-stderr.log')
+    $hostProcess.WaitForExit()
+    $previous = $hostProcess.Id
     Move-Item -Force frames.csv, host.log $dir
     if (Test-Path ui-host.log) { Move-Item -Force ui-host.log $dir }
     $checkArgs = @((Join-Path $root 'tools\check-ui-startup.py'), $dir, $Hz)
