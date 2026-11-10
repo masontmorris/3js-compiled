@@ -262,6 +262,135 @@ fn a_resize_while_idle_stretches_the_last_frame_the_game_drew() {
     }
 }
 
+/// The image canvas-size.js draws for `counter` on a `width` by `height` canvas.
+fn canvas_pattern(width: u32, height: u32, counter: u32) -> image::RgbaImage {
+    let on = |value: bool| if value { 255 } else { 0 };
+    image::RgbaImage::from_fn(width, height, |x, y| {
+        if y < height / 4 {
+            let bit = on(counter >> (x * 12 / width) & 1 == 1);
+            image::Rgba([bit, bit, bit, 255])
+        } else {
+            image::Rgba([
+                on(x & 1 == 1),
+                on(((x >> 1) ^ (y >> 1)) & 1 == 1),
+                on(y & 1 == 1),
+                255,
+            ])
+        }
+    })
+}
+
+/// The counter canvas-size.js drew into `shown`, from the middle of each bit in the top quarter,
+/// or `None` before the game first draws, while the window shows the magenta clear color.
+fn shown_counter(shown: &image::RgbaImage) -> Option<u32> {
+    let (width, height) = shown.dimensions();
+    if shown.get_pixel(0, 0).0 == [255, 0, 255, 255] {
+        return None;
+    }
+    Some((0..12).fold(0, |counter, bit| {
+        let x = (2 * bit + 1) * width / 24;
+        counter | u32::from(shown.get_pixel(x, height / 8)[0] > 127) << bit
+    }))
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn the_window_shows_each_frame_scaled_from_the_canvas_size() {
+    let dir = workdir("canvas-size");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 340},
+        {"type": "resize", "width": 800, "height": 600},
+        {"type": "wait", "frames": 20},
+        {"type": "key", "code": "KeyS", "down": true},
+        {"type": "wait", "frames": 5},
+        {"type": "resize", "width": 640, "height": 640},
+        {"type": "wait", "frames": 5},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(
+        &dir,
+        &bundle("canvas-size"),
+        &steps,
+        &["--record", "frames"],
+    );
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let drawn: std::collections::HashMap<u32, (u32, u32)> = log
+        .lines()
+        .filter_map(|line| {
+            let (counter, size) = line.strip_prefix("draw ")?.split_once(' ')?;
+            let (width, height) = size.split_once('x')?;
+            Some((
+                counter.parse().ok()?,
+                (width.parse().ok()?, height.parse().ok()?),
+            ))
+        })
+        .collect();
+    assert!(drawn.len() > 320, "{log}");
+    let mut recorded: Vec<_> = std::fs::read_dir(dir.join("frames"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    recorded.sort();
+    let mut shown = Vec::new();
+    for path in &recorded {
+        let image = image::open(path).unwrap().to_rgba8();
+        let Some(counter) = shown_counter(&image) else {
+            assert!(shown.is_empty(), "{} shows the clear color", path.display());
+            continue;
+        };
+        let &(width, height) = drawn
+            .get(&counter)
+            .unwrap_or_else(|| panic!("{} shows undrawn frame {counter}", path.display()));
+        let (window_width, window_height) = image.dimensions();
+        let expected = bilinear(
+            &canvas_pattern(width, height, counter),
+            window_width,
+            window_height,
+        );
+        let (x, y, error) = image
+            .enumerate_pixels()
+            .map(|(x, y, pixel)| {
+                let error = (0..3).map(|c| pixel[c].abs_diff(expected.get_pixel(x, y)[c]));
+                (x, y, error.max().unwrap())
+            })
+            .max_by_key(|(_, _, error)| *error)
+            .unwrap();
+        assert!(
+            error <= 3,
+            "{} pixel ({x}, {y}) is {:?}, where frame {counter}'s {width}x{height} canvas scaled bilinearly is {:?}",
+            path.display(),
+            image.get_pixel(x, y),
+            expected.get_pixel(x, y)
+        );
+        shown.push((counter, (window_width, window_height)));
+    }
+    let last = *drawn.keys().max().unwrap();
+    let stop = shown
+        .iter()
+        .position(|(counter, _)| *counter == last)
+        .unwrap_or_else(|| {
+            let mut counters: Vec<_> = shown.iter().map(|(counter, _)| *counter).collect();
+            counters.dedup();
+            panic!("frame {last} is never shown; the window shows frames {counters:?}")
+        });
+    for pair in shown[..=stop].windows(2) {
+        assert_eq!(pair[1].0, pair[0].0 + 1, "every drawn frame is shown");
+    }
+    assert!(
+        shown[stop..].iter().all(|(counter, _)| *counter == last),
+        "idle frames keep the last image"
+    );
+    for window in [(800, 600), (640, 640)] {
+        assert!(shown[stop..].iter().any(|(_, size)| *size == window));
+    }
+    assert!(
+        shown[..stop]
+            .iter()
+            .any(|(counter, size)| *counter > 300 && *size == (800, 600)),
+        "a fixed 1280x720 canvas keeps drawing after the window shrinks"
+    );
+}
+
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn responses_carry_the_frame_that_requested_them() {
