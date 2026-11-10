@@ -20,6 +20,7 @@ for (let i = 0; i < args.length; i++) {
 }
 if (!/^[a-z0-9-]+$/.test(scene)) throw new Error('Invalid scene name');
 const root = resolve('.');
+host = resolve(root, host);
 const out = resolve(output);
 await mkdir(out, { recursive: true });
 const webPath = resolve(out, `${scene}-web.png`);
