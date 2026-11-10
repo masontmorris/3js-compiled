@@ -1547,12 +1547,17 @@ impl Executor {
                 // As in Edge, a resize discards the canvas texture the frame acquired, and the
                 // window keeps its last image. A texture acquired after an earlier resize already
                 // put the resized canvas in the window, so discarding it leaves that canvas
-                // transparent.
+                // transparent. A canvas with a zero width or height has no drawing buffer, and a
+                // transparent 1x1 canvas shows the same nothing.
                 if let Some(discarded) = self.surface.take() {
                     self.spare = Some(discarded);
                     self.surface_clear = SurfaceClear::Done;
                     if self.acquired_resized {
-                        let canvas = self.canvas_texture(u32_at(payload, 0), u32_at(payload, 4))?;
+                        let (width, height) = match (u32_at(payload, 0), u32_at(payload, 4)) {
+                            (0, _) | (_, 0) => (1, 1),
+                            size => size,
+                        };
+                        let canvas = self.canvas_texture(width, height)?;
                         self.clear(&canvas);
                         self.next = Some(canvas);
                     }
