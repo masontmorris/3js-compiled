@@ -167,6 +167,29 @@ fn a_replaced_renderer_draws_its_scene() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_renderer_replaces_one_disposed_without_await_or_before_init() {
+    let run = run(
+        "handoff",
+        &bundle("handoff"),
+        serde_json::json!([{"type": "wait", "frames": 10}]),
+    );
+    for line in [
+        "failed init: ",
+        "late readback rejected: Device is destroyed",
+        "a second live renderer was rejected: Only one live NativeBackend is supported",
+    ] {
+        assert!(run.log.contains(line), "missing {line:?}
+{}", run.log);
+    }
+    assert!(!run.log.contains("GPU error"), "{}", run.log);
+    assert!(!run.log.contains("new renderer error"), "{}", run.log);
+    assert!(!run.log.contains("late readback resolved"), "{}", run.log);
+    assert_near(&run, (8, 8), [0, 255, 0]);
+    assert_near(&run, (640, 360), [255, 255, 0]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn idle_frames_show_the_last_frame_the_game_drew() {
     let run = run(
         "idle",

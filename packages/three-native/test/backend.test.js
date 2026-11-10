@@ -444,6 +444,8 @@ const releases = new Set([Opcode.DESTROY_BUFFER, Opcode.DESTROY_TEXTURE, Opcode.
 function replayHandles(frames) {
   const live = new Map();
   const duplicates = [];
+  const released = new Set();
+  const repeated = [];
   for (const bytes of frames) {
     for (const { opcode, payload } of decodeCommands(bytes)) {
       if (!creates.has(opcode) && !releases.has(opcode)) continue;
@@ -453,6 +455,8 @@ function replayHandles(frames) {
         if (live.has(handle)) duplicates.push(handle);
         else live.set(handle, { parent: opcode === Opcode.CREATE_TEXTURE_VIEW ? view.getUint32(4, true) : null, surface: opcode === Opcode.ACQUIRE_SURFACE });
       } else if (releases.has(opcode)) {
+        if (released.has(handle)) repeated.push(handle);
+        released.add(handle);
         live.delete(handle);
         for (const [child, entry] of live) if (entry.parent === handle) live.delete(child);
       }
@@ -462,7 +466,7 @@ function replayHandles(frames) {
       for (const [child, other] of live) if (other.parent === handle) live.delete(child);
     }
   }
-  return { live, duplicates };
+  return { live, duplicates, repeated };
 }
 
 async function boxRenderer(canvas, color) {
@@ -515,4 +519,57 @@ test('a second live native renderer is rejected until the first is disposed', as
   await first.renderer.dispose();
   const second = await boxRenderer(canvas, 0x00ff00);
   await second.renderer.dispose();
+});
+
+test('a renderer disposed before init or after a failed init leaves the surface to the next renderer', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const unused = new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas }, { features: ['core-features-and-limits'] }) });
+  await unused.dispose();
+  class FailingBackend extends NativeBackend {
+    async init(renderer) {
+      await super.init(renderer);
+      throw new Error('init failed');
+    }
+  }
+  const failed = new WebGPURenderer({ canvas, backend: new FailingBackend({ canvas }, { features: ['core-features-and-limits'] }) });
+  await assert.rejects(failed.init());
+  await assert.rejects(failed.dispose());
+  const next = await boxRenderer(canvas, 0x00ff00);
+  next.render();
+  assert.ok(decodeCommands(next.backend.takeFrame()).some(record => record.opcode === Opcode.ACQUIRE_SURFACE));
+  await next.renderer.dispose();
+});
+
+test('a renderer replaced without awaiting its dispose hands the surface to the next one', async () => {
+  const listeners = new Set();
+  Object.assign(globalThis, { addEventListener: (type, listener) => listeners.add(listener), removeEventListener: (type, listener) => listeners.delete(listener) });
+  try {
+    const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+    const first = await boxRenderer(canvas, 0xff0000);
+    first.render();
+    const late = first.backend.recordingDevice.readBuffer([...first.backend.recordingDevice.buffers][0], 0, 4);
+    const frames = [first.backend.takeFrame()];
+    const [{ payload }] = decodeCommands(frames[0]).filter(record => record.opcode === Opcode.READ_BUFFER);
+    const request = new DataView(payload.buffer, payload.byteOffset).getUint32(0, true);
+    const { Scene, PerspectiveCamera } = await import('three/webgpu');
+    const disposed = first.renderer.dispose();
+    const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'] });
+    const renderer = new WebGPURenderer({ canvas, backend });
+    await renderer.init();
+    assert.throws(() => new NativeBackend({ canvas }), /one live NativeBackend/);
+    await disposed;
+    renderer.render(new Scene(), new PerspectiveCamera());
+    frames.push(backend.takeFrame());
+    const fresh = [];
+    backend.recordingDevice.onuncapturederror = event => fresh.push(event);
+    for (const listener of listeners) listener({ responses: [{ type: 'readback', request, bytes: new ArrayBuffer(4) }, { type: 'error', request, message: 'stale' }] });
+    await assert.rejects(late, /Device is destroyed/);
+    assert.deepEqual(fresh, []);
+    assert.deepEqual(replayHandles(frames).duplicates, []);
+    assert.deepEqual(replayHandles(frames).repeated, []);
+    await renderer.dispose();
+  } finally {
+    delete globalThis.addEventListener;
+    delete globalThis.removeEventListener;
+  }
 });
