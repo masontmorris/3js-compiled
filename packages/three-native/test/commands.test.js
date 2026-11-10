@@ -25,6 +25,15 @@ test('the decoder rejects corrupted and truncated streams', () => {
   }
 });
 
+test('the decoder names the version it found and the version it reads', () => {
+  const stream = new CommandEncoder().finish();
+  const supported = new DataView(stream.buffer).getUint16(4, true);
+  new DataView(stream.buffer).setUint16(4, 2, true);
+  assert.throws(() => decodeCommands(stream), {
+    message: `Command stream version 2 is not supported: this decoder reads version ${supported}`,
+  });
+});
+
 test('handles are nonzero and unique across frames', () => {
   const handles = new Handles();
   assert.deepEqual([handles.allocate(), handles.allocate(), handles.allocate()], [1, 2, 3]);
