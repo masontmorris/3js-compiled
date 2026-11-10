@@ -31,11 +31,33 @@ pub(crate) struct View {
     pub requested: Size,
 }
 
-/// Input for the page, recorded as a point inside one of its rects.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Owner {
+    Page,
+    Game,
+    /// The page's, but the ui-host that received its start has stopped.
+    Neither,
+}
+
+/// A pointer sequence from its first button down to its last button up. As with a browser's
+/// implicit pointer capture, all of it goes where its first down went.
+struct Press {
+    owner: Owner,
+    buttons: Vec<i16>,
+}
+
+/// Where held input lands in the page's layout at Servo's size.
+#[derive(Clone, Copy)]
+enum Place {
+    /// The same point of the rect at this index.
+    Rect { rect: usize, offset: (f64, f64) },
+    /// Moved as far as the down that began its press.
+    Press,
+}
+
 struct Held {
     pointer: Pointer,
-    rect: usize,
-    offset: (f64, f64),
+    place: Place,
     at: Instant,
 }
 
@@ -51,6 +73,9 @@ pub(crate) struct Pointers {
     /// The rects the page listed last.
     last: Vec<Rect>,
     held: VecDeque<Held>,
+    press: Option<Press>,
+    /// How far `release` moved the down of the page's latest press.
+    shift: (f64, f64),
 }
 
 impl Pointers {
@@ -64,42 +89,68 @@ impl Pointers {
             .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
         self.layouts.push((size, self.last.clone()));
     }
-    fn layout(&self, size: Size) -> Option<&[Rect]> {
-        self.layouts
-            .iter()
-            .find(|(at, _)| *at == size)
-            .map(|(_, rects)| rects.as_slice())
-    }
-    /// Whether `pointer` lands on a rect of the frame on screen. Input that does waits for
-    /// `release`; the rest belongs to the game.
-    pub fn pointer(&mut self, view: View, pointer: Pointer, now: Instant) -> bool {
-        let Some((rect, r)) = view
-            .shown
-            .and_then(|shown| self.layout(shown))
-            .and_then(|rects| {
-                rects.iter().enumerate().find(|(_, r)| {
-                    pointer.x >= r[0]
-                        && pointer.y >= r[1]
-                        && pointer.x < r[0] + r[2]
-                        && pointer.y < r[1] + r[3]
+    fn hit(&self, shown: Size, pointer: Pointer) -> Option<Place> {
+        let (_, rects) = self.layouts.iter().find(|(at, _)| *at == shown)?;
+        rects.iter().enumerate().find_map(|(rect, r)| {
+            (pointer.x >= r[0]
+                && pointer.y >= r[1]
+                && pointer.x < r[0] + r[2]
+                && pointer.y < r[1] + r[3])
+                .then_some(Place::Rect {
+                    rect,
+                    offset: (pointer.x - r[0], pointer.y - r[1]),
                 })
-            })
-        else {
-            return false;
+        })
+    }
+    /// Whether `pointer` belongs to the page: during a press, whether the press began on a
+    /// rect of the frame then on screen; otherwise, whether it lands on a rect of the frame on
+    /// screen. Input for the page waits for `release`.
+    pub fn pointer(&mut self, view: View, pointer: Pointer, now: Instant) -> bool {
+        let place = if let Some(press) = &mut self.press {
+            match pointer.action {
+                1 if !press.buttons.contains(&pointer.button) => press.buttons.push(pointer.button),
+                2 => press.buttons.retain(|button| *button != pointer.button),
+                _ => {}
+            }
+            let owner = press.owner;
+            if press.buttons.is_empty() {
+                self.press = None;
+            }
+            match owner {
+                Owner::Page => Place::Press,
+                Owner::Game => return false,
+                Owner::Neither => return true,
+            }
+        } else {
+            let hit = view.shown.and_then(|shown| self.hit(shown, pointer));
+            if pointer.action == 1 {
+                self.press = Some(Press {
+                    owner: if hit.is_some() {
+                        Owner::Page
+                    } else {
+                        Owner::Game
+                    },
+                    buttons: vec![pointer.button],
+                });
+            }
+            let Some(place) = hit else {
+                return false;
+            };
+            place
         };
-        let offset = (pointer.x - r[0], pointer.y - r[1]);
         self.held.push_back(Held {
             pointer,
-            rect,
-            offset,
+            place,
             at: now,
         });
         true
     }
     /// The held input, in order, placed on the page's layout at Servo's size once Servo lays
     /// the page out at the size the host asked for and the page has replied there, or on the
-    /// rects the page listed last once the oldest has waited `HOLD_LIMIT`. A rect the layout
-    /// lacks keeps the input's own point.
+    /// rects the page listed last once the oldest has waited `HOLD_LIMIT`. Input on a rect
+    /// goes to the same offset in the rect at the same index, or to its centre when the rect
+    /// has shrunk past the offset, and keeps its own point when the layout lacks the rect. The
+    /// rest of a press moves as far as its down.
     pub fn release(&mut self, view: View, now: Instant) -> Vec<Pointer> {
         let rects = match self
             .layouts
@@ -116,29 +167,40 @@ impl Pointers {
             }
             None => return Vec::new(),
         };
-        self.held
-            .drain(..)
-            .map(|held| match rects.get(held.rect) {
-                Some(r) => {
-                    let (dx, dy) = if held.offset.0 < r[2] && held.offset.1 < r[3] {
-                        held.offset
-                    } else {
-                        (r[2] / 2.0, r[3] / 2.0)
-                    };
-                    Pointer {
-                        x: r[0] + dx,
-                        y: r[1] + dy,
-                        ..held.pointer
+        let mut out = Vec::with_capacity(self.held.len());
+        for Held { pointer, place, .. } in self.held.drain(..) {
+            let (x, y) = match place {
+                Place::Rect { rect, offset } => match rects.get(rect) {
+                    Some(r) => {
+                        let (dx, dy) = if offset.0 < r[2] && offset.1 < r[3] {
+                            offset
+                        } else {
+                            (r[2] / 2.0, r[3] / 2.0)
+                        };
+                        (r[0] + dx, r[1] + dy)
                     }
-                }
-                None => held.pointer,
-            })
-            .collect()
+                    None => (pointer.x, pointer.y),
+                },
+                Place::Press => (pointer.x + self.shift.0, pointer.y + self.shift.1),
+            };
+            if let (Place::Rect { .. }, 1) = (place, pointer.action) {
+                self.shift = (x - pointer.x, y - pointer.y);
+            }
+            out.push(Pointer { x, y, ..pointer });
+        }
+        out
     }
+    /// ui-host stopped: its layouts and held input go, and the rest of a press it received
+    /// goes to neither side.
     pub fn clear(&mut self) {
         self.layouts.clear();
         self.last.clear();
         self.held.clear();
+        if let Some(press) = &mut self.press
+            && press.owner == Owner::Page
+        {
+            press.owner = Owner::Neither;
+        }
     }
 }
 
@@ -224,7 +286,9 @@ mod tests {
             self.update();
         }
         fn pointer(&mut self, action: u8, x: f64) {
-            let pointer = at(action, x);
+            self.send(at(action, x));
+        }
+        fn send(&mut self, pointer: Pointer) {
             if !self.pointers.pointer(self.view(), pointer, self.now) {
                 self.out.push(Game(pointer));
             }
@@ -306,6 +370,100 @@ mod tests {
         host.click(1240.0);
         host.reply(NEW, Some(vec![[1460.0, 20.0, 100.0, 80.0]]));
         assert_eq!(host.take(), [Page(at(1, 1510.0)), Page(at(2, 1510.0))]);
+    }
+
+    /// Adversary round 4: a press that starts on the button drawn in the kept old-size frame
+    /// and ends, at the same window point, after the new-size frame reaches the screen.
+    #[test]
+    fn a_press_held_across_the_frame_switch_presses_the_drawn_button() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.reply(NEW, Some(right_button(1680)));
+        host.pointer(1, 1160.0);
+        host.publish();
+        host.pointer(0, 1170.0);
+        host.pointer(2, 1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1560.0)),
+                Page(at(0, 1570.0)),
+                Page(at(2, 1560.0))
+            ],
+            "the page gets the whole press, moved with its down; the game gets none of it"
+        );
+    }
+
+    #[test]
+    fn a_press_that_began_on_the_game_stays_with_the_game() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.reply(NEW, Some(right_button(1680)));
+        host.pointer(1, 1560.0);
+        host.publish();
+        host.pointer(0, 1570.0);
+        host.pointer(2, 1560.0);
+        assert_eq!(
+            host.take(),
+            [
+                Game(at(1, 1560.0)),
+                Game(at(0, 1570.0)),
+                Game(at(2, 1560.0))
+            ],
+            "the up lands on the button now drawn, but the press began where none was"
+        );
+    }
+
+    #[test]
+    fn a_second_button_joins_the_press_in_progress() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(1, 1160.0);
+        host.pointer(0, 100.0);
+        let right = Pointer {
+            button: 2,
+            ..at(1, 100.0)
+        };
+        host.send(right);
+        host.pointer(2, 100.0);
+        host.pointer(0, 100.0);
+        let up = Pointer {
+            button: 2,
+            ..at(2, 100.0)
+        };
+        host.send(up);
+        host.pointer(0, 100.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1160.0)),
+                Page(at(0, 100.0)),
+                Page(right),
+                Page(at(2, 100.0)),
+                Page(at(0, 100.0)),
+                Page(up),
+                Game(at(0, 100.0)),
+            ],
+            "the press ends at its last button up"
+        );
+    }
+
+    #[test]
+    fn the_rest_of_a_page_press_reaches_neither_side_after_ui_host_stops() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(1, 1160.0);
+        host.rings = Rings::default();
+        host.pointers.clear();
+        host.pointer(0, 1170.0);
+        host.pointer(2, 1160.0);
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1160.0)),
+                Game(at(1, 1160.0)),
+                Game(at(2, 1160.0))
+            ]
+        );
     }
 
     /// Adversary round 4: while the window is dragged larger, ui-host announces a ring per

@@ -860,8 +860,9 @@ impl Ui {
         }
     }
     /// Whether the pointer input belongs to the page: it lands on one of the page's rects in
-    /// the HUD frame on screen. The page receives it at the same point of the same rect once
-    /// Servo has laid the page out at the window's size.
+    /// the HUD frame on screen or, from a button down to the last button up, the down did. The
+    /// game receives the input this returns false for; `Pointers` places the rest on the
+    /// page's layout at Servo's size.
     pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
         let pointer = pointers::Pointer {
             action,
