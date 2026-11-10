@@ -549,10 +549,11 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
     );
 }
 
+/// Reads the texels of a surface up to 64 pixels wide, row by row.
 fn read_surface(device: &wgpu::Device, queue: &wgpu::Queue, surface: &wgpu::Texture) -> Vec<u8> {
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 256 * 4,
+        size: 256 * u64::from(surface.height()),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -564,21 +565,18 @@ fn read_surface(device: &wgpu::Device, queue: &wgpu::Queue, surface: &wgpu::Text
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(256),
-                rows_per_image: Some(4),
+                rows_per_image: Some(surface.height()),
             },
         },
-        wgpu::Extent3d {
-            width: 4,
-            height: 4,
-            depth_or_array_layers: 1,
-        },
+        surface.size(),
     );
     queue.submit([encoder.finish()]);
     buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     let data = buffer.slice(..).get_mapped_range().unwrap();
+    let row = 4 * surface.width() as usize;
     data.chunks(256)
-        .flat_map(|row| row[..16].to_vec())
+        .flat_map(|texels| texels[..row].to_vec())
         .collect()
 }
 
@@ -675,6 +673,63 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
         vec![readback([255, 0, 0, 255])],
         "a later pass in the first pass's encoder loads what that pass drew"
     );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let draw = |texture: u32, (width, height): (u32, u32), [r, g, b]: [f64; 3]| {
+        let mut payload = words(&[1, 1, texture + 1, 0, 1, 1]);
+        for component in [r, g, b, 1.0] {
+            payload.extend_from_slice(&component.to_bits().to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 32]);
+        vec![
+            (30, words(&[texture, width, height])),
+            (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
+            (14, payload),
+            (25, vec![]),
+            (26, vec![]),
+        ]
+    };
+    let resize = |width: u32, height: u32| (32, words(&[width, height]));
+    for zero in [(0, 0), (0, 8), (8, 0)] {
+        let mut surface = surface_texture(device, 4, 4);
+        let mut executor = Executor::new(device.clone(), queue.clone());
+        let red = draw(1, (4, 4), [1.0, 0.0, 0.0]);
+        assert_eq!(
+            executor.replay(&stream(&red), Some(&mut surface)).unwrap(),
+            vec![]
+        );
+        let mut green = vec![resize(8, 8)];
+        green.extend(draw(3, (8, 8), [0.0, 1.0, 0.0]));
+        green.push(resize(zero.0, zero.1));
+        assert_eq!(
+            executor
+                .replay(&stream(&green), Some(&mut surface))
+                .unwrap(),
+            vec![],
+            "a resize to {zero:?} raises no error, as in Edge"
+        );
+        let shown = read_surface(device, queue, &surface);
+        assert!(
+            executor.surface_used() && !shown.is_empty() && shown.iter().all(|byte| *byte == 0),
+            "a canvas resized to {zero:?} after a resized draw shows transparent, as in Edge: {shown:?}"
+        );
+        let mut blue = vec![resize(4, 4)];
+        blue.extend(draw(5, (4, 4), [0.0, 0.0, 1.0]));
+        assert_eq!(
+            executor.replay(&stream(&blue), Some(&mut surface)).unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            read_surface(device, queue, &surface),
+            [255, 0, 0, 255].repeat(16),
+            "the canvas draws again once resized from {zero:?}"
+        );
+    }
 }
 
 #[test]

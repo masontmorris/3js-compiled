@@ -578,3 +578,68 @@ fn setting_the_canvas_size_it_has_after_a_draw_discards_that_frame() {
         "Edge keeps the last red frame"
     );
 }
+
+/// Runs `canvas-resize.js` in a zero-size `mode` and captures the window while the canvas has a
+/// zero size and after it draws blue at 1280x720 again. Fails on any GPU or uncaptured error.
+fn canvas_zero(mode: &str) -> (image::RgbaImage, image::RgbaImage) {
+    let dir = workdir(mode);
+    let (zero, back) = (dir.join("zero.png"), dir.join("back.png"));
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 32},
+        {"type": "capture", "path": zero},
+        {"type": "wait", "frames": 30},
+        {"type": "capture", "path": back},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("canvas-resize"), &steps, &["--scene", mode]);
+    assert!(
+        status.success(),
+        "{mode}: host exited with {status}
+{log}"
+    );
+    assert!(log.contains("frame 35 ends"), "{mode}: {log}");
+    assert!(
+        !log.contains("uncaptured") && !log.contains("GPU error"),
+        "{mode} raises no error, as in Edge: {log}"
+    );
+    let open = |path: &Path| image::open(path).unwrap().to_rgba8();
+    (open(&zero), open(&back))
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_resized_to_a_zero_size_after_a_resized_draw_is_transparent() {
+    for size in ["0x0", "0x360", "640x0"] {
+        let (zero, back) = canvas_zero(&format!("resized-zero-{size}"));
+        assert_eq!(
+            zero.get_pixel(640, 360).0,
+            [0, 0, 0, 0],
+            "{size}: Edge shows a transparent canvas"
+        );
+        assert_eq!(
+            back.get_pixel(640, 360).0,
+            [0, 0, 255, 255],
+            "{size}: the canvas draws again"
+        );
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_zero_size_resize_otherwise_keeps_the_last_image() {
+    for mode in ["drawn", "idle"] {
+        for size in ["0x0", "0x360", "640x0"] {
+            let (zero, back) = canvas_zero(&format!("{mode}-zero-{size}"));
+            assert_eq!(
+                zero.get_pixel(640, 360).0,
+                [255, 0, 0, 255],
+                "{mode} {size}: Edge keeps the last red frame"
+            );
+            assert_eq!(
+                back.get_pixel(640, 360).0,
+                [0, 0, 255, 255],
+                "{mode} {size}: the canvas draws again"
+            );
+        }
+    }
+}
