@@ -198,6 +198,59 @@ fn idle_frames_show_the_last_frame_the_game_drew() {
     assert_near(&run, (640, 360), [0, 255, 0]);
 }
 
+/// The bounds of the pixels within 3 of `color`, as left, top, right and bottom edges.
+fn bounds(image: &image::RgbaImage, color: [u8; 3]) -> [f64; 4] {
+    let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+    for (x, y, pixel) in image.enumerate_pixels() {
+        if (0..3).all(|c| pixel[c].abs_diff(color[c]) <= 3) {
+            (left, top) = (left.min(x), top.min(y));
+            (right, bottom) = (right.max(x + 1), bottom.max(y + 1));
+        }
+    }
+    [left, top, right, bottom].map(f64::from)
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_resize_while_idle_stretches_the_last_frame_the_game_drew() {
+    let dir = workdir("idle-resize");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 6},
+        {"type": "capture", "path": "before.png"},
+        {"type": "resize", "width": 800, "height": 600},
+        {"type": "wait", "frames": 2},
+        {"type": "capture", "path": "after.png"},
+        {"type": "resize", "width": 640, "height": 640},
+        {"type": "wait", "frames": 2},
+        {"type": "capture", "path": "again.png"},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("idle-resize"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    let open = |name: &str| image::open(dir.join(name)).unwrap().to_rgba8();
+    let before = bounds(&open("before.png"), [255, 136, 0]);
+    for (name, (width, height)) in [("after.png", (800, 600)), ("again.png", (640, 640))] {
+        let image = open(name);
+        assert_eq!(image.dimensions(), (width, height));
+        assert!(
+            (0..3).all(|c| image.get_pixel(4, 4)[c].abs_diff([51, 102, 153][c]) <= 3),
+            "{name} corner is {:?}, not the scene background",
+            image.get_pixel(4, 4)
+        );
+        let scale = [f64::from(width) / 1280.0, f64::from(height) / 720.0];
+        let expected: Vec<_> = (0..4).map(|i| before[i] * scale[i % 2]).collect();
+        let shown = bounds(&image, [255, 136, 0]);
+        assert!(
+            (0..4).all(|i| (shown[i] - expected[i]).abs() <= 2.0),
+            "{name} shows the cube at {shown:?}, expected the frame before the resize scaled to {expected:?}"
+        );
+    }
+}
+
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn responses_carry_the_frame_that_requested_them() {
