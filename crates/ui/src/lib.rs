@@ -57,7 +57,6 @@ struct Importer {
     d3d: ID3D12Device,
     device: wgpu::Device,
     layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
 }
 /// A ring whose textures a worker is opening, off the game thread.
 struct Import {
@@ -346,16 +345,10 @@ impl Importer {
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ui slot"),
             layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            }],
         });
         Ok(Slot {
             _texture: texture,
@@ -449,24 +442,16 @@ impl Ui {
         };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ui layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
+                count: None,
+            }],
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ui composite"),
@@ -502,12 +487,10 @@ impl Ui {
             multiview_mask: None,
             cache: None,
         });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let importer = Importer {
             d3d: d3d.device.clone(),
             device: device.clone(),
             layout,
-            sampler,
         };
         let mut ui = Self {
             d3d,
@@ -848,20 +831,21 @@ impl Drop for Ui {
     }
 }
 
+/// Copies HUD texels one to one from the window's top-left corner. ui-host's rows run
+/// bottom-up. A frame of an older ring size keeps its size until the new ring's first frame.
 const COMPOSITE_WGSL: &str = r#"
-struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
-@vertex fn vs_main(@builtin(vertex_index) i: u32) -> VO {
+@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
     var p = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(-1.0, 1.0), vec2f(3.0, 1.0));
-    var t = array<vec2f, 3>(vec2f(0.0, 2.0), vec2f(0.0, 0.0), vec2f(2.0, 0.0));
-    var o: VO;
-    o.pos = vec4f(p[i], 0.0, 1.0);
-    o.uv = vec2f(t[i].x, 1.0 - t[i].y);
-    return o;
+    return vec4f(p[i], 0.0, 1.0);
 }
 @group(0) @binding(0) var hud: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-@fragment fn fs_main(v: VO) -> @location(0) vec4f {
-    return textureSample(hud, samp, v.uv);
+@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let size = vec2i(textureDimensions(hud));
+    let texel = vec2i(i32(pos.x), size.y - 1 - i32(pos.y));
+    if (texel.x >= size.x || texel.y < 0) {
+        return vec4f(0.0);
+    }
+    return textureLoad(hud, texel, 0);
 }
 "#;
 
