@@ -16,10 +16,11 @@ published, skipped = map(int, re.findall(r'frames published: (\d+), skipped \(no
 assert len(set(r['pid'] for r in rows if r['proc'] == 'ui-host')) == 1, 'ui-host relaunched during the soak'
 intervals = sorted(float(f['interval_ms']) for f in frames[shown:])
 median = intervals[len(intervals) // 2]
-assert abs(median - 1000.0 / hz) < 0.1 * 1000.0 / hz, f'median frame interval {median:.2f} ms is not vsync at {hz} Hz'
-print(f'{len(intervals)} frames after the HUD, median interval {median:.3f} ms')
+at_vsync = abs(median - 1000.0 / hz) < 0.1 * 1000.0 / hz
+print(f'{len(intervals)} frames after the HUD, median interval {median:.3f} ms'
+      f'{"" if at_vsync else f"  FAIL: not vsync at {hz} Hz"}')
 
-failed = False
+failed = not at_vsync
 for proc in ('host', 'ui-host'):
     series = [r for r in rows if r['proc'] == proc and float(r['elapsed_s']) > hud_at]
     first, last = series[0], series[-1]

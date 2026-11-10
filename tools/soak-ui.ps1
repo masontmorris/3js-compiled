@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Out,
     [string]$Entry = 'examples/hud/game.js',
     [int]$Seconds = 600,
-    [double]$Hz = 169
+    [double]$Hz = 169,
+    [string[]]$HostArgs = @()
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -13,7 +14,7 @@ $script = Join-Path $Out 'soak.json'
 $samples = Join-Path $Out 'samples.csv'
 'elapsed_s,proc,pid,handles,working_set_mb,private_mb' | Set-Content -Encoding ascii $samples
 $started = Get-Date
-$p = Start-Process -FilePath $HostExe -PassThru -WindowStyle Hidden -ArgumentList @('--entry', $Entry, '--script', $script) `
+$p = Start-Process -FilePath $HostExe -PassThru -WindowStyle Hidden -ArgumentList (@('--entry', $Entry, '--script', $script) + $HostArgs) `
     -RedirectStandardOutput (Join-Path $Out 'host-stdout.log') -RedirectStandardError (Join-Path $Out 'host-stderr.log')
 function Add-Sample($elapsed, $name, $process) {
     if ($process) {
