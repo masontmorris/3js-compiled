@@ -226,6 +226,10 @@ impl Executor {
                     message,
                 }),
             }
+            // A create keeps its label for its error and drops it when the create left no resource.
+            if let Some(handle) = subject.filter(|handle| !self.handle_used(*handle)) {
+                self.labels.remove(&handle);
+            }
         }
         if self.render_pass.is_some() || self.encoder.is_some() {
             self.render_pass = None;
