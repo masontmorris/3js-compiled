@@ -782,9 +782,10 @@ impl Ui {
                         first_frame: frame,
                     });
                 }
-                let held = self
+                let (held, late) = self
                     .pointers
                     .release(link.rings.view(link.requested), Instant::now());
+                self.late_input(late, link.requested);
                 send_pointers(&link, held);
                 if self.can_send
                     && !self.state_sent
@@ -878,8 +879,21 @@ impl Ui {
         };
         let view = link.rings.view(link.requested);
         let page = self.pointers.pointer(view, pointer, now);
-        send_pointers(link, self.pointers.release(view, now));
+        let (held, late) = self.pointers.release(view, now);
+        send_pointers(link, held);
+        let requested = link.requested;
+        self.late_input(late, requested);
         page
+    }
+    fn late_input(&mut self, late: bool, size: (u32, u32)) {
+        if late {
+            self.notes.push(format!(
+                "UI input held {} ms without the page's layout at {}x{} went to the page on its last rects",
+                pointers::HOLD_LIMIT.as_millis(),
+                size.0,
+                size.1
+            ));
+        }
     }
     pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         if let Connection::Running(link) = &self.connection

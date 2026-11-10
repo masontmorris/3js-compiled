@@ -150,22 +150,22 @@ impl Pointers {
     /// rects the page listed last once the oldest has waited `HOLD_LIMIT`. Input on a rect
     /// goes to the same offset in the rect at the same index, or to its centre when the rect
     /// has shrunk past the offset, and keeps its own point when the layout lacks the rect. The
-    /// rest of a press moves as far as its down.
-    pub fn release(&mut self, view: View, now: Instant) -> Vec<Pointer> {
-        let rects = match self
+    /// rest of a press moves as far as its down. Also returns whether `HOLD_LIMIT` released it.
+    pub fn release(&mut self, view: View, now: Instant) -> (Vec<Pointer>, bool) {
+        let (rects, late) = match self
             .layouts
             .iter()
             .find(|(at, _)| view.servo == Some(view.requested) && *at == view.requested)
         {
-            Some((_, rects)) => rects,
+            Some((_, rects)) => (rects, false),
             None if self
                 .held
                 .front()
                 .is_some_and(|held| now.duration_since(held.at) >= HOLD_LIMIT) =>
             {
-                &self.last
+                (&self.last, true)
             }
-            None => return Vec::new(),
+            None => return (Vec::new(), false),
         };
         let mut out = Vec::with_capacity(self.held.len());
         for Held { pointer, place, .. } in self.held.drain(..) {
@@ -188,7 +188,7 @@ impl Pointers {
             }
             out.push(Pointer { x, y, ..pointer });
         }
-        out
+        (out, late)
     }
     /// ui-host stopped: its layouts and held input go, and the rest of a press it received
     /// goes to neither side.
@@ -243,6 +243,8 @@ mod tests {
         pub_id: u64,
         now: Instant,
         out: Vec<To>,
+        /// Releases by `HOLD_LIMIT`.
+        late: usize,
     }
 
     impl Host {
@@ -256,6 +258,7 @@ mod tests {
                 pub_id: 0,
                 now: Instant::now(),
                 out: Vec::new(),
+                late: 0,
             };
             host.resize(size);
             host.reply(size, Some(rects));
@@ -300,9 +303,9 @@ mod tests {
         }
         fn update(&mut self) {
             let view = self.view();
-            for pointer in self.pointers.release(view, self.now) {
-                self.out.push(Page(pointer));
-            }
+            let (pointers, late) = self.pointers.release(view, self.now);
+            self.out.extend(pointers.into_iter().map(Page));
+            self.late += usize::from(late);
         }
         fn wait(&mut self, ms: u64) {
             self.now += Duration::from_millis(ms);
@@ -327,6 +330,7 @@ mod tests {
         assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
         host.wait(1000);
         assert_eq!(host.take(), []);
+        assert_eq!(host.late, 0);
     }
 
     #[test]
@@ -521,6 +525,7 @@ mod tests {
             [Page(at(1, 1160.0)), Page(at(2, 1160.0))],
             "placed on the rects the page listed last"
         );
+        assert_eq!(host.late, 1);
     }
 
     #[test]
