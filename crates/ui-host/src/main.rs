@@ -213,8 +213,10 @@ impl Pacer {
 /// How long after the page first reports a new viewport size display lists built before the
 /// resize may still reach the screen: two rendering updates.
 const RELAYOUT_SETTLE: Duration = Duration::from_millis(40);
-/// Longest wait for the page to report a new viewport size, for pages whose tick fails.
-const RELAYOUT_FALLBACK: Duration = Duration::from_millis(250);
+/// Longest wait for the page to report a new viewport size, for pages whose tick fails. Kept
+/// under 250 ms less two loop passes, so a continuous resize still publishes a frame at a
+/// current size every 250 ms.
+const RELAYOUT_FALLBACK: Duration = Duration::from_millis(200);
 
 /// A resize whose new ring receives no frame until the page is laid out at the new size. Servo
 /// first repaints the previous display list into the resized surface, and the host hit-tests a
@@ -243,6 +245,19 @@ impl Relayout {
         self.measured.is_some_and(|at| now - at >= RELAYOUT_SETTLE)
             || now - self.since >= RELAYOUT_FALLBACK
     }
+}
+
+/// The viewport size to apply now. Resizes that arrive while the page is laid out for the
+/// last one wait, so each ring receives a frame before a newer resize replaces it.
+fn next_resize(
+    current: (u32, u32),
+    waiting: &mut Vec<(u32, u32)>,
+    relaying: bool,
+) -> Option<(u32, u32)> {
+    if relaying {
+        return None;
+    }
+    proto::next_ring_size(current, waiting.drain(..))
 }
 
 #[derive(Default)]
@@ -289,6 +304,7 @@ struct Stats {
     polls: u64,
     eval_errors: u64,
     rings: u64,
+    resizes_held: u64,
     since: Option<(Instant, Duration, u64)>,
 }
 
@@ -491,6 +507,7 @@ fn main() {
     let mut warmed_at: Option<Instant> = None;
     let applied = Rc::new(Cell::new(false));
     let relayout: Rc<RefCell<Option<Relayout>>> = Rc::default();
+    let mut resizes = Vec::new();
 
     loop {
         let mut events = Vec::new();
@@ -508,7 +525,6 @@ fn main() {
         }
         events.extend(rx.try_iter());
 
-        let mut resizes = Vec::new();
         for event in events {
             match event {
                 Event::Msg(Msg::Patch { seq, json }) => {
@@ -553,6 +569,9 @@ fn main() {
                     webview.notify_input_event(input);
                 }
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
+                    if relayout.borrow().is_some() {
+                        stats.borrow_mut().resizes_held += 1;
+                    }
                     resizes.push((width, height));
                 }
                 Event::Msg(Msg::Report { text }) => eprintln!("{text}"),
@@ -564,7 +583,10 @@ fn main() {
         if shutting_down {
             break;
         }
-        if let Some((width, height)) = proto::next_ring_size((size.width, size.height), resizes) {
+        let relayout_pending = relayout.borrow().is_some();
+        if let Some((width, height)) =
+            next_resize((size.width, size.height), &mut resizes, relayout_pending)
+        {
             size = PhysicalSize::new(width, height);
             webview.resize(size);
             *relayout.borrow_mut() = Some(Relayout::new((width, height), Instant::now()));
@@ -792,6 +814,10 @@ fn report_stats(s: &mut Stats) {
         s.patches_received, s.patches_evaluated, s.polls, s.eval_errors, s.rings
     );
     report += &format!(
+        "ui-host resizes held for a pending relayout: {}\n",
+        s.resizes_held
+    );
+    report += &format!(
         "ui-host per published frame ms: paint {}\n",
         s.paint.summary()
     );
@@ -1003,9 +1029,48 @@ mod tests {
         assert!(!relayout.done(ms(159)));
         assert!(relayout.done(ms(160)));
         assert!(
-            Relayout::new((1680, 720), t).done(ms(250)),
+            Relayout::new((1680, 720), t).done(ms(200)),
             "a page whose tick fails"
         );
+    }
+
+    /// The window grows 8 px every 16 ms for 2 s, the main loop runs every 4 ms, and the page
+    /// reports the size it is laid out at 20 ms after each resize ui-host applies.
+    #[test]
+    fn a_continuous_resize_publishes_a_frame_at_a_current_size_every_250_ms() {
+        let t = Instant::now();
+        let mut size = (1280, 720);
+        let mut waiting = Vec::new();
+        let mut relayout: Option<Relayout> = None;
+        let mut published = vec![(0, size)];
+        for ms in (4..2000).step_by(4) {
+            let now = t + Duration::from_millis(ms);
+            if ms % 16 == 0 {
+                waiting.push((1280 + ms as u32 / 2, 720));
+            }
+            if let Some(next) = next_resize(size, &mut waiting, relayout.is_some()) {
+                size = next;
+                relayout = Some(Relayout::new(size, now));
+            }
+            if let Some(relayout) = relayout.as_mut()
+                && now - relayout.since >= Duration::from_millis(20)
+            {
+                relayout.measured(size, now);
+            }
+            if relayout.as_ref().is_some_and(|r| r.done(now)) {
+                relayout = None;
+                published.push((ms, size));
+            }
+        }
+        published.push((2000, size));
+        for pair in published.windows(2) {
+            let ((from, a), (to, b)) = (pair[0], pair[1]);
+            assert!(to - from <= 250, "no frame from {from} ms to {to} ms");
+            assert!(
+                to == 2000 || b.0 > a.0,
+                "frame at {to} ms not at a newer size"
+            );
+        }
     }
 
     #[test]
