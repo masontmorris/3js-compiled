@@ -97,6 +97,10 @@ export class CommandEncoder {
   #records = [];
   #size = HEADER_SIZE;
 
+  get empty() {
+    return this.#records.length === 0;
+  }
+
   append(opcode, payload = new Uint8Array()) {
     if (!validOpcodes.has(opcode)) throw new RangeError('Unknown GPU opcode');
     if (!(payload instanceof Uint8Array)) throw new TypeError('Payload must be a Uint8Array');

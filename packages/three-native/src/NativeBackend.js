@@ -462,6 +462,13 @@ function stream() {
 // The host replays every NativeBackend in the realm with one executor, and it has one window surface.
 const host = { ...stream(), device: null };
 
+// The host calls this at the end of a frame in which the page submitted no command stream. The work recorded since
+// the last one goes to the executor, as a browser's GPU work moves on without the page, so that what waits on it,
+// such as compileAsync()'s error scopes before the page's first frame, settles.
+globalThis.__gpuFrameEnd = () => {
+  if (host.device && !host.device.destroyed && !host.commands.empty) submitGpuCommands(host.device.takeFrame());
+};
+
 // A device has the features its descriptor requires and the limits deviceLimits() gives for them, as a
 // browser's requestDevice() gives. The executor's device gets the same. `supported` holds the adapter's limits.
 export class RecordingDevice {

@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use deno_core::{FsModuleLoader, JsRuntime, OpState, RuntimeOptions, extension, op2};
-use std::{cell::RefCell, collections::HashMap, fs::File, io::Write, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell, collections::HashMap, fs::File, future::Future, io::Write, pin::Pin, rc::Rc,
+    time::Instant,
+};
 
 pub type Log = Rc<RefCell<File>>;
 struct State {
@@ -24,6 +27,16 @@ fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     state.commands = Some(bytes.to_vec());
     true
 }
+#[op2(fast)]
+fn op_gpu_submitted(state: &mut OpState) -> bool {
+    state.borrow::<State>().commands.is_some()
+}
+/// Never completes, so the runtime always has work pending and does not report an entry module
+/// that awaits frames or timers as stalled.
+#[op2]
+async fn op_host_alive() {
+    std::future::pending::<()>().await
+}
 #[op2]
 #[arraybuffer]
 fn op_gpu_readback(state: &mut OpState, request: u32) -> Vec<u8> {
@@ -45,12 +58,23 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
 }
 extension!(
     host_ext,
-    ops = [op_clear, op_gpu_submit, op_gpu_readback, op_now, op_log]
+    ops = [
+        op_clear,
+        op_gpu_submit,
+        op_gpu_submitted,
+        op_host_alive,
+        op_gpu_readback,
+        op_now,
+        op_log
+    ]
 );
 
+/// The entry module's evaluation, which frames keep polling while its top level awaits.
+type Evaluation = Pin<Box<dyn Future<Output = Result<(), deno_core::error::CoreError>>>>;
 pub struct Game<'a> {
     js: JsRuntime,
     runtime: &'a tokio::runtime::Runtime,
+    evaluation: Option<Evaluation>,
 }
 impl<'a> Game<'a> {
     pub fn new(
@@ -84,16 +108,20 @@ impl<'a> Game<'a> {
             ),
         )?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
-        runtime
+        // As in a browser, frames and timers run while the module's top level awaits.
+        let evaluation = runtime
             .block_on(async {
                 let id = js.load_main_es_module(&specifier).await?;
-                let result = js.mod_evaluate(id);
-                js.run_event_loop(Default::default()).await?;
-                result.await?;
-                Ok::<(), anyhow::Error>(())
+                Ok::<_, anyhow::Error>(js.mod_evaluate(id))
             })
             .context("load entry module")?;
-        Ok(Self { js, runtime })
+        let mut game = Self {
+            js,
+            runtime,
+            evaluation: Some(Box::pin(evaluation)),
+        };
+        game.tick().context("load entry module")?;
+        Ok(game)
     }
     pub fn event(&mut self, event: &serde_json::Value) -> Result<()> {
         self.js
@@ -131,10 +159,20 @@ impl<'a> Game<'a> {
         self.runtime.block_on(async {
             tokio::task::yield_now().await;
             std::future::poll_fn(|cx| {
-                std::task::Poll::Ready(match self.js.poll_event_loop(cx, Default::default()) {
-                    std::task::Poll::Ready(result) => result,
-                    std::task::Poll::Pending => Ok(()),
-                })
+                if let std::task::Poll::Ready(Err(error)) =
+                    self.js.poll_event_loop(cx, Default::default())
+                {
+                    return std::task::Poll::Ready(Err(anyhow::Error::from(error)));
+                }
+                // An entry module whose evaluation fails ends the host, as a module that fails to
+                // load does.
+                if let Some(evaluation) = &mut self.evaluation
+                    && let std::task::Poll::Ready(result) = evaluation.as_mut().poll(cx)
+                {
+                    self.evaluation = None;
+                    return std::task::Poll::Ready(result.context("evaluate entry module"));
+                }
+                std::task::Poll::Ready(Ok(()))
             })
             .await?;
             Ok(())
@@ -191,7 +229,10 @@ mod tests {
         let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
         let started = Instant::now();
         while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
-            assert!(started.elapsed().as_secs() < 10, "{name} never turned green");
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "{name} never turned green"
+            );
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         Ok(std::fs::read_to_string(log_path)?)
