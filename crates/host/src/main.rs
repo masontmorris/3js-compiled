@@ -22,6 +22,14 @@ use threejsc_host::{
     worker::Worker,
 };
 
+/// The refresh interval in ms of the display the window is on, or 0 when SDL reports no rate.
+fn display_interval(window: &sdl3::video::Window) -> f64 {
+    window
+        .get_display()
+        .and_then(|display| display.get_mode())
+        .map_or(0.0, |mode| 1000.0 / f64::from(mode.refresh_rate))
+}
+
 struct Options {
     entry: String,
     scene: Option<String>,
@@ -187,15 +195,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         size,
         Some(&target.adapter_limits()),
     )?;
-    if let Some(hz) = window
-        .get_display()
-        .ok()
-        .and_then(|display| display.get_mode().ok())
-        .map(|mode| mode.refresh_rate)
-        .filter(|hz| *hz > 0.0)
-    {
-        game.set_display_interval(1000.0 / f64::from(hz))?;
-    }
+    game.set_display_interval(display_interval(&window))?;
     let progress = Arc::new(RenderProgress::default());
     game.set_render_progress(progress.clone());
     let rendering = progress.clone();
@@ -223,6 +223,12 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     win_event: sdl3::event::WindowEvent::CloseRequested,
                     ..
                 } => break 'running,
+                // The window moved to another display, or a display's mode changed.
+                Event::Window {
+                    win_event: sdl3::event::WindowEvent::DisplayChanged(_),
+                    ..
+                }
+                | Event::Display { .. } => game.set_display_interval(display_interval(&window))?,
                 Event::KeyDown {
                     scancode: Some(code),
                     keymod,

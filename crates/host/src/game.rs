@@ -162,8 +162,15 @@ impl<'a> Game<'a> {
     pub fn set_render_progress(&mut self, render: Arc<RenderProgress>) {
         self.js.op_state().borrow_mut().borrow_mut::<State>().render = Some(render);
     }
-    /// Sets the display's refresh interval, which ends a frame's turn of timers.
+    /// Sets the display's refresh interval in ms, which ends a frame's turn of timers when no
+    /// frame is rendering. An interval outside 24 to 360 Hz is clamped to that range, and one that
+    /// is not a positive number, such as a display that reports no rate, gives 60 Hz.
     pub fn set_display_interval(&mut self, ms: f64) -> Result<()> {
+        let ms = if ms.is_finite() && ms > 0.0 {
+            ms.clamp(1000.0 / 360.0, 1000.0 / 24.0)
+        } else {
+            1000.0 / 60.0
+        };
         self.js.execute_script(
             "host:display",
             format!("globalThis.__displayInterval = {ms};"),
