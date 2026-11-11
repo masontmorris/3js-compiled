@@ -6,6 +6,8 @@ globalThis.GPUTextureUsage ??= Object.freeze({ COPY_SRC: 1, COPY_DST: 2, TEXTURE
 globalThis.GPUShaderStage ??= Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
 globalThis.GPUMapMode ??= Object.freeze({ READ: 1, WRITE: 2 });
 globalThis.GPURenderBundleEncoder ??= class GPURenderBundleEncoder {};
+// Pipelines are instances of these, as a page that reports a value's constructor sees in Edge.
+for (const name of ['GPURenderPipeline', 'GPUComputePipeline']) globalThis[name] ??= { [name]: class {} }[name];
 // three reports an error's constructor name, and object keys name these classes where a bundler renames bindings.
 globalThis.GPUError ??= { GPUError: class { constructor(message) { this.message = String(message); } } }.GPUError;
 for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalError']) {
@@ -939,15 +941,15 @@ export class RecordingDevice {
       } : null,
       samples: { count: samples.count ?? 1, mask: samples.mask ?? 0xffffffff, alphaToCoverageEnabled: samples.alphaToCoverageEnabled ?? false },
     };
-    const pipeline = this.pipeline(descriptor.layout, this.renderPipelines);
+    const pipeline = this.pipeline(descriptor.layout, this.renderPipelines, GPURenderPipeline);
     this.commands.createRenderPipeline(pipeline.handle, spec);
     return pipeline;
   }
 
   // A render or compute pipeline in `pipelines`, whose getBindGroupLayout() names the layouts wgpu derives for it.
-  pipeline(layout, pipelines) {
+  pipeline(layout, pipelines, Type) {
     const autoLayouts = new Map();
-    const pipeline = {
+    const pipeline = Object.assign(new Type(), {
       handle: this.handles.allocate(), layout, autoLayouts,
       getBindGroupLayout: index => {
         if (!pipelines.has(pipeline)) throw new Error('Invalid pipeline');
@@ -959,7 +961,7 @@ export class RecordingDevice {
         }
         return autoLayouts.get(index);
       },
-    };
+    });
     pipelines.add(pipeline);
     return pipeline;
   }
@@ -971,7 +973,7 @@ export class RecordingDevice {
     const { module, entryPoint, constants } = descriptor.compute ?? {};
     if (!this.shaders.has(module)) throw new Error('Invalid shader module');
     if (constants && Object.keys(constants).length) throw new Error('Shader constants are not implemented');
-    const pipeline = this.pipeline(descriptor.layout, this.computePipelines);
+    const pipeline = this.pipeline(descriptor.layout, this.computePipelines, GPUComputePipeline);
     this.commands.createComputePipeline(pipeline.handle, {
       label: descriptor.label ?? '', layout: autoLayout ? 0 : descriptor.layout.handle, module: module.handle, entryPoint,
     });
@@ -982,7 +984,7 @@ export class RecordingDevice {
   // pushes around its create keeps the error from the page's scopes. A lost device resolves with a pipeline that
   // dispatches nothing.
   createComputePipelineAsync(descriptor) {
-    if (this.destroyed) return Promise.resolve({ handle: 0, getBindGroupLayout: () => ({ handle: 0 }) });
+    if (this.destroyed) return Promise.resolve(Object.assign(new GPUComputePipeline(), { handle: 0, getBindGroupLayout: () => ({ handle: 0 }) }));
     this.commands.words(Opcode.PUSH_ERROR_SCOPE, [errorFilters.validation]);
     const request = this.handles.allocate();
     let pipeline;
