@@ -10,7 +10,13 @@ struct Buffer {
     size: u64,
     usage: wgpu::BufferUsages,
     destroyed: bool,
+    /// Whether the buffer was created mapped and its unmap has not reached the executor.
+    mapped: bool,
 }
+
+/// The `CREATE_BUFFER` usage bit that creates the buffer mapped, as `mappedAtCreation` does. The
+/// buffer's next `WRITE_BUFFER` carries its data and unmaps it.
+const MAPPED_AT_CREATION: u32 = 1 << 31;
 
 struct Texture {
     raw: wgpu::Texture,
@@ -1094,7 +1100,9 @@ impl Executor {
                 let label =
                     std::str::from_utf8(&payload[20..]).map_err(|_| "invalid buffer label")?;
                 self.set_label(handle, label);
-                let supported = wgpu::BufferUsages::COPY_SRC
+                let supported = wgpu::BufferUsages::MAP_READ
+                    | wgpu::BufferUsages::MAP_WRITE
+                    | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::INDEX
                     | wgpu::BufferUsages::VERTEX
@@ -1102,7 +1110,10 @@ impl Executor {
                     | wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::INDIRECT
                     | wgpu::BufferUsages::QUERY_RESOLVE;
-                let buffer = match wgpu::BufferUsages::from_bits(u32_at(payload, 12)) {
+                let mapped = u32_at(payload, 12) & MAPPED_AT_CREATION != 0;
+                let buffer = match wgpu::BufferUsages::from_bits(
+                    u32_at(payload, 12) & !MAPPED_AT_CREATION,
+                ) {
                     _ if len > self.device.limits().max_buffer_size => {
                         Err("invalid buffer size".into())
                     }
@@ -1112,7 +1123,7 @@ impl Executor {
                                 label: Some(label),
                                 size: len,
                                 usage,
-                                mapped_at_creation: false,
+                                mapped_at_creation: mapped,
                             })
                         })
                         .map(|raw| Buffer {
@@ -1120,6 +1131,7 @@ impl Executor {
                             size: len,
                             usage,
                             destroyed: false,
+                            mapped,
                         }),
                     _ => Err("unsupported buffer usage".into()),
                 };
@@ -1134,6 +1146,22 @@ impl Executor {
                 let bytes = &payload[12..];
                 if matches!(self.buffer_use(handle), Use::Destroyed | Use::Freed) {
                     return Err("a destroyed buffer is written".into());
+                }
+                if let Some(Some(buffer)) = self.buffers.get_mut(&handle)
+                    && std::mem::take(&mut buffer.mapped)
+                {
+                    if offset != 0 || bytes.len() as u64 != buffer.size {
+                        return Err("invalid mapped buffer unmap".into());
+                    }
+                    if !bytes.is_empty() {
+                        buffer
+                            .raw
+                            .get_mapped_range_mut(..)
+                            .map_err(|error| error.to_string())?
+                            .copy_from_slice(bytes);
+                    }
+                    buffer.raw.unmap();
+                    return Ok(None);
                 }
                 let buffer = valid(&self.buffers, handle, "buffer")?;
                 if !buffer.usage.contains(wgpu::BufferUsages::COPY_DST)

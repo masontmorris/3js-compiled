@@ -16,6 +16,9 @@ for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalErr
 const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
 const errorTypes = { validation: GPUValidationError, 'out-of-memory': GPUOutOfMemoryError, internal: GPUInternalError };
 
+// The CREATE_BUFFER usage bit of threejsc_gpu's MAPPED_AT_CREATION.
+const MAPPED_AT_CREATION = 2 ** 31;
+
 class RecordingBuffer {
   constructor(device, descriptor) {
     this.device = device;
@@ -24,7 +27,8 @@ class RecordingBuffer {
     this.usage = descriptor.usage;
     this.destroyed = false;
     this.mapped = descriptor.mappedAtCreation ? new ArrayBuffer(descriptor.size) : null;
-    const usage = descriptor.mappedAtCreation ? descriptor.usage | 8 : descriptor.usage;
+    // The executor creates a buffer mapped at creation mapped, and unmap() carries its data.
+    const usage = descriptor.mappedAtCreation ? (descriptor.usage | MAPPED_AT_CREATION) >>> 0 : descriptor.usage;
     device.commands.createBuffer(this.handle, descriptor.size, usage, descriptor.label ?? '');
   }
 
