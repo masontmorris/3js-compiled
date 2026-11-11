@@ -223,3 +223,15 @@ test('routing follows the Edge rows of the event table', () => {
   router.key({ type: 'keydown', code: 'KeyF', key: 'f' });
   assert.deepEqual(presses, ['input'], 'keypress goes to the element the keydown focused');
 });
+
+test('click, auxclick and contextmenu carry no pressure, as in Edge', () => {
+  const { window, document } = page();
+  document.body.append(document.createElement('canvas'));
+  const router = new InputRouter(window, document);
+  const seen = [];
+  for (const type of ['auxclick', 'contextmenu']) window.addEventListener(type, event => seen.push(`${type} ${event.buttons} ${event.pressure}`));
+  router.pointer({ type: 'pointerdown', clientX: 1, clientY: 1, button: 0 });
+  router.pointer({ type: 'pointerdown', clientX: 1, clientY: 1, button: 2 });
+  router.pointer({ type: 'pointerup', clientX: 1, clientY: 1, button: 2 });
+  assert.deepEqual(seen, ['auxclick 1 0', 'contextmenu 1 0']);
+});
