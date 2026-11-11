@@ -1135,7 +1135,12 @@ fn unmessaged(value: &str) -> String {
     let mut kept = String::new();
     for character in value.chars() {
         match character {
-            '(' => depth += 1,
+            '(' => {
+                if depth == 0 {
+                    kept.truncate(kept.trim_end().len());
+                }
+                depth += 1;
+            }
             ')' if depth > 0 => depth -= 1,
             _ if depth == 0 => kept.push(character),
             _ => {}
