@@ -10,3 +10,4 @@ serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 deno_core = "0.413.0"
+tokio = { version = "1", features = ["rt"] }
