@@ -583,23 +583,42 @@ test('render pipeline snapshots its shader and vertex descriptors', () => {
   assert.equal(spec.targets[0].writeMask, 15);
 });
 
-test('pipeline validation scopes resolve from the separate response channel', async () => {
+test('error scopes record their push and pop, and each pop resolves from its scope response', async () => {
   const device = new RecordingDevice();
   const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
   const vertex = device.createShaderModule({ code: '@vertex fn main() {}' });
   const descriptor = { layout, vertex: { module: vertex, buffers: [] } };
   device.pushErrorScope('validation');
+  device.pushErrorScope('out-of-memory');
   device.createRenderPipeline(descriptor);
-  const first = device.popErrorScope();
-  device.pushErrorScope('validation');
-  device.createRenderPipeline(descriptor);
-  const second = device.popErrorScope();
-  const records = decodeCommands(device.takeFrame()).filter(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE);
-  const request = item => new DataView(item.payload.buffer).getUint32(4, true);
-  device.receiveResponses([{ type: 'error', request: request(records[1]), message: 'bad pipeline' }]);
-  device.receiveResponses([{ type: 'validation', request: request(records[0]) }]);
-  assert.equal(await first, null);
-  assert.equal((await second).message, 'bad pipeline');
+  const inner = device.popErrorScope();
+  const outer = device.popErrorScope();
+  device.pushErrorScope('internal');
+  const internal = device.popErrorScope();
+  const records = decodeCommands(device.takeFrame()).filter(item => item.opcode === Opcode.PUSH_ERROR_SCOPE || item.opcode === Opcode.POP_ERROR_SCOPE);
+  const word = item => new DataView(item.payload.buffer).getUint32(0, true);
+  assert.deepEqual(records.map(item => [item.opcode, item.opcode === Opcode.PUSH_ERROR_SCOPE ? word(item) : 'request']),
+    [[Opcode.PUSH_ERROR_SCOPE, 0], [Opcode.PUSH_ERROR_SCOPE, 1], [Opcode.POP_ERROR_SCOPE, 'request'], [Opcode.POP_ERROR_SCOPE, 'request'],
+      [Opcode.PUSH_ERROR_SCOPE, 2], [Opcode.POP_ERROR_SCOPE, 'request']]);
+  const [innerPop, outerPop, internalPop] = records.filter(item => item.opcode === Opcode.POP_ERROR_SCOPE).map(word);
+  device.receiveResponses([
+    { type: 'scope', request: outerPop, filter: 'validation', message: 'bad pipeline' },
+    { type: 'scope', request: innerPop, filter: null, message: null },
+    { type: 'scope', request: internalPop, filter: 'internal', message: 'lost' },
+  ]);
+  assert.equal(await inner, null);
+  const error = await outer;
+  assert.equal(error instanceof GPUValidationError, true);
+  assert.equal(error.message, 'bad pipeline');
+  assert.equal((await internal) instanceof GPUInternalError, true);
+});
+
+// Edge's answers for the same calls, from C:\3jsc\swarm\e3-r12\kit\out\edge\rules-scopes\console.txt.
+test('an empty error scope stack rejects its pop and an unknown filter throws, as in Edge', async () => {
+  const device = new RecordingDevice();
+  await assert.rejects(device.popErrorScope(), { name: 'OperationError' });
+  assert.throws(() => device.pushErrorScope('bogus'), TypeError);
+  assert.deepEqual(decodeCommands(device.takeFrame()), []);
 });
 
 const creates = new Set([Opcode.CREATE_BUFFER, Opcode.CREATE_TEXTURE, Opcode.CREATE_TEXTURE_VIEW, Opcode.CREATE_SAMPLER, Opcode.CREATE_SHADER,
@@ -926,13 +945,15 @@ test('encoder copies, clears and debug markers record their fields, and unsuppor
   assert.equal(await done, undefined, 'work done resolves when the readback after the work returns');
 });
 
-test('a shader module that fails to compile raises an uncaptured error as well as its compilation message', async () => {
+test('a shader that fails to compile gets its compilation message, and its uncaptured error is its own response', async () => {
   const device = new RecordingDevice();
   const errors = [];
-  device.onuncapturederror = event => errors.push(event.error.message);
+  device.onuncapturederror = event => errors.push(event.error);
   const shader = device.createShaderModule({ code: 'broken' });
   const [record] = decodeCommands(device.takeFrame());
-  device.receiveResponses([{ type: 'error', request: new DataView(record.payload.buffer).getUint32(12, true), message: 'shader : wgsl:1:1 invalid' }]);
-  assert.equal((await shader.getCompilationInfo()).messages.length, 1);
-  assert.deepEqual(errors, ['shader : wgsl:1:1 invalid']);
+  device.receiveResponses([{ type: 'compilation', request: new DataView(record.payload.buffer).getUint32(12, true), message: 'shader : wgsl:1:1 invalid' }]);
+  assert.deepEqual((await shader.getCompilationInfo()).messages.map(message => [message.lineNum, message.linePos]), [[1, 1]]);
+  assert.deepEqual(errors, [], 'a scope may capture the error, so the compilation message raises none');
+  device.receiveResponses([{ type: 'error', request: null, filter: 'validation', message: 'shader : wgsl:1:1 invalid' }]);
+  assert.deepEqual(errors.map(error => [error.constructor.name, error.message]), [['GPUValidationError', 'shader : wgsl:1:1 invalid']]);
 });
