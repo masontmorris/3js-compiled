@@ -324,6 +324,7 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 - [ ] Persist `localStorage` to one JSON file per game.
 - [ ] Add `Image`, `createImageBitmap`, `Blob`, and `URL.createObjectURL`. Decode PNG, JPEG, and WebP in native code off the main thread.
 - [ ] Add `fetch` for local files, `location.hash`, `matchMedia`, `devicePixelRatio`, and `resize` events.
+- [ ] Run `setTimeout`, `setInterval`, and their clears between frames, in Edge's order against `requestAnimationFrame` and promise callbacks. E3 adds them for three's `compileAsync`. E5 covers the rest of the timer behavior that folio, gsap, and Howler use.
 
 **You see.**
 
