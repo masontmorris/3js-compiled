@@ -236,6 +236,7 @@ globalThis.__displayInterval = 1000 / 60;
 // due no sooner than this long after the frame before began its callbacks.
 globalThis.__framePacing = null;
 let framesBegan = -Infinity;
+let shareLeft = 3.5;
 // Runs timers while the host waits for the render thread to catch up before it hands over the next frame: each timer as
 // it falls due, until the render thread has caught up, as a browser runs its tasks while it waits to render.
 globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
@@ -245,7 +246,11 @@ globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
 globalThis.__hostFrame = () => {
   const start = performance.now();
   const interval = globalThis.__displayInterval;
-  runTimers(start + interval, start + Math.min(3.5, interval), framesBegan + (globalThis.__framePacing ?? -Infinity), true);
+  const share = Math.min(3.5, interval);
+  runTimers(start + interval, start + shareLeft, framesBegan + (globalThis.__framePacing ?? -Infinity), true);
+  // A turn that ran past its share takes the overrun out of the next one's, so timers average the share of each frame
+  // rather than the share plus the timer running when it ends.
+  shareLeft = Math.max(0, Math.min(share, shareLeft + share - (performance.now() - start)));
   framesBegan = performance.now();
   running = new Map(callbacks);
   callbacks.clear();
