@@ -91,7 +91,7 @@ fn recorded_buffers_round_trip_on_vulkan() {
                 request: 2,
                 bytes: vec![0, 0, 0, 0, 11, 22, 33, 44, 0, 0, 0, 0, 0, 0, 0, 0]
             },
-            error(4, Some(3), "unknown buffer handle"),
+            error(4, Some(3), "a destroyed buffer is read back"),
         ]
     );
 }
@@ -143,8 +143,7 @@ fn texture_upload_and_readback_preserve_rows() {
                 request: 13,
                 bytes: vec![4, 3, 2, 1, 8, 7, 6, 5],
             },
-            error(7, Some(12), "unknown texture handle"),
-            error(8, None, "unknown resource handle"),
+            error(7, Some(12), "a destroyed texture is read back"),
         ]
     );
 }
@@ -1968,6 +1967,9 @@ fn copies_and_passes_raise_edges_errors_for_invalid_and_destroyed_objects() {
         );
         raised.push((*name, errors.len(), errors));
     }
-    let counts: Vec<_> = raised.iter().map(|(name, count, _)| (*name, *count)).collect();
+    let counts: Vec<_> = raised
+        .iter()
+        .map(|(name, count, _)| (*name, *count))
+        .collect();
     assert_eq!(counts, EDGE_COPY_ERRORS, "{raised:#?}");
 }
