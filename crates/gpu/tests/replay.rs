@@ -1398,9 +1398,11 @@ fn mutated_streams_return_errors_and_never_panic() {
     }
 }
 
-/// Edge's errors for one invalid object of each type, from C:\3jsc\swarm\e3-r11\kit\apps\objects.js:
-/// those its creates raise, and those each frame that uses it raises. A pass that uses an invalid
-/// object raises one error as its encoder finishes and one at submit, and draws nothing.
+/// Edge's errors for one invalid object of each type: those its creates raise, and those each frame
+/// that uses it raises. C:\3jsc\swarm\e3-r12\kit\apps\objects.js makes each mode for Edge, which
+/// saved them in C:\3jsc\swarm\e3-r12\kit\out\edge\objects-<mode>\console.txt for `empty` and `copy`
+/// and in C:\3jsc\swarm\e3-r11\kit\out\edge for the others. A pass that uses an invalid object
+/// raises one error as its encoder finishes and one at submit, and draws nothing.
 const EDGE_OBJECT_ERRORS: [(&str, usize, usize); 10] = [
     ("valid", 0, 0),
     ("buffer", 2, 3),

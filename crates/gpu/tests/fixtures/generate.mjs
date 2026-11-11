@@ -247,7 +247,7 @@ formats.createTexture(5, { width: 1, height: 1, layers: 1, mips: 1, samples: 1, 
 formats.readTexture(13, 5, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
 writeFileSync(new URL('./readback-formats.bin', import.meta.url), formats.finish());
 
-// One invalid object of each type, made as C:\3jsc\swarm\e3-r11\kit\apps\objects.js makes it for Edge. Frame 0
+// One invalid object of each type, made as C:\3jsc\swarm\e3-r12\kit\apps\objects.js makes it for Edge. Frame 0
 // creates a valid set and the mode's set, and frames 0 and 1 clear the canvas yellow and then, in another submit as
 // three's render and the page's pass are, draw blue with the mode's set. Frame 2 releases the mode's set and draws with the valid one. Each frame reads the canvas back.
 // `empty` draws nothing from a zero-size vertex buffer before its draw, and `copy` copies an invalid texture.
