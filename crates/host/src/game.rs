@@ -278,17 +278,18 @@ mod tests {
         scene: Option<&str>,
         period: std::time::Duration,
     ) -> Result<String> {
-        run_cycled(name, entry, scene, &[period])
+        run_cycled(name, entry, scene, &[period], None)
     }
 
     /// Runs `entry` with the gaps between frame starts taken from `periods` in turn, on a display
-    /// whose refresh interval is their mean, until it turns the clear colour green, and returns
-    /// its log.
+    /// whose refresh interval is `display` ms or else their mean, until it turns the clear colour
+    /// green, and returns its log.
     fn run_cycled(
         name: &str,
         entry: &str,
         scene: Option<&str>,
         periods: &[std::time::Duration],
+        display: Option<f64>,
     ) -> Result<String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -298,8 +299,8 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-{name}-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(&log_path)?));
         let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
-        let display = periods.iter().sum::<std::time::Duration>() / periods.len() as u32;
-        game.set_display_interval(display.as_secs_f64() * 1000.0)?;
+        let mean = periods.iter().sum::<std::time::Duration>() / periods.len() as u32;
+        game.set_display_interval(display.unwrap_or(mean.as_secs_f64() * 1000.0))?;
         let started = Instant::now();
         let mut next = started;
         let mut periods = periods.iter().cycle();
@@ -582,6 +583,7 @@ mod tests {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-attack.js"),
                 Some(scene),
                 &periods,
+                None,
             )?;
             assert_eq!(
                 result(&log, &format!("{scene} first tick whose gap >= 3.5 ms")),
@@ -590,6 +592,23 @@ mod tests {
                 result(&log, &format!("{scene} first tick gaps"))
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_display_interval_out_of_range_is_clamped_to_24_to_360_hz() -> Result<()> {
+        // A display that reports 1 Hz would let one turn run for a second: 63 zero-delay timers
+        // that each work 1 ms would hold one frame back 63 ms. At the 24 Hz floor a turn ends
+        // after 41.7 ms.
+        let log = run_cycled(
+            "timer-attack-1hz-fanout",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-attack.js"),
+            Some("fanout"),
+            &[std::time::Duration::from_millis(6)],
+            Some(1000.0),
+        )?;
+        let gap: f64 = result(&log, "fanout longest frame gap ms").parse()?;
+        assert!(gap < 52.0, "a frame waited {gap} ms");
         Ok(())
     }
 
