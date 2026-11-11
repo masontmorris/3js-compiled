@@ -58,40 +58,79 @@ globalThis.removeEventListener = (type, callback) => listeners.get(type)?.delete
 globalThis.requestAnimationFrame = callback => { const id = nextFrame++; callbacks.set(id, callback); return id; };
 let running = null;
 globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(id); };
-// HTML's timers. Each frame begins with a turn of timer tasks, each with its promise jobs after it: the timers due as
-// the turn starts, and the zero-delay timers that the turn's callbacks and their promise jobs set or re-arm. A timer
-// that becomes due any other way while the turn runs waits for the next frame's turn, as a browser renders between
-// such tasks. The turn also ends once the next frame is due, a display refresh after the frame began, so no pattern of
-// timers holds a frame back by more than the callback running then. A timer set from a timer task or its promise jobs is nested one deeper, and one nested
-// more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as WebIDL's long does.
+// HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks until a rendering
+// opportunity: each due timer in order of deadline and then of setting, each with its promise jobs after it, until
+// the next frame is due. The turn checks that between timers, so it runs at least one due timer and holds the frame
+// back by at most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
+// nested one deeper, and one nested more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as
+// WebIDL's long does. The pending timers are a binary heap, so a turn takes O(log n) to find each next timer.
 const timers = new Map();
+// The heap of [deadline, order, id], earliest first. A cleared timer's entry, and an interval's entry from before it
+// re-armed, stay until they reach the top, where the timer's order no longer matches.
+const heap = [];
 let nextTimer = 1;
 let timerOrder = 0;
 let nesting = 0;
-let turn = null;
+const earlier = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+function arm(id, timer) {
+  // Rebuilds the heap from the live timers once stale entries outnumber them, so set-and-clear churn cannot grow it.
+  if (heap.length > 2 * timers.size + 1024) {
+    heap.length = 0;
+    for (const [liveId, live] of timers) if (live !== timer) arm(liveId, live);
+  }
+  const entry = [timer.deadline, timer.order, id];
+  let i = heap.push(entry) - 1;
+  while (i > 0) {
+    const parent = (i - 1) >> 1;
+    if (!earlier(entry, heap[parent])) break;
+    heap[i] = heap[parent];
+    i = parent;
+  }
+  heap[i] = entry;
+}
+function popEarliest() {
+  const last = heap.pop();
+  if (!heap.length) return;
+  let i = 0;
+  for (;;) {
+    let child = 2 * i + 1;
+    if (child >= heap.length) break;
+    if (child + 1 < heap.length && earlier(heap[child + 1], heap[child])) child++;
+    if (!earlier(heap[child], last)) break;
+    heap[i] = heap[child];
+    i = child;
+  }
+  heap[i] = last;
+}
+// The earliest live timer whose deadline has passed, taken off the heap, or null.
+function takeDue(now) {
+  while (heap.length) {
+    const [deadline, order, id] = heap[0];
+    const timer = timers.get(id);
+    if (timer?.order !== order) { popEarliest(); continue; }
+    if (deadline > now) return null;
+    popEarliest();
+    return [id, timer];
+  }
+  return null;
+}
 function schedule(callback, delay, args, repeat) {
   const id = nextTimer++;
   const handler = typeof callback === "function" ? callback : () => (0, eval)(String(callback));
   const timeout = Math.max(nesting > 5 ? 4 : 0, delay | 0);
-  timers.set(id, { handler, args, timeout, repeat, deadline: performance.now() + timeout, order: timerOrder++, nesting: nesting + 1 });
-  if (turn && timeout === 0) turn.add(id);
+  const timer = { handler, args, timeout, repeat, deadline: performance.now() + timeout, order: timerOrder++, nesting: nesting + 1 };
+  timers.set(id, timer);
+  arm(id, timer);
   return id;
 }
 globalThis.setTimeout = (callback, delay, ...args) => schedule(callback, delay, args, false);
 globalThis.setInterval = (callback, delay, ...args) => schedule(callback, delay, args, true);
 globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(id | 0); };
-function runTimers(start, frameDue) {
-  turn = new Set([...timers].filter(([, timer]) => timer.deadline <= start).map(([id]) => id));
-  for (let ran = false; !ran || performance.now() < frameDue; ran = true) {
-    let due = null;
-    for (const id of turn) {
-      const timer = timers.get(id);
-      if (!timer) turn.delete(id);
-      else if (!due || timer.deadline < due[1].deadline || (timer.deadline === due[1].deadline && timer.order < due[1].order)) due = [id, timer];
-    }
-    if (!due) break;
+function runTimers(frameDue) {
+  for (let ran = false; !ran || !frameDue(); ran = true) {
+    const due = takeDue(performance.now());
+    if (!due) return;
     const [id, timer] = due;
-    turn.delete(id);
     if (!timer.repeat) timers.delete(id);
     nesting = timer.nesting;
     try { timer.handler(...timer.args); } catch (error) { report(error); }
@@ -99,12 +138,11 @@ function runTimers(start, frameDue) {
     if (timer.repeat && timers.get(id) === timer) {
       timer.timeout = Math.max(timer.nesting > 5 ? 4 : 0, timer.timeout);
       Object.assign(timer, { deadline: performance.now() + timer.timeout, order: timerOrder++, nesting: timer.nesting + 1 });
-      if (timer.timeout === 0) turn.add(id);
+      arm(id, timer);
     }
     ops.op_run_microtasks();
     nesting = 0;
   }
-  turn = null;
 }
 // The page keeps frames and timers coming however long its entry module awaits, as a browser does.
 ops.op_host_alive();
@@ -165,8 +203,8 @@ globalThis.__displayInterval = 1000 / 60;
 // of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
 // page awaits a response to.
 globalThis.__hostFrame = () => {
-  const start = performance.now();
-  runTimers(start, start + globalThis.__displayInterval);
+  const due = performance.now() + globalThis.__displayInterval;
+  runTimers(() => performance.now() >= due);
   running = new Map(callbacks);
   callbacks.clear();
   const now = performance.now();
