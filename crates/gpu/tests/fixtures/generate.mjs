@@ -121,7 +121,7 @@ renderDevice.popErrorScope();
 const marker = renderDevice.createBuffer({ size: 4, usage: 12 });
 renderDevice.queue.writeBuffer(marker, 0, new Uint8Array([4, 3, 2, 1]));
 renderDevice.commands.readBuffer(100, marker.handle, 0, 4);
-renderDevice.releaseRenderPipeline(pipeline);
+renderDevice.releasePipeline(pipeline);
 renderDevice.releasePipelineLayout(renderLayout);
 writeFileSync(new URL('./pipeline.bin', import.meta.url), renderDevice.takeFrame());
 
@@ -329,7 +329,7 @@ for (const bad of ['valid', 'buffer', 'sampler', 'layout', 'group', 'pipeline-la
   set.texture.destroy();
   device.releaseBindGroup(set.group);
   device.releaseSampler(set.sampler);
-  device.releaseRenderPipeline(set.pipeline);
+  device.releasePipeline(set.pipeline);
   device.releasePipelineLayout(set.pipelineLayout);
   device.releaseBindGroupLayout(set.layout);
   device.releaseShader(set.module);

@@ -578,7 +578,7 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
         for component in [0.0f64, 0.0, 1.0, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         [(14, payload), (25, vec![]), (26, vec![])]
     };
     let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
@@ -677,7 +677,7 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
         for component in [0.0f64, 0.0, 1.0, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         (14, payload)
     };
     let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
@@ -764,7 +764,7 @@ fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() 
         for component in [r, g, b, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         vec![
             (30, words(&[texture, width, height])),
             (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
@@ -822,7 +822,7 @@ fn a_resize_leaves_the_canvas_transparent_only_after_a_configure() {
         for component in [r, g, b, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         vec![
             (30, words(&[texture, 4, 4])),
             (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
@@ -897,7 +897,19 @@ fn drawing_at_a_zero_size_shows_a_transparent_canvas_with_edges_errors() {
             for component in [rgb[0], rgb[1], rgb[2], 1.0] {
                 pass.extend_from_slice(&component.to_bits().to_le_bytes());
             }
-            pass.extend_from_slice(&words(&[depth + 1, 1, 1, 1, 1f32.to_bits(), 0, 0, 0]));
+            pass.extend_from_slice(&words(&[
+                depth + 1,
+                1,
+                1,
+                1,
+                1f32.to_bits(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ]));
             records.push((14, pass));
             let viewport = [0.0, 0.0, width as f32, height as f32, 0.0, 1.0];
             records.push((
@@ -1516,7 +1528,7 @@ fn clear_canvas(
     for component in [r, g, b, 1.0] {
         payload.extend_from_slice(&component.to_bits().to_le_bytes());
     }
-    payload.extend_from_slice(&[0; 32]);
+    payload.extend_from_slice(&[0; 44]);
     vec![
         (30, words(&[handle, width, height])),
         (7, words(&[handle + 1, handle, 0, 0, 0, 0, 0, 0, 0])),
