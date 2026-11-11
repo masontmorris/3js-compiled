@@ -42,8 +42,9 @@ async function edge() {
   const server = createServer(async (request, response) => {
     try {
       const path = join(page, decodeURIComponent(new URL(request.url, 'http://x').pathname).replace(/\.\./g, ''));
+      const bytes = await readFile(path);
       response.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg' }[extname(path)] ?? 'application/octet-stream' });
-      response.end(await readFile(path));
+      response.end(bytes);
     } catch { response.writeHead(404); response.end(); }
   });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
@@ -78,13 +79,22 @@ async function native(run) {
   return JSON.parse(line.slice(7));
 }
 
+// Each run's start and end, so its CPU load can be read from a sampler's log.
+const windows = [];
+const timed = async (name, run) => {
+  const start = new Date().toISOString();
+  const result = await run();
+  windows.push(`${name} ${start} ${new Date().toISOString()}`);
+  return result;
+};
 const results = { edge: [], native: [] };
 for (let run = 0; run < runs; run++) {
-  results.edge.push(await edge());
+  results.edge.push(await timed(`edge-${run}`, edge));
   console.log(`edge ${run}: ${results.edge.at(-1).passes.map(ms => ms.toFixed(1)).join(' ')} ms`);
-  results.native.push(await native(run));
+  results.native.push(await timed(`native-${run}`, () => native(run)));
   console.log(`native ${run}: ${results.native.at(-1).passes.map(ms => ms.toFixed(1)).join(' ')} ms`);
 }
+await writeFile(join(out, 'windows.txt'), windows.join('\n') + '\n');
 const median = values => [...values].sort((a, b) => a - b)[values.length >> 1];
 const summary = side => median(results[side].map(result => median(result.passes)));
 const edgeMs = summary('edge');
