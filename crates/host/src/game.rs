@@ -390,7 +390,10 @@ mod tests {
         let log = timer_attack("deep")?;
         for (chain, level) in [("timer", "7"), ("interval", "2"), ("then", "2")] {
             assert_eq!(
-                result(&log, &format!("{chain} chain first level whose gap >= 3.5 ms")),
+                result(
+                    &log,
+                    &format!("{chain} chain first level whose gap >= 3.5 ms")
+                ),
                 level,
                 "{chain} chain"
             );
