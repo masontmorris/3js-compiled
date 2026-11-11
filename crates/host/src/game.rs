@@ -557,6 +557,27 @@ mod tests {
     }
 
     #[test]
+    fn overdue_frames_give_timers_their_share_on_average() -> Result<()> {
+        // Four loaders that work 1 ms and await zero-delay timers, every tenth an 8 ms one, while
+        // each frame callback works a seeded 2 to 14 ms, so the render thread has usually caught
+        // up before a turn begins. Edge runs 3.4 loader steps a frame and draws 257 to 261
+        // frames in 3 s (C:\3jsc\swarm\e3-r18v\lane-v\SUMMARY.md).
+        let log = run_rendered(
+            "timer-patterns-rendered-awaitload",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-patterns.js"),
+            Some("awaitload"),
+            std::time::Duration::from_micros(5917),
+        )?;
+        let frames: f64 = result(&log, "awaitload frames inside the window").parse()?;
+        assert!(
+            frames >= 0.97 * 259.0,
+            "{frames} frames, steps per frame {}",
+            result(&log, "awaitload steps per frame")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn timers_run_between_frames_in_edges_order() -> Result<()> {
         // Edge's results for the same page, from C:\3jsc\swarm\e3-r13\kit\out\edge\timers-default.
         let log = run_until_green(
