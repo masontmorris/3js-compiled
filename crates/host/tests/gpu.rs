@@ -813,6 +813,163 @@ fn a_limit_worse_than_the_default_gives_the_default_and_one_past_the_adapter_rej
     );
 }
 
+/// What error-rules.js logged in one mode: its `R <name>: <value>` results, with any message in
+/// parentheses, its `case <name>: <n> errors` counts, and the whole host log.
+struct Rules {
+    results: Vec<(String, String)>,
+    cases: Vec<(String, usize)>,
+    log: String,
+}
+
+fn rules(mode: &str) -> Rules {
+    let dir = workdir(&format!("rules-{mode}"));
+    let steps = serde_json::json!([{"type": "wait", "frames": 95}, {"type": "close"}]);
+    let (status, log) = host(&dir, &bundle("error-rules"), &steps, &["--scene", mode]);
+    assert!(status.success(), "{mode}: host exited with {status}\n{log}");
+    let mut results = Vec::new();
+    let mut cases = Vec::new();
+    for line in log.lines() {
+        if let Some((name, value)) = line
+            .strip_prefix("R ")
+            .and_then(|rest| rest.split_once(": "))
+        {
+            results.push((name.to_owned(), value.to_owned()));
+        } else if let Some((name, count)) = line
+            .strip_prefix("case ")
+            .and_then(|rest| rest.strip_suffix(" errors"))
+            .and_then(|rest| rest.split_once(": "))
+        {
+            cases.push((name.to_owned(), count.parse().unwrap()));
+        }
+    }
+    Rules {
+        results,
+        cases,
+        log,
+    }
+}
+
+fn result<'a>(results: &'a [(String, String)], name: &str) -> &'a str {
+    results
+        .iter()
+        .find(|(found, _)| found == name)
+        .map_or("", |(_, value)| value)
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn error_scopes_copies_and_a_lost_device_answer_as_edge_does() {
+    // error-rules.js against Edge (C:\3jsc\swarm\e3-r12\kit\out\edge\rules-*\console.txt).
+    // Edge's messages differ from wgpu's, so each result is compared up to its message.
+    let Rules {
+        results,
+        cases,
+        log,
+    } = rules("scopes");
+    for (name, edge) in [
+        ("nested-same inner", "resolved GPUValidationError"),
+        ("nested-same outer", "resolved null"),
+        ("oom-inside-validation oom", "resolved null"),
+        (
+            "oom-inside-validation validation",
+            "resolved GPUValidationError",
+        ),
+        ("internal-inside-validation internal", "resolved null"),
+        (
+            "internal-inside-validation validation",
+            "resolved GPUValidationError",
+        ),
+        ("oom-only oom", "resolved null"),
+        (
+            "first-error-kept",
+            "resolved GPUValidationError (shader first:",
+        ),
+        ("empty-stack", "rejected OperationError"),
+        ("bad-filter push", "threw TypeError"),
+        ("submit-in-scope", "resolved GPUValidationError"),
+        ("valid-in-scope", "resolved null"),
+    ] {
+        assert!(result(&results, name).starts_with(edge), "{name}\n{log}");
+    }
+    // finish-in-scope pops its scope between finish() and submit(), which the stream cannot
+    // record, so it is left out.
+    let edge = [
+        ("nested-same", 0),
+        ("oom-inside-validation", 0),
+        ("internal-inside-validation", 0),
+        ("oom-only", 1),
+        ("first-error-kept", 0),
+        ("empty-stack", 0),
+        ("bad-filter", 0),
+        ("submit-in-scope", 0),
+        ("valid-in-scope", 0),
+        ("after", 0),
+    ];
+    for (name, count) in edge {
+        assert!(
+            cases.contains(&(name.to_owned(), count)),
+            "{name}: {cases:?}\n{log}"
+        );
+    }
+    let Rules {
+        results,
+        cases,
+        log,
+    } = rules("copies");
+    assert!(
+        results
+            .iter()
+            .filter(|(name, _)| name != "init")
+            .all(|(_, value)| value.starts_with("ok")),
+        "Edge throws for none of the copies: {results:?}"
+    );
+    let edge: Vec<_> = [
+        ("unaligned-offset", 2),
+        ("unaligned-size", 2),
+        ("out-of-range", 2),
+        ("clear-unaligned", 2),
+        ("bytes-per-row", 2),
+        ("texture-bounds", 2),
+        ("destroyed-before-submit", 1),
+        ("destroyed-earlier-frame", 1),
+        ("attachment-destroyed", 1),
+        ("attachment-destroyed-earlier", 1),
+        ("bind-group-destroyed", 1),
+        ("bind-group-destroyed-earlier", 1),
+        ("vertex-destroyed", 1),
+        ("vertex-destroyed-earlier", 1),
+        ("size-and-destroyed", 2),
+        ("write-destroyed", 1),
+        ("write-texture-destroyed", 1),
+        ("valid-copy", 0),
+        ("after", 0),
+    ]
+    .into_iter()
+    .map(|(name, count)| (name.to_owned(), count))
+    .collect();
+    assert_eq!(cases, edge, "{log}");
+    let Rules { results, log, .. } = rules("destroyed");
+    for (name, edge) in [
+        ("popErrorScope pending at destroy", "resolved null"),
+        (
+            "onSubmittedWorkDone pending at destroy",
+            "resolved undefined",
+        ),
+        ("getCompilationInfo pending at destroy", "resolved Number 0"),
+        (
+            "popErrorScope of a scope pushed before destroy",
+            "resolved null",
+        ),
+        ("popErrorScope with an empty stack", "resolved null"),
+        ("popErrorScope after a push after destroy", "resolved null"),
+        ("onSubmittedWorkDone after destroy", "resolved undefined"),
+        ("getCompilationInfo after destroy", "resolved Number 0"),
+        ("createRenderPipelineAsync after destroy", "resolved"),
+    ] {
+        assert!(result(&results, name).starts_with(edge), "{name}\n{log}");
+    }
+}
+
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn an_empty_vertex_buffer_draws_with_no_error_as_in_edge() {
