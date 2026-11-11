@@ -116,18 +116,20 @@ function origin(value = {}) {
     : { x: value.x ?? 0, y: value.y ?? 0, layer: value.z ?? 0 };
 }
 
-// `uses` collects the handles of the objects the commands set.
-// The texture side of a copy, as a GPUTexelCopyTextureInfo names it.
+// The texture side of a copy, as a GPUTexelCopyTextureInfo names it. As in WebGPU, a copy of a destroyed buffer or
+// texture records, and its submit fails.
 function copyTexture(device, info) {
   const texture = info.texture;
-  if (!(texture instanceof RecordingTexture) || texture.device !== device || texture.destroyed) throw new Error('Invalid copy texture');
+  if (!(texture instanceof RecordingTexture)) throw new TypeError('Invalid copy texture');
+  if (texture.device !== device) throw new Error('Invalid copy texture');
   const aspect = { all: 0, 'depth-only': 1, 'stencil-only': 2 }[info.aspect ?? 'all'];
   if (aspect === undefined) throw new TypeError('Invalid texture aspect');
   return { handle: texture.handle, mip: info.mipLevel ?? 0, ...origin(info.origin), aspect };
 }
 
 function copyBuffer(device, buffer) {
-  if (!(buffer instanceof RecordingBuffer) || buffer.device !== device || buffer.destroyed) throw new Error('Invalid copy buffer');
+  if (!(buffer instanceof RecordingBuffer)) throw new TypeError('Invalid copy buffer');
+  if (buffer.device !== device) throw new Error('Invalid copy buffer');
   return buffer.handle;
 }
 
@@ -144,9 +146,10 @@ function debugCommands(commands, record) {
   };
 }
 
+// `uses` collects the handles of the objects the commands set.
 function drawCommands(device, commands, record, uses = new Set()) {
   const bufferHandle = buffer => {
-    if (!(buffer instanceof RecordingBuffer) || !device.buffers.has(buffer) || buffer.destroyed) throw new Error('Invalid render buffer');
+    if (!(buffer instanceof RecordingBuffer) || buffer.device !== device) throw new Error('Invalid render buffer');
     uses.add(buffer.handle);
     return buffer.handle;
   };
@@ -218,7 +221,7 @@ class RecordingCommandEncoder {
     if (this.finished || this.activePass) throw new Error('Command encoder is not available');
     if (descriptor.occlusionQuerySet || descriptor.timestampWrites) throw new Error('Render pass option is not implemented');
     const viewHandle = view => {
-      if (!(view?.texture instanceof RecordingTexture) || !this.device.textures.has(view.texture) || view.texture.destroyed) throw new Error('Invalid render attachment');
+      if (!(view?.texture instanceof RecordingTexture) || view.texture.device !== this.device) throw new Error('Invalid render attachment');
       return view.handle;
     };
     const colors = descriptor.colorAttachments.map(attachment => {
@@ -483,7 +486,8 @@ export class RecordingDevice {
     this.lost = new Promise(resolve => { this.resolveLost = resolve; });
     this.queue = {
       writeBuffer: (buffer, offset, data, dataOffset = 0, size) => {
-        if (!(buffer instanceof RecordingBuffer) || buffer.device !== this || buffer.destroyed) throw new Error('Invalid buffer');
+        // As in WebGPU, a write to a destroyed buffer or texture records, and raises its error in the executor.
+        if (!(buffer instanceof RecordingBuffer) || buffer.device !== this) throw new Error('Invalid buffer');
         const array = ArrayBuffer.isView(data);
         if (!array && !(data instanceof ArrayBuffer)) throw new TypeError('Expected buffer data');
         const elementSize = array ? data.BYTES_PER_ELEMENT ?? 1 : 1;
@@ -495,7 +499,7 @@ export class RecordingDevice {
       },
       writeTexture: (destination, data, layout, size) => {
         const texture = destination.texture;
-        if (!(texture instanceof RecordingTexture) || texture.device !== this || texture.destroyed) throw new Error('Invalid texture');
+        if (!(texture instanceof RecordingTexture) || texture.device !== this) throw new Error('Invalid texture');
         if (destination.aspect && destination.aspect !== 'all') throw new Error('Texture aspects are not implemented');
         if (!ArrayBuffer.isView(data) && !(data instanceof ArrayBuffer)) throw new TypeError('Expected texture data');
         const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
