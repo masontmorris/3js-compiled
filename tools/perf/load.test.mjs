@@ -45,11 +45,16 @@ test('a measured process that exits inside the window keeps its CPU time', { ski
     return (await lines.next()).value;
   };
   try {
-    const child = spawn(process.execPath, ['-e', 'const end = Date.now() + 1000; while (Date.now() < end) {}']);
+    // A cold sampler can take longer to start than the child runs, so it answers once before the child starts, and the
+    // child exits only when told, after the sampler has opened a handle to it.
+    await ask('machine');
+    const child = spawn(process.execPath, ['-e', "const end = Date.now() + 1000; while (Date.now() < end) {} process.stdin.once('data', () => process.exit(0));"], { stdio: ['pipe', 'ignore', 'inherit'] });
+    const exited = once(child, 'exit');
     const before = Number(await ask(`cpu ${child.pid}`));
-    await once(child, 'exit');
+    child.stdin.end('exit');
+    await exited;
     const after = Number(await ask(`cpu ${child.pid}`));
-    assert.ok(after > before && after >= 500, `the exited process reports ${after} ms after ${before} ms`);
+    assert.ok(after >= before && after >= 500, `the exited process reports ${after} ms after ${before} ms`);
     const [busyMs, dpcMs, interruptMs] = (await ask('machine')).split(',').map(Number);
     assert.ok(busyMs > 0 && dpcMs >= 0 && interruptMs >= 0 && dpcMs + interruptMs < busyMs, `${busyMs}, ${dpcMs}, ${interruptMs}`);
   } finally {
