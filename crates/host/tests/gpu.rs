@@ -813,6 +813,26 @@ fn a_limit_worse_than_the_default_gives_the_default_and_one_past_the_adapter_rej
     );
 }
 
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
+    // recreate.js against Edge (C:\3jsc\swarm\e3-r12\kit\out\edge\lc-limits-recreate*): Edge
+    // draws red until frame 20 and green from the new renderer, with no error, whether its device
+    // has higher limits than the one that presented or the same.
+    for (mode, limits) in [
+        ("higher", "limits: maxTextureDimension2D 16384 maxBufferSize 536870912"),
+        ("equal", "limits: maxTextureDimension2D 8192 maxBufferSize 268435456"),
+    ] {
+        let (f40, f70, errors, log) = edge_case("recreate", mode);
+        assert_eq!(errors, [], "{mode}\n{log}");
+        assert!(
+            log.contains(limits) && log.contains("frame 40: 0 uncaptured errors so far"),
+            "{mode}\n{log}"
+        );
+        assert_eq!([f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0], [GREEN, GREEN], "{mode}");
+    }
+}
+
 /// What error-rules.js logged in one mode: its `R <name>: <value>` results, with any message in
 /// parentheses, its `case <name>: <n> errors` counts, and the whole host log.
 struct Rules {
