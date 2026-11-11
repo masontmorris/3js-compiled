@@ -20,11 +20,11 @@ The host runs browser game code on shims that behave as headless Edge does for w
 
 The input router turns each host input fact into the events Edge fires for it:
 
-- A key goes to the focused element as `keydown` or `keyup`, with Edge's `key`, `code`, `keyCode`, `location`, `repeat` and modifiers. A `keydown` that a listener does not cancel and that types a character, or Enter, without Ctrl or Meta, adds `keypress`.
-- A pointer move fires the boundary events when the pointer reaches a new element, then `pointermove` and `mousemove`.
-- A button press fires `pointerdown`, or `pointermove` when another button is already down, then `mousedown`, which moves focus to the nearest focusable ancestor or the body. A release fires `pointerup` or `pointermove`, then `mouseup`, then `click` for the primary button or `auxclick` for others, and `contextmenu` for the secondary button. Canceling `pointerdown` suppresses the mouse events until the last button is released.
-- `setPointerCapture()` retargets pointer events to the element, with `gotpointercapture` and `lostpointercapture`. The last button's release ends capture.
-- A wheel fires `wheel` with pixel deltas and Edge's legacy `wheelDelta` values.
+- A key goes to the focused element as `keydown` or `keyup`, with Edge's `key`, `code`, `keyCode`, `location`, `repeat` and modifiers. A `keydown` that a listener does not cancel and that types a character, or Enter, without Ctrl or Meta, adds `keypress`, which goes to the element focused after the `keydown` listeners ran.
+- A pointer move fires `pointerover` and `mouseover` when the pointer reaches a new element, and `pointerenter` and `mouseenter` at each element it enters that listens for them, as Edge does, then `pointermove` and `mousemove`. Pointer events carry fractional coordinates and mouse events whole pixels.
+- A button press fires `pointerdown`, or `pointermove` when another button is already down, then `mousedown`, which moves focus to the nearest focusable ancestor or the body. A release fires `pointerup` or `pointermove`, then `mouseup`, then `click` for the primary button or `auxclick` for others, and `contextmenu` for the secondary button. A press of another button between a button's press and release cancels that button's click and gives its `mouseup` a `detail` of 0. Canceling `pointerdown` suppresses the mouse events until the last button is released.
+- `setPointerCapture()` retargets pointer events to the element, with `gotpointercapture` and `lostpointercapture`, as the Pointer Events spec says. The last button's release ends capture. Headless Edge does not apply capture to DevTools mouse input, so this row has no Edge reference.
+- A wheel fires `wheel` with pixel deltas and a legacy `wheelDelta` of 120 against each axis it scrolls. As in Edge, wheel and touch listeners on the window, the document, the root element and the body are passive unless they say otherwise, so `wheel` is cancelable only when another listener on its path is not passive.
 - Window focus fires `blur` or `focus` at the focused element and the window.
 
 ## Gamepads
