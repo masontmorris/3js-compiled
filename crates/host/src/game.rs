@@ -425,6 +425,24 @@ mod tests {
     }
 
     #[test]
+    fn an_interval_keeps_to_its_schedule() -> Result<()> {
+        // A 16 ms setInterval that works 1.5 ms, beside 3 ms frame callbacks. Edge ticks 187
+        // times in the 3 s window and its last tick runs 1.5 ms after its place on the
+        // schedule (C:\3jsc\swarm\e3-r17v\lane-v\kit\out\edge\game-tick16).
+        let log = run_rendered(
+            "timer-game-rendered-tick16",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-game.js"),
+            Some("tick16"),
+            std::time::Duration::from_millis(6),
+        )?;
+        let ticks: f64 = result(&log, "tick16 ticks").parse()?;
+        let drift: f64 = result(&log, "tick16 drift of the last tick ms").parse()?;
+        assert!((ticks - 187.0).abs() <= 0.05 * 187.0, "{ticks} ticks");
+        assert!(drift < 10.0, "the last tick ran {drift} ms after its place");
+        Ok(())
+    }
+
+    #[test]
     fn timers_run_between_frames_in_edges_order() -> Result<()> {
         // Edge's results for the same page, from C:\3jsc\swarm\e3-r13\kit\out\edge\timers-default.
         let log = run_until_green(
