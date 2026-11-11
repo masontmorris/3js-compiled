@@ -89,7 +89,6 @@ class RecordingBuffer {
     });
   }
 
-  // Cancels the pending map, whose answer the device then ignores.
   abortMap(message) {
     const { request, reject } = this.pending;
     this.pending = null;
@@ -305,7 +304,6 @@ class RecordingCommandEncoder {
 
   writeTimestamp = notImplemented('GPUCommandEncoder.writeTimestamp');
 
-  // A pass's timestampWrites, as the stream records them.
   timestampWrites(writes) {
     if (!writes) return null;
     if (writes.querySet?.device !== this.device) throw new TypeError('Invalid timestampWrites query set');
