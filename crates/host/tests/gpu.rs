@@ -915,9 +915,14 @@ struct Rules {
 }
 
 fn rules(mode: &str) -> Rules {
-    let dir = workdir(&format!("rules-{mode}"));
-    let steps = serde_json::json!([{"type": "wait", "frames": 95}, {"type": "close"}]);
-    let (status, log) = host(&dir, &bundle("error-rules"), &steps, &["--scene", mode]);
+    page_rules("error-rules", mode, 95)
+}
+
+/// What the rules page `page` logged in one mode after `frames` frames.
+fn page_rules(page: &str, mode: &str, frames: u32) -> Rules {
+    let dir = workdir(&format!("{page}-{mode}"));
+    let steps = serde_json::json!([{"type": "wait", "frames": frames}, {"type": "close"}]);
+    let (status, log) = host(&dir, &bundle(page), &steps, &["--scene", mode]);
     assert!(status.success(), "{mode}: host exited with {status}\n{log}");
     let mut results = Vec::new();
     let mut cases = Vec::new();
@@ -1122,4 +1127,232 @@ fn invalid_objects_of_every_type_raise_edges_errors() {
             "{mode} draws with the valid objects"
         );
     }
+}
+
+/// `value` without the messages in parentheses, which differ between Edge and wgpu.
+fn unmessaged(value: &str) -> String {
+    let mut depth = 0;
+    let mut kept = String::new();
+    for character in value.chars() {
+        match character {
+            '(' => depth += 1,
+            ')' if depth > 0 => depth -= 1,
+            _ if depth == 0 => kept.push(character),
+            _ => {}
+        }
+    }
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Checks a compute-rules.js mode against Edge's results and error counts, up to each message.
+fn compute_rules(mode: &str, frames: u32, results: &[(&str, &str)], cases: &[(&str, usize)]) {
+    let Rules {
+        results: native,
+        cases: counted,
+        log,
+    } = page_rules("compute-rules", mode, frames);
+    for (name, edge) in results {
+        assert_eq!(
+            unmessaged(result(&native, name)),
+            unmessaged(edge),
+            "{mode} {name}\n{log}"
+        );
+    }
+    let edge: Vec<_> = cases
+        .iter()
+        .map(|(name, count)| (name.to_string(), *count))
+        .collect();
+    assert_eq!(counted, edge, "{mode}\n{log}");
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn maps_compute_passes_and_timestamp_queries_answer_as_edge_does() {
+    // compute-rules.js against Edge (C:\3jsc\swarm\e4\owner\kit\out\edge\compute-rules-*\console.txt).
+    compute_rules(
+        "map",
+        130,
+        &[
+            ("read before", "unmapped"),
+            (
+                "read",
+                "pending resolved undefined 11,22,33,44 then unmapped",
+            ),
+            ("read-range first", "2,3"),
+            ("read-range second", "4,5"),
+            ("read-range overlap", "threw OperationError"),
+            ("read-range before", "threw OperationError"),
+            ("read-range past", "threw OperationError"),
+            ("read-range unaligned offset", "threw OperationError"),
+            ("read-range unaligned size", "threw OperationError"),
+            ("read-range detached", "0"),
+            ("write initial", "0,0,0,0"),
+            (
+                "write",
+                "pending resolved undefined 0,0,0,0,5,6,7,8,0,0,0,0,0,0,0,0 then unmapped",
+            ),
+            ("no-usage", "pending rejected OperationError then unmapped"),
+            ("wrong-mode", "rejected OperationError"),
+            ("both-modes", "rejected OperationError"),
+            (
+                "unaligned-offset",
+                "pending rejected OperationError then unmapped",
+            ),
+            (
+                "unaligned-size",
+                "pending rejected OperationError then unmapped",
+            ),
+            (
+                "out-of-range",
+                "pending rejected OperationError then unmapped",
+            ),
+            (
+                "empty-range",
+                "pending resolved undefined bytes 0 then unmapped",
+            ),
+            (
+                "pending-twice",
+                "first resolved undefined, second rejected OperationError, mapped",
+            ),
+            ("unmap-pending state", "unmapped"),
+            ("unmap-pending", "rejected AbortError, unmapped"),
+            ("destroy-pending", "rejected AbortError, unmapped"),
+            ("destroyed", "pending rejected OperationError then unmapped"),
+            ("mapped-again", "rejected OperationError, mapped"),
+            ("mapped-submit state", "mapped"),
+            ("pending-submit", "resolved undefined"),
+            ("remap", "pending resolved undefined 9,8,7,6 then unmapped"),
+            ("mapped-at-creation-range overlap", "threw OperationError"),
+            (
+                "mapped-at-creation-range",
+                "pending resolved undefined 1,2,3,4,0,0,0,0 then unmapped",
+            ),
+        ],
+        &[
+            ("read", 0),
+            ("read-range", 0),
+            ("write", 0),
+            ("no-usage", 1),
+            ("wrong-mode", 1),
+            ("both-modes", 1),
+            ("unaligned-offset", 1),
+            ("unaligned-size", 1),
+            ("out-of-range", 1),
+            ("empty-range", 0),
+            ("pending-twice", 0),
+            ("unmap-pending", 0),
+            ("destroy-pending", 0),
+            ("destroyed", 1),
+            ("mapped-again", 1),
+            ("mapped-submit", 1),
+            ("pending-submit", 1),
+            ("remap", 0),
+            ("mapped-at-creation-range", 0),
+            ("after", 0),
+        ],
+    );
+    compute_rules(
+        "compute",
+        120,
+        &[
+            (
+                "dispatch",
+                "pending resolved undefined 1,4,766 sum 98176 then unmapped",
+            ),
+            (
+                "indirect",
+                "pending resolved undefined 1,382,385 then unmapped",
+            ),
+            ("async", "resolved GPUComputePipeline"),
+            ("async-invalid", "rejected GPUPipelineError"),
+            ("async-invalid scope", "resolved null"),
+            ("wrong-usage group", "ok undefined"),
+            ("render-pipeline-in-compute encode", "threw TypeError"),
+            (
+                "storage-vertex",
+                "pending resolved undefined row 3 yellow 4 of 16 then unmapped",
+            ),
+        ],
+        &[
+            ("dispatch", 0),
+            ("indirect", 2),
+            ("async", 0),
+            ("async-invalid", 0),
+            ("bad-shader", 4),
+            ("bad-entry", 3),
+            ("no-pipeline", 2),
+            ("too-many-groups", 2),
+            ("missing-group", 2),
+            ("wrong-usage", 3),
+            ("destroyed-storage", 1),
+            ("destroyed-storage-earlier", 1),
+            ("destroyed-indirect", 1),
+            ("render-pipeline-in-compute", 0),
+            ("storage-vertex", 0),
+            ("after", 0),
+        ],
+    );
+    compute_rules(
+        "queries",
+        110,
+        &[
+            ("timestamp-query", "true"),
+            ("create", "timestamp 8 times"),
+            (
+                "render",
+                "pending resolved undefined ordered true then unmapped",
+            ),
+            (
+                "compute",
+                "pending resolved undefined ordered true then unmapped",
+            ),
+            (
+                "end-only",
+                "pending resolved undefined ordered then unmapped",
+            ),
+            ("too-many", "ok undefined"),
+        ],
+        &[
+            ("create", 0),
+            ("render", 0),
+            ("compute", 0),
+            ("end-only", 0),
+            ("same-index", 2),
+            ("index-past-count", 2),
+            ("resolve-unaligned", 2),
+            ("resolve-usage", 2),
+            ("resolve-past-count", 2),
+            ("resolve-past-buffer", 2),
+            ("too-many", 3),
+            ("destroyed", 1),
+            ("destroyed-earlier", 1),
+            ("after", 0),
+        ],
+    );
+    compute_rules(
+        "queries-nofeature",
+        40,
+        &[("timestamp-query", "false"), ("create", "threw TypeError")],
+        &[("create", 0), ("after", 0)],
+    );
+    compute_rules(
+        "lost",
+        40,
+        &[
+            (
+                "mapAsync pending at destroy",
+                "rejected AbortError, unmapped",
+            ),
+            (
+                "createComputePipelineAsync pending at destroy",
+                "resolved GPUComputePipeline",
+            ),
+            ("mapAsync after destroy", "rejected AbortError"),
+            (
+                "createComputePipelineAsync after destroy",
+                "resolved GPUComputePipeline",
+            ),
+        ],
+        &[("destroy", 0), ("after", 0)],
+    );
 }
