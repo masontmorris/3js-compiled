@@ -9,9 +9,15 @@ use std::io::{self, Read, Write};
 
 /// Largest message payload either side writes or accepts.
 pub const MAX_PAYLOAD: usize = 1 << 20;
-/// Largest JSON text a `Patch` or `Events` message carries: the payload minus an `Events`
-/// message's tag, sequence number, viewport size and length prefix.
+/// Largest JSON text a `Patch` message carries: the payload minus an `Events` message's tag,
+/// sequence number, viewport size and length prefix. An `Events` message's rect ids count
+/// against it too (`events_fit`).
 pub const MAX_JSON: usize = MAX_PAYLOAD - 21;
+
+/// Whether an `Events` message with this JSON text and these rect ids fits in a payload.
+pub fn events_fit(json: &str, ids: &[u32]) -> bool {
+    json.len() + 4 * (ids.len() + 1) <= MAX_JSON
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
@@ -58,12 +64,14 @@ pub enum Msg {
         ready_value: u64,
     },
     /// Result of `__bridge.tick` for patch `seq`, or for a poll of the current state when
-    /// `seq` is 0, with the viewport size the page was laid out at.
+    /// `seq` is 0, with the viewport size the page was laid out at and the id of the element
+    /// at the centre of each item of the reply's `rects`.
     Events {
         seq: u64,
         width: u32,
         height: u32,
         json: String,
+        ids: Vec<u32>,
     },
     /// ui-host evaluates the next patch as soon as it arrives.
     Ready,
@@ -155,12 +163,12 @@ impl Msg {
                 b.extend_from_slice(&pointer.button.to_le_bytes());
                 put_u32(&mut b, pointer.size.0);
                 put_u32(&mut b, pointer.size.1);
-                let (tag, rect, offset) = match pointer.at {
-                    place::At::Rect { rect, offset } => (0, rect, offset),
-                    place::At::Beside { rect, offset } => (1, rect, offset),
+                let (tag, id, offset) = match pointer.at {
+                    place::At::Rect { id, offset } => (0, id, offset),
+                    place::At::Beside { id, offset } => (1, id, offset),
                 };
                 b.push(tag);
-                put_u32(&mut b, rect);
+                put_u32(&mut b, id);
                 put_f32(&mut b, offset.0);
                 put_f32(&mut b, offset.1);
             }
@@ -203,12 +211,17 @@ impl Msg {
                 width,
                 height,
                 json,
+                ids,
             } => {
                 b.push(12);
                 put_u64(&mut b, *seq);
                 put_u32(&mut b, *width);
                 put_u32(&mut b, *height);
                 put_str(&mut b, json);
+                put_u32(&mut b, ids.len() as u32);
+                for id in ids {
+                    put_u32(&mut b, *id);
+                }
             }
             Msg::Report { text } => {
                 b.push(13);
@@ -247,10 +260,10 @@ impl Msg {
                 button: i16::from_le_bytes(c.take(2)?.try_into().unwrap()),
                 size: (c.u32()?, c.u32()?),
                 at: {
-                    let (tag, rect, offset) = (c.u8()?, c.u32()?, (c.f32()?, c.f32()?));
+                    let (tag, id, offset) = (c.u8()?, c.u32()?, (c.f32()?, c.f32()?));
                     match tag {
-                        0 => place::At::Rect { rect, offset },
-                        1 => place::At::Beside { rect, offset },
+                        0 => place::At::Rect { id, offset },
+                        1 => place::At::Beside { id, offset },
                         _ => {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
@@ -294,6 +307,16 @@ impl Msg {
                 width: c.u32()?,
                 height: c.u32()?,
                 json: c.string()?,
+                ids: {
+                    let n = c.u32()? as usize;
+                    if n > c.0.len() / 4 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "invalid id count",
+                        ));
+                    }
+                    (0..n).map(|_| c.u32()).collect::<io::Result<_>>()?
+                },
             },
             13 => Msg::Report { text: c.string()? },
             14 => Msg::Ready,

@@ -1,4 +1,4 @@
-use threejsc_ipc::{MAX_JSON, MAX_PAYLOAD, Msg, place, read_msg, write_msg};
+use threejsc_ipc::{MAX_JSON, MAX_PAYLOAD, Msg, events_fit, place, read_msg, write_msg};
 
 #[test]
 fn messages_round_trip_and_truncated_frames_fail() {
@@ -25,7 +25,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             button: 0,
             size: (1280, 720),
             at: place::At::Rect {
-                rect: 3,
+                id: 3,
                 offset: (100.5, 40.0),
             },
         }),
@@ -36,7 +36,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             button: 2,
             size: (1680, 720),
             at: place::At::Beside {
-                rect: 1,
+                id: 1,
                 offset: (-960.0, 40.0),
             },
         }),
@@ -62,6 +62,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             width: 640,
             height: 480,
             json: "[]".into(),
+            ids: vec![4, 0, 9],
         },
         Msg::Report {
             text: "done".into(),
@@ -78,16 +79,25 @@ fn messages_round_trip_and_truncated_frames_fail() {
 
 #[test]
 fn writer_refuses_what_the_reader_refuses() {
-    for (seq, len) in [(1, MAX_JSON), (2, MAX_JSON + 1)] {
+    for (seq, len, ids) in [
+        (1, MAX_JSON - 4, vec![]),
+        (2, MAX_JSON - 3, vec![]),
+        (3, MAX_JSON - 12, vec![1, 2]),
+        (4, MAX_JSON - 11, vec![1, 2]),
+    ] {
+        let json = "x".repeat(len);
+        let fits = events_fit(&json, &ids);
         let message = Msg::Events {
             seq,
             width: 640,
             height: 480,
-            json: "x".repeat(len),
+            json,
+            ids,
         };
         let mut bytes = Vec::new();
         let written = write_msg(&mut bytes, &message);
-        if len <= MAX_JSON {
+        assert_eq!(fits, seq % 2 == 1);
+        if fits {
             written.unwrap();
             assert_eq!(read_msg(&mut bytes.as_slice()).unwrap(), message);
         } else {

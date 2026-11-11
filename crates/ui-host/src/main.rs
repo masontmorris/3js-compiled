@@ -142,6 +142,34 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(20);
 /// the previous one renders.
 const UNPAINTED: usize = 2;
 
+/// Calls `__bridge.tick` with `state` and returns the viewport size, the page's reply and an id
+/// for each item of the reply's `rects`: the id of the element at the item's centre, as
+/// `document.elementFromPoint` finds it in the layout the page measured its rects in. The page's
+/// global keeps each element's ids in a `WeakMap`, so an element has the same id in every reply.
+/// A second item over one element gets the element's second id. 0 names no element.
+fn tick_script(state: &str) -> String {
+    const WRAPPER: &str = r#"(json => {
+  const ids = (globalThis[Symbol.for("threejsc.rect-ids")] ??= { of: new WeakMap(), next: 1 });
+  let rects;
+  if (typeof json === "string" && json.includes('"rects"')) {
+    try { rects = JSON.parse(json).rects; } catch {}
+  }
+  const seen = new Map();
+  const id = rect => {
+    if (!Array.isArray(rect) || rect.length !== 4 || !rect.every(Number.isFinite)) return 0;
+    const element = document.elementFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
+    if (!element) return 0;
+    const n = seen.get(element) ?? 0;
+    seen.set(element, n + 1);
+    let list = ids.of.get(element);
+    if (!list) ids.of.set(element, (list = []));
+    return (list[n] ??= ids.next++);
+  };
+  return [innerWidth, innerHeight, json, Array.isArray(rects) ? rects.map(id) : []];
+})"#;
+    format!("{WRAPPER}(__bridge.tick({state}))")
+}
+
 /// Decides when ui-host evaluates `__bridge.tick`: no more often than Servo frames arrive, no
 /// sooner than `RENDER_INTERVAL` after the previous evaluation, always with the newest state.
 /// It asks for that state early by the host's last response time, so the state arrives fresh
@@ -216,10 +244,7 @@ impl Pacer {
         self.evaluating = true;
         self.unpainted.push_back(now);
         self.last_started = Some(now);
-        Some((
-            seq,
-            format!("[innerWidth, innerHeight, __bridge.tick({state})]"),
-        ))
+        Some((seq, tick_script(state)))
     }
     /// Whether to ask the host for its next state now.
     fn ready(&mut self, now: Instant) -> bool {
@@ -685,26 +710,40 @@ fn main() {
                             JSValue::Number(width),
                             JSValue::Number(height),
                             JSValue::String(json),
+                            JSValue::Array(ids),
                         ],
-                    ) if json.len() <= proto::MAX_JSON => {
-                        placer.borrow_mut().replied(proto::reply::parse(json).rects);
-                        if let Some(relayout) = relayout.borrow_mut().as_mut() {
-                            relayout.measured((*width as u32, *height as u32), Instant::now());
+                    ) => {
+                        let ids: Vec<u32> = ids
+                            .iter()
+                            .map(|id| match id {
+                                JSValue::Number(id) => *id as u32,
+                                _ => 0,
+                            })
+                            .collect();
+                        if proto::events_fit(json, &ids) {
+                            placer
+                                .borrow_mut()
+                                .replied(proto::reply::parse(json, &ids).rects);
+                            if let Some(relayout) = relayout.borrow_mut().as_mut() {
+                                relayout.measured((*width as u32, *height as u32), Instant::now());
+                            }
+                            send(&Msg::Events {
+                                seq,
+                                width: *width as u32,
+                                height: *height as u32,
+                                json: json.clone(),
+                                ids,
+                            });
+                            return;
                         }
-                        send(&Msg::Events {
-                            seq,
-                            width: *width as u32,
-                            height: *height as u32,
-                            json: json.clone(),
-                        });
-                        return;
+                        format!(
+                            "page reply of {} bytes and {} rect ids exceeds {} bytes and was dropped",
+                            json.len(),
+                            ids.len(),
+                            proto::MAX_JSON
+                        )
                     }
-                    Ok([_, _, JSValue::String(json)]) => format!(
-                        "page reply of {} bytes exceeds {} and was dropped",
-                        json.len(),
-                        proto::MAX_JSON
-                    ),
-                    Ok([_, _, other]) => format!("page tick did not return a string: {other:?}"),
+                    Ok([_, _, other, _]) => format!("page tick did not return a string: {other:?}"),
                     _ => format!("page tick did not return a string: {result:?}"),
                 };
                 stats.borrow_mut().eval_errors += 1;
@@ -1297,10 +1336,7 @@ mod tests {
     }
 
     fn tick(seq: u64, state: &str) -> Option<(u64, String)> {
-        Some((
-            seq,
-            format!("[innerWidth, innerHeight, __bridge.tick({state})]"),
-        ))
+        Some((seq, tick_script(state)))
     }
 
     #[test]

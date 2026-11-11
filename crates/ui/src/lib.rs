@@ -280,7 +280,8 @@ fn launch(
                     width,
                     height,
                     json,
-                } => Incoming::Reply(seq, (width, height), reply::parse(&json)),
+                    ids,
+                } => Incoming::Reply(seq, (width, height), reply::parse(&json, &ids)),
                 message => Incoming::Msg(message),
             };
             if incoming.send(message).is_err() {

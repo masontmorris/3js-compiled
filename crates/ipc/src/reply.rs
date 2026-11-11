@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::place::Rect;
 use serde_json::Value;
 use std::borrow::Cow;
 
@@ -15,11 +16,12 @@ pub struct Reply {
     pub events: Vec<String>,
     pub dropped: usize,
     /// Interactive rects, when the reply lists them.
-    pub rects: Option<Vec<[f64; 4]>>,
+    pub rects: Option<Vec<Rect>>,
     pub rejected: Vec<String>,
 }
 
-pub fn parse(json: &str) -> Reply {
+/// The reply `json`, whose rect at index `i` of its `rects` has the id `ids[i]`, or 0.
+pub fn parse(json: &str, ids: &[u32]) -> Reply {
     let mut reply = Reply::default();
     let value = match serde_json::from_str::<Value>(&well_formed(json)) {
         Ok(Value::Object(value)) => value,
@@ -52,13 +54,14 @@ pub fn parse(json: &str) -> Reply {
                     .iter()
                     .enumerate()
                     .filter_map(|(index, item)| {
-                        let rect = rect(item);
-                        if rect.is_none() {
+                        let Some(bounds) = rect(item) else {
                             reply
                                 .rejected
                                 .push(format!("rects[{index}] is not [x, y, width, height]"));
-                        }
-                        rect
+                            return None;
+                        };
+                        let id = ids.get(index).copied().unwrap_or(0);
+                        Some(Rect { id, bounds })
                     })
                     .collect(),
             )
@@ -125,6 +128,7 @@ mod tests {
     fn keeps_every_reply_json_parse_accepts() {
         let reply = parse(
             r#"{"events":[{"type":"echo","tail":"\ud83d"},{"type":"after","tail":"\ud83d\ude00 \\ud83d"},{"lone":"\udc00x"}],"rects":[[1,2,3,4]]}"#,
+            &[],
         );
         assert_eq!(
             reply.events,
@@ -134,35 +138,63 @@ mod tests {
                 r#"{"lone":"�x"}"#,
             ]
         );
-        assert_eq!(reply.rects, Some(vec![[1.0, 2.0, 3.0, 4.0]]));
+        assert_eq!(
+            reply.rects,
+            Some(vec![Rect {
+                id: 0,
+                bounds: [1.0, 2.0, 3.0, 4.0]
+            }])
+        );
         assert!(reply.rejected.is_empty());
     }
 
     #[test]
     fn keeps_good_items_and_names_bad_ones() {
-        let reply = parse(r#"{"events":[1,"two"],"rects":[[0,0,10,10],[1,2],"x",[0,0,5,null]]}"#);
+        let reply = parse(
+            r#"{"events":[1,"two"],"rects":[[1,2],[0,0,10,10],"x",[0,0,5,null],[5,5,1,1]]}"#,
+            &[7, 8, 9, 10],
+        );
         assert_eq!(reply.events, ["1", r#""two""#]);
-        assert_eq!(reply.rects, Some(vec![[0.0, 0.0, 10.0, 10.0]]));
+        assert_eq!(
+            reply.rects,
+            Some(vec![
+                Rect {
+                    id: 8,
+                    bounds: [0.0, 0.0, 10.0, 10.0]
+                },
+                Rect {
+                    id: 0,
+                    bounds: [5.0, 5.0, 1.0, 1.0]
+                }
+            ]),
+            "each rect keeps the id of its index"
+        );
         assert_eq!(
             reply.rejected,
             [
-                "rects[1] is not [x, y, width, height]",
+                "rects[0] is not [x, y, width, height]",
                 "rects[2] is not [x, y, width, height]",
                 "rects[3] is not [x, y, width, height]",
             ]
         );
-        let reply = parse(r#"{"events":{},"rects":[[0,0,1,1]]}"#);
-        assert_eq!(reply.rects, Some(vec![[0.0, 0.0, 1.0, 1.0]]));
+        let reply = parse(r#"{"events":{},"rects":[[0,0,1,1]]}"#, &[3]);
+        assert_eq!(
+            reply.rects,
+            Some(vec![Rect {
+                id: 3,
+                bounds: [0.0, 0.0, 1.0, 1.0]
+            }])
+        );
         assert_eq!(reply.rejected, ["events is not an array"]);
-        assert_eq!(parse("[]").rejected, ["reply is not a JSON object"]);
-        assert!(parse("{").rejected[0].starts_with("reply is not JSON"));
-        assert_eq!(parse("{}"), Reply::default());
+        assert_eq!(parse("[]", &[]).rejected, ["reply is not a JSON object"]);
+        assert!(parse("{", &[]).rejected[0].starts_with("reply is not JSON"));
+        assert_eq!(parse("{}", &[]), Reply::default());
     }
 
     #[test]
     fn counts_events_past_the_reply_limit_as_dropped() {
         let events = vec!["0"; MAX_REPLY_EVENTS + 5].join(",");
-        let reply = parse(&format!(r#"{{"events":[{events}]}}"#));
+        let reply = parse(&format!(r#"{{"events":[{events}]}}"#), &[]);
         assert_eq!(reply.events.len(), MAX_REPLY_EVENTS);
         assert_eq!(reply.dropped, 5);
     }

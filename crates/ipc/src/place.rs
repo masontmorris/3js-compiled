@@ -4,15 +4,25 @@
 
 use std::collections::VecDeque;
 
+/// One of the rects a page reply lists, `[x, y, width, height]` in window pixels, with the id of
+/// the element at its centre. ui-host gives each element one id for the page's lifetime, so an
+/// id names the same element in every reply, whatever the page does to the order of its rects.
+/// 0 names no element.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect {
+    pub id: u32,
+    pub bounds: [f64; 4],
+}
+
 /// Where the host saw a page pointer event, relative to one of the page's rects, named by its
-/// index in the page's `rects`.
+/// id.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum At {
     /// Over the rect, `offset` from its top-left corner in the frame on screen.
-    Rect { rect: u32, offset: (f32, f32) },
+    Rect { id: u32, offset: (f32, f32) },
     /// Over no rect, during a press whose down was over the rect: `offset` from the corner
     /// where the frame then on screen drew the rect.
-    Beside { rect: u32, offset: (f32, f32) },
+    Beside { id: u32, offset: (f32, f32) },
 }
 
 /// A pointer event the host sends to the page, at its window point.
@@ -40,8 +50,8 @@ pub struct Placed {
 /// hit-tested in a frame at the size Servo lays the page out at keeps its window point, as in a
 /// browser, whatever the page has since done to its rects. The frame on screen can be laid out
 /// at an older size than Servo's, so an event hit-tested in it goes to the same offset from the
-/// rect at its index in the page's latest layout. An event over a rect that has shrunk past the
-/// offset goes to the rect's centre instead. An event for an index the latest layout lacks keeps
+/// rect with its id in the page's latest layout. An event over a rect that has shrunk past the
+/// offset goes to the rect's centre instead. An event for an id the latest layout lacks keeps
 /// its window point. Every point is clamped into the viewport, because Servo drops input
 /// outside its scene. While a resize waits for the page's layout at the new size, events wait
 /// with it, in order.
@@ -49,7 +59,7 @@ pub struct Placed {
 pub struct Placer {
     size: (u32, u32),
     /// The rects the page listed last.
-    rects: Vec<[f64; 4]>,
+    rects: Vec<Rect>,
     relaying: bool,
     waiting: VecDeque<Pointer>,
 }
@@ -69,7 +79,7 @@ impl Placer {
         self.relaying = true;
     }
     /// The page replied, listing `rects` when they changed since the rects it listed last.
-    pub fn replied(&mut self, rects: Option<Vec<[f64; 4]>>) {
+    pub fn replied(&mut self, rects: Option<Vec<Rect>>) {
         if let Some(rects) = rects {
             self.rects = rects;
         }
@@ -90,10 +100,15 @@ impl Placer {
         Some(self.place(pointer))
     }
     fn place(&self, pointer: Pointer) -> Placed {
-        let rect = |rect: u32| self.rects.get(rect as usize);
+        let rect = |id: u32| {
+            self.rects
+                .iter()
+                .find(|rect| id != 0 && rect.id == id)
+                .map(|rect| rect.bounds)
+        };
         let (x, y) = match pointer.at {
             _ if pointer.size == self.size => (pointer.x, pointer.y),
-            At::Rect { rect: i, offset } if let Some(r) = rect(i) => {
+            At::Rect { id, offset } if let Some(r) = rect(id) => {
                 let (dx, dy) = if f64::from(offset.0) < r[2] && f64::from(offset.1) < r[3] {
                     (f64::from(offset.0), f64::from(offset.1))
                 } else {
@@ -101,7 +116,7 @@ impl Placer {
                 };
                 ((r[0] + dx) as f32, (r[1] + dy) as f32)
             }
-            At::Beside { rect: i, offset } if let Some(r) = rect(i) => {
+            At::Beside { id, offset } if let Some(r) = rect(id) => {
                 (r[0] as f32 + offset.0, r[1] as f32 + offset.1)
             }
             _ => (pointer.x, pointer.y),
@@ -123,7 +138,10 @@ mod tests {
     #[test]
     fn every_point_is_inside_the_viewport() {
         let mut placer = Placer::new((1280, 720));
-        placer.replied(Some(vec![[1500.0, -40.0, 200.0, 80.0]]));
+        placer.replied(Some(vec![Rect {
+            id: 1,
+            bounds: [1500.0, -40.0, 200.0, 80.0],
+        }]));
         let up = |x, y, at| Pointer {
             action: 2,
             x,
@@ -133,20 +151,20 @@ mod tests {
             at,
         };
         let on = At::Rect {
-            rect: 0,
+            id: 1,
             offset: (100.0, 10.0),
         };
         let beside = At::Beside {
-            rect: 0,
+            id: 1,
             offset: (-300.0, 900.0),
         };
-        let missing = |rect| At::Rect {
-            rect,
+        let missing = |id| At::Rect {
+            id,
             offset: (0.0, 0.0),
         };
         let placed = [
-            up(1560.0, 900.0, missing(1)),
-            up(-5.0, 60.0, missing(2)),
+            up(1560.0, 900.0, missing(2)),
+            up(-5.0, 60.0, missing(0)),
             up(0.0, 0.0, on),
             up(0.0, 0.0, beside),
         ]

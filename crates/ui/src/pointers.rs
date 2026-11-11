@@ -2,10 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use threejsc_ipc::place::At;
+use threejsc_ipc::place::{At, Rect};
 
 pub(crate) type Size = (u32, u32);
-type Rect = [f64; 4];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Pointer {
@@ -36,9 +35,9 @@ pub(crate) enum Route {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Owner {
-    /// The page's, begun over the rect at index `rect`, drawn with its corner at `corner`.
+    /// The page's, begun over the rect with id `id`, drawn with its corner at `corner`.
     Page {
-        rect: u32,
+        id: u32,
         corner: (f64, f64),
     },
     Game,
@@ -55,8 +54,9 @@ struct Press {
 
 /// Routes pointer input by the HUD frame on screen. After a resize the host may show a frame
 /// laid out at the old size while Servo already lays the page out at the new one, so input is
-/// hit-tested against the rects measured at the shown frame's size and sent with the rect it
-/// was made over. ui-host places it on that rect in the page's current layout.
+/// hit-tested against the rects measured at the shown frame's size and sent with the id of the
+/// rect it was made over. ui-host places it on the rect with that id in the page's current
+/// layout.
 #[derive(Default)]
 pub(crate) struct Pointers {
     /// The rects the page listed at the sizes of the shown frame, of Servo and of its latest
@@ -78,15 +78,15 @@ impl Pointers {
             .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
         self.layouts.push((size, self.last.clone()));
     }
-    /// The index and corner of the rect under `pointer` in the frame on screen.
+    /// The id and corner of the rect under `pointer` in the frame on screen.
     fn hit(&self, shown: Option<Size>, pointer: Pointer) -> Option<(u32, (f64, f64))> {
         let (_, rects) = self.layouts.iter().find(|(at, _)| Some(*at) == shown)?;
-        rects.iter().enumerate().find_map(|(rect, r)| {
+        rects.iter().find_map(|&Rect { id, bounds: r }| {
             (pointer.x >= r[0]
                 && pointer.y >= r[1]
                 && pointer.x < r[0] + r[2]
                 && pointer.y < r[1] + r[3])
-                .then_some((rect as u32, (r[0], r[1])))
+                .then_some((id, (r[0], r[1])))
         })
     }
     /// Where `pointer` goes: during a press, where the press's down went; otherwise to the
@@ -96,8 +96,8 @@ impl Pointers {
         let hit = self.hit(shown, pointer);
         let offset =
             |corner: (f64, f64)| ((pointer.x - corner.0) as f32, (pointer.y - corner.1) as f32);
-        let on = hit.map(|(rect, corner)| At::Rect {
-            rect,
+        let on = hit.map(|(id, corner)| At::Rect {
+            id,
             offset: offset(corner),
         });
         let owner = if let Some(press) = &mut self.press {
@@ -113,7 +113,7 @@ impl Pointers {
             owner
         } else {
             let owner = match hit {
-                Some((rect, corner)) => Owner::Page { rect, corner },
+                Some((id, corner)) => Owner::Page { id, corner },
                 None => Owner::Game,
             };
             if pointer.action == 1 {
@@ -125,8 +125,8 @@ impl Pointers {
             owner
         };
         match owner {
-            Owner::Page { rect, corner } => Route::Page(on.unwrap_or(At::Beside {
-                rect,
+            Owner::Page { id, corner } => Route::Page(on.unwrap_or(At::Beside {
+                id,
                 offset: offset(corner),
             })),
             Owner::Game => Route::Game,
@@ -154,10 +154,18 @@ mod tests {
 
     const OLD: Size = (1280, 720);
     const NEW: Size = (1680, 720);
+    /// The ids ui-host gives the elements of the test pages.
+    const BUTTON: u32 = 1;
+    const WARNING: u32 = 2;
+    const OTHER: u32 = 3;
+
+    fn rect(id: u32, bounds: [f64; 4]) -> Rect {
+        Rect { id, bounds }
+    }
 
     /// The kept-hit page: a 200x80 button 20 px from the right edge.
     fn right_button(width: u32) -> Vec<Rect> {
-        vec![[width as f64 - 220.0, 20.0, 200.0, 80.0]]
+        vec![rect(BUTTON, [width as f64 - 220.0, 20.0, 200.0, 80.0])]
     }
 
     fn at(action: u8, x: f64) -> Pointer {
@@ -328,10 +336,10 @@ mod tests {
 
     #[test]
     fn a_held_click_outside_its_shrunk_rect_lands_at_the_rect_centre() {
-        let mut host = Host::new(OLD, vec![[1060.0, 20.0, 200.0, 80.0]]);
+        let mut host = Host::new(OLD, vec![rect(BUTTON, [1060.0, 20.0, 200.0, 80.0])]);
         host.resize(NEW);
         host.click(1240.0);
-        host.reply(NEW, Some(vec![[1460.0, 20.0, 100.0, 80.0]]));
+        host.reply(NEW, Some(vec![rect(BUTTON, [1460.0, 20.0, 100.0, 80.0])]));
         assert_eq!(host.take(), [Page(at(1, 1510.0)), Page(at(2, 1510.0))]);
     }
 
@@ -464,7 +472,7 @@ mod tests {
     /// left-anchored button has the same rect at every width.
     #[test]
     fn a_page_that_lists_unchanged_rects_once_keeps_its_buttons_after_a_resize() {
-        let left = vec![[40.0, 20.0, 200.0, 80.0]];
+        let left = vec![rect(BUTTON, [40.0, 20.0, 200.0, 80.0])];
         let mut host = Host::new(OLD, left);
         host.resize(NEW);
         host.click(100.0);
@@ -570,7 +578,7 @@ mod tests {
     /// resizes.
     #[test]
     fn a_click_on_a_fixed_button_lands_on_it_when_a_rect_appears_before_it() {
-        let warning = [40.0, 20.0, 200.0, 80.0];
+        let warning = rect(WARNING, [40.0, 20.0, 200.0, 80.0]);
         let mut host = Host::new(OLD, right_button(1280));
         host.placer
             .replied(Some(vec![warning, right_button(1280)[0]]));
@@ -586,7 +594,7 @@ mod tests {
     /// lacks it; the host's latest does not.
     #[test]
     fn a_click_on_a_fixed_button_lands_on_it_when_a_rect_before_it_goes() {
-        let warning = [40.0, 20.0, 200.0, 80.0];
+        let warning = rect(WARNING, [40.0, 20.0, 200.0, 80.0]);
         let mut host = Host::new(OLD, vec![warning, right_button(1280)[0]]);
         host.placer.replied(Some(right_button(1280)));
         host.click(1160.0);
@@ -600,8 +608,8 @@ mod tests {
     fn a_press_held_still_while_a_resize_moves_another_button_under_it_ends_on_that_button() {
         let two = |w: u32| {
             vec![
-                [w as f64 - 220.0, 20.0, 200.0, 80.0],
-                [w as f64 - 620.0, 20.0, 200.0, 80.0],
+                rect(BUTTON, [w as f64 - 220.0, 20.0, 200.0, 80.0]),
+                rect(OTHER, [w as f64 - 620.0, 20.0, 200.0, 80.0]),
             ]
         };
         let mut host = Host::new(OLD, two(1280));
@@ -611,6 +619,44 @@ mod tests {
         host.publish();
         host.pointer(2, 1160.0);
         assert_eq!(host.take(), [Page(at(1, 1160.0)), Page(at(2, 1160.0))]);
+    }
+
+    /// Adversary round 7: the round-6 blink page during a resize. The host hit-tests the frame
+    /// at 1280, whose reply listed the warning before the button; the page's reply at 1680 does
+    /// not.
+    #[test]
+    fn a_click_on_the_kept_frame_lands_on_its_button_when_a_rect_before_it_goes() {
+        let warning = rect(WARNING, [40.0, 20.0, 200.0, 80.0]);
+        let mut host = Host::new(OLD, vec![warning, right_button(1280)[0]]);
+        host.resize(NEW);
+        host.reply(NEW, Some(right_button(1680)));
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1560.0)), Page(at(2, 1560.0))],
+            "drawn at 1060..1260; at 1680 the button is at 1460..1660"
+        );
+    }
+
+    /// Adversary round 7: the same when the warning appears in the reply at 1680.
+    #[test]
+    fn a_click_on_the_kept_frame_lands_on_its_button_when_a_rect_appears_before_it() {
+        let warning = rect(WARNING, [40.0, 20.0, 200.0, 80.0]);
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.reply(NEW, Some(vec![warning, right_button(1680)[0]]));
+        host.click(1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
+    }
+
+    #[test]
+    fn a_click_on_the_kept_frame_lands_on_its_button_when_the_page_reorders_its_rects() {
+        let other = rect(OTHER, [40.0, 140.0, 200.0, 80.0]);
+        let mut host = Host::new(OLD, vec![right_button(1280)[0], other]);
+        host.resize(NEW);
+        host.reply(NEW, Some(vec![other, right_button(1680)[0]]));
+        host.click(1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
     }
 
     #[test]
