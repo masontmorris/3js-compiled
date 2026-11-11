@@ -142,32 +142,10 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(20);
 /// the previous one renders.
 const UNPAINTED: usize = 2;
 
-/// Calls `__bridge.tick` with `state` and returns the viewport size, the page's reply and an id
-/// for each item of the reply's `rects`: the id of the element at the item's centre, as
-/// `document.elementFromPoint` finds it in the layout the page measured its rects in. The page's
-/// global keeps each element's ids in a `WeakMap`, so an element has the same id in every reply.
-/// A second item over one element gets the element's second id. 0 names no element.
+/// Calls `__bridge.tick` with `state` through `proto::TICK`, which returns the viewport size,
+/// the page's reply and the id of the element each of the reply's rects outlines.
 fn tick_script(state: &str) -> String {
-    const WRAPPER: &str = r#"(json => {
-  const ids = (globalThis[Symbol.for("threejsc.rect-ids")] ??= { of: new WeakMap(), next: 1 });
-  let rects;
-  if (typeof json === "string" && json.includes('"rects"')) {
-    try { rects = JSON.parse(json).rects; } catch {}
-  }
-  const seen = new Map();
-  const id = rect => {
-    if (!Array.isArray(rect) || rect.length !== 4 || !rect.every(Number.isFinite)) return 0;
-    const element = document.elementFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
-    if (!element) return 0;
-    const n = seen.get(element) ?? 0;
-    seen.set(element, n + 1);
-    let list = ids.of.get(element);
-    if (!list) ids.of.set(element, (list = []));
-    return (list[n] ??= ids.next++);
-  };
-  return [innerWidth, innerHeight, json, Array.isArray(rects) ? rects.map(id) : []];
-})"#;
-    format!("{WRAPPER}(__bridge.tick({state}))")
+    format!("{}(__bridge.tick({state}))", proto::TICK)
 }
 
 /// Decides when ui-host evaluates `__bridge.tick`: no more often than Servo frames arrive, no
@@ -383,6 +361,8 @@ struct Stats {
     rings: u64,
     resizes_held: u64,
     pointers_unplaced: u64,
+    /// Rects of page replies that outline no element of the page.
+    rects_unnamed: u64,
     gpu_waits: u64,
     since: Option<(Instant, Duration, u64)>,
 }
@@ -721,9 +701,20 @@ fn main() {
                             })
                             .collect();
                         if proto::events_fit(json, &ids) {
-                            placer
-                                .borrow_mut()
-                                .replied(proto::reply::parse(json, &ids).rects);
+                            let rects = proto::reply::parse(json, &ids).rects;
+                            let unnamed =
+                                rects.iter().flatten().filter(|rect| rect.id == 0).count() as u64;
+                            if unnamed > 0 && stats.borrow().rects_unnamed == 0 {
+                                let text = format!(
+                                    "[ui-host] patch {seq}: {unnamed} of the page's rects outline \
+                                     no element, so input over them during a resize keeps its \
+                                     window point"
+                                );
+                                eprintln!("{text}");
+                                send(&Msg::Report { text });
+                            }
+                            stats.borrow_mut().rects_unnamed += unnamed;
+                            placer.borrow_mut().replied(rects);
                             if let Some(relayout) = relayout.borrow_mut().as_mut() {
                                 relayout.measured((*width as u32, *height as u32), Instant::now());
                             }
@@ -980,6 +971,10 @@ fn report_stats(s: &mut Stats) {
     report += &format!(
         "ui-host pointer events placed without the page's layout at its size: {}\n",
         s.pointers_unplaced
+    );
+    report += &format!(
+        "ui-host rects that outline no element of the page: {}\n",
+        s.rects_unnamed
     );
     report += &format!(
         "ui-host frames that waited for the GPU to finish the previous publication: {}\n",

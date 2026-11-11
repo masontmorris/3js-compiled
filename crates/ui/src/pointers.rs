@@ -662,6 +662,22 @@ mod tests {
         assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
     }
 
+    /// Adversary round 8: a button whose centre lies outside the window at 1280 (drawn at
+    /// 1180..1380, visible at 1180..1280). `tick.js` names it by its box, so it has an id.
+    #[test]
+    fn a_click_on_the_kept_frame_lands_on_a_button_whose_centre_is_outside_the_window() {
+        let button = |w: u32| vec![rect(BUTTON, [w as f64 - 100.0, 20.0, 200.0, 80.0])];
+        let mut host = Host::new(OLD, button(1280));
+        host.resize(NEW);
+        host.reply(NEW, Some(button(1680)));
+        host.click(1230.0);
+        assert_eq!(
+            host.take(),
+            [Page(at(1, 1630.0)), Page(at(2, 1630.0))],
+            "drawn at 1180..1380; at 1680 the button is at 1580..1780"
+        );
+    }
+
     #[test]
     fn keeps_a_bounded_number_of_layouts() {
         let mut host = Host::new(OLD, right_button(1280));
