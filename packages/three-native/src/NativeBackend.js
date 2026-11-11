@@ -408,6 +408,28 @@ const defaultLimits = Object.freeze({
   maxComputeWorkgroupSizeY: 256, maxComputeWorkgroupSizeZ: 64, maxComputeWorkgroupsPerDimension: 65535,
 });
 
+// WebGPU's alignment limits, which are better when lower. Every other limit is better when higher.
+const alignments = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
+
+// The limits a device has for `requested`, as a browser's requestDevice() gives them: a requested limit
+// better than its default, and the default otherwise. A limit better than the adapter's `supported` one
+// throws the OperationError that rejects requestDevice(). Without `supported`, as in Node, nothing is.
+function deviceLimits(requested, supported) {
+  const limits = { ...defaultLimits };
+  for (const [name, value] of Object.entries(requested)) {
+    if (value === undefined || !(name in defaultLimits)) continue;
+    const alignment = alignments.has(name);
+    const better = (a, b) => alignment ? a < b : a > b;
+    if (supported?.[name] !== undefined && better(value, supported[name])) {
+      const error = new Error(`Required limit (${value}) is ${alignment ? 'lower' : 'greater'} than the supported limit (${supported[name]}) for ${name}`);
+      error.name = 'OperationError';
+      throw error;
+    }
+    if (better(value, limits[name])) limits[name] = value;
+  }
+  return limits;
+}
+
 // The handle space, frame count and command stream that devices recording for one executor share.
 function stream() {
   return { handles: new Handles(), commands: new CommandEncoder(), frame: 0, canvasSize: null };
@@ -416,10 +438,11 @@ function stream() {
 // The host replays every NativeBackend in the realm with one executor, and it has one window surface.
 const host = { ...stream(), device: null };
 
-// A device has the features and limits its descriptor requires, and WebGPU's default limits otherwise, as
-// a browser's requestDevice() gives. The executor's device gets the same.
+// A device has the features its descriptor requires and the limits deviceLimits() gives for them, as a
+// browser's requestDevice() gives. The executor's device gets the same. `supported` holds the adapter's limits.
 export class RecordingDevice {
-  constructor({ features = [], limits = {} } = {}, output = stream()) {
+  constructor({ features = [], limits = {} } = {}, output = stream(), supported = null) {
+    const granted = deviceLimits(limits, supported);
     this.output = output;
     this.handles = output.handles;
     this.commands = output.commands;
@@ -438,11 +461,12 @@ export class RecordingDevice {
     globalThis.addEventListener?.('gpu-response', this.onResponse);
     this.destroyed = false;
     this.features = new Set(features.filter(feature => feature !== 'subgroups'));
-    this.limits = Object.freeze({ ...defaultLimits, ...limits });
+    this.limits = Object.freeze(granted);
     this.bundles = new FinalizationRegistry(handle => {
       if (!this.destroyed) this.commands.destroyResource(handle);
     });
-    this.commands.requestDevice({ features: [...this.features], limits });
+    const recorded = Object.keys(limits).filter(name => limits[name] !== undefined && name in granted);
+    this.commands.requestDevice({ features: [...this.features], limits: Object.fromEntries(recorded.map(name => [name, granted[name]])) });
     this.lost = new Promise(resolve => { this.resolveLost = resolve; });
     this.queue = {
       writeBuffer: (buffer, offset, data, dataOffset = 0, size) => {
@@ -853,7 +877,8 @@ export class NativeBackend extends WebGPUBackend {
     renderer._getFallback = null;
     assertSurfaceFree();
     const { features, limits } = this.capabilities;
-    const device = new RecordingDevice({ features, limits: { ...this.parameters.requiredLimits, ...limits } }, host);
+    // The host sets __gpuAdapterLimits to its adapter's limits before the game loads.
+    const device = new RecordingDevice({ features, limits: { ...this.parameters.requiredLimits, ...limits } }, host, globalThis.__gpuAdapterLimits);
     host.device = this.recordingDevice = this.parameters.device = device;
     const dispose = renderer.dispose;
     renderer.dispose = function () {

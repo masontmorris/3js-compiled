@@ -59,6 +59,7 @@ impl<'a> Game<'a> {
         runtime: &'a tokio::runtime::Runtime,
         scene: Option<&str>,
         (width, height): (u32, u32),
+        adapter: Option<&wgpu::Limits>,
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(FsModuleLoader)),
@@ -74,10 +75,12 @@ impl<'a> Game<'a> {
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let scene = serde_json::to_string(&scene)?;
+        // NativeBackend checks a device's requested limits against the adapter's, as requestDevice() does.
+        let limits = serde_json::to_string(&adapter)?;
         js.execute_script(
             "host:scene",
             format!(
-                "globalThis.__sceneName = {scene}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height};"
+                "globalThis.__sceneName = {scene}; globalThis.__gpuAdapterLimits = {limits}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height};"
             ),
         )?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
@@ -153,7 +156,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-jobs-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
-        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
 
         game.frame()?;
         assert_eq!(game.frame()?, [0.0, 1.0, 0.0, 1.0]);
@@ -186,7 +189,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-globals-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/globals.js");
-        let mut game = Game::new(entry, log, &runtime, None, (640, 360))?;
+        let mut game = Game::new(entry, log, &runtime, None, (640, 360), None)?;
         assert_eq!(game.frame()?, [1.0, 1.0, 1.0, 1.0]);
         game.event(&serde_json::json!({"type": "resize", "width": 800, "height": 600}))?;
         assert_eq!(game.frame()?, [0.0, 0.0, 0.0, 0.5]);
@@ -203,7 +206,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-readback-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/readback.js");
-        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
         let started = Instant::now();
         game.gpu_responses(
             vec![serde_json::json!({"type": "readback", "request": 5})],
@@ -243,7 +246,7 @@ mod tests {
                 .join(format!("threejsc-scene-{scene}-{}.log", std::process::id()));
             let log = Rc::new(RefCell::new(File::create(&log_path)?));
             let entry = format!("{root}/examples/scenes/index.js");
-            let mut game = Game::new(&entry, log, &runtime, Some(scene), (1280, 720))?;
+            let mut game = Game::new(&entry, log, &runtime, Some(scene), (1280, 720), None)?;
             let mut submitted = 0;
             for _ in 0..4 {
                 game.frame()?;
@@ -288,7 +291,7 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-ops-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(log_path)?));
         let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/jobs.js");
-        let mut game = Game::new(entry, log, &runtime, None, (1280, 720))?;
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
         let gate = Rc::new(ReadGate {
             ready: Cell::new(false),
             waker: RefCell::new(None),

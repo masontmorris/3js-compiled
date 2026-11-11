@@ -172,6 +172,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         &runtime,
         options.scene.as_deref(),
         size,
+        Some(&target.adapter_limits()),
     )?;
     let mut render = Worker::spawn("render", || Ok(Renderer::new(target)), Renderer::frame)?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
