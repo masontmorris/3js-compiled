@@ -12,6 +12,13 @@ globalThis.AbortController ??= class AbortController {
     this.signal.reason = reason;
   }
 };
+// WebIDL's DOMException, which WebGPU throws its OperationErrors as.
+globalThis.DOMException ??= class DOMException extends Error {
+  constructor(message = "", name = "Error") {
+    super(message);
+    Object.defineProperty(this, "name", { value: name, configurable: true, writable: true });
+  }
+};
 globalThis.TextDecoder ??= class TextDecoder {
   constructor(label = "utf-8") {
     if (!/^utf-?8$/i.test(label)) throw new RangeError(`Unsupported encoding: ${label}`);

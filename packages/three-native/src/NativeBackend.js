@@ -16,6 +16,9 @@ for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalErr
 const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
 const errorTypes = { validation: GPUValidationError, 'out-of-memory': GPUOutOfMemoryError, internal: GPUInternalError };
 
+// The OperationError DOMException that WebGPU throws or rejects with.
+const operationError = message => new DOMException(message, 'OperationError');
+
 // The CREATE_BUFFER usage bit of threejsc_gpu's MAPPED_AT_CREATION.
 const MAPPED_AT_CREATION = 2 ** 31;
 
@@ -43,9 +46,7 @@ class RecordingBuffer {
 
   getMappedRange(offset = 0, size = this.size - offset) {
     if (!this.mapped) {
-      const error = new Error('getMappedRange failed: the buffer is not mapped');
-      error.name = 'OperationError';
-      throw error;
+      throw operationError('getMappedRange failed: the buffer is not mapped');
     }
     if (offset !== 0 || size !== this.size) throw new Error('Only a whole mapped-at-creation buffer is supported');
     return this.mapped;
@@ -471,9 +472,7 @@ function deviceLimits(requested, supported) {
   const limits = { ...defaultLimits };
   if (supported) supported = { ...Object.fromEntries(Object.entries(stageLimits).map(([name, bound]) => [name, supported[bound]])), ...supported };
   const reject = message => {
-    const error = new Error(message);
-    error.name = 'OperationError';
-    throw error;
+    throw operationError(message);
   };
   for (let [name, value] of Object.entries(requested)) {
     if (value === undefined) continue;
@@ -629,11 +628,7 @@ export class RecordingDevice {
   // device's scopes capture nothing, so its pops resolve with null, even from an empty stack.
   popErrorScope() {
     if (this.destroyed) return Promise.resolve(null);
-    if (this.errorScopes === 0) {
-      const error = new Error('No error scopes to pop');
-      error.name = 'OperationError';
-      return Promise.reject(error);
-    }
+    if (this.errorScopes === 0) return Promise.reject(operationError('No error scopes to pop'));
     this.errorScopes--;
     const request = this.handles.allocate();
     this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
