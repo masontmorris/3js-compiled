@@ -5,7 +5,9 @@
 // renderer.resolveTimestampsAsync() reports for the last frame each resolution covers, so each side samples the
 // measured frames its resolutions reach. Edge runs with --enable-webgpu-developer-features, which turns off its
 // 100-microsecond timestamp quantization. nvidia-smi records the GPU's performance state through every run.
-// The rule fails when the native median exceeds Edge's by more than --margin (default 0.1).
+// typeperf records the machine's total CPU load each second, and a run whose mean load is over 40 percent is void,
+// because other work on the machine can skew it. The rule uses the runs that are not void, and it fails when the
+// native median exceeds Edge's by more than --margin (default 0.1).
 // Usage, from the repository root, under the GPU lease:
 //   node tools/perf/gpu-time.mjs [--scene post] [--runs 3] [--warmup 120] [--frames 600] [--width 1920] [--height 1080]
 //     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1]
@@ -57,6 +59,17 @@ createInterface({ input: smi.stdout }).on('line', line => {
   const [pstate, clock] = line.split(',').map(part => part.trim());
   gpuSamples.push({ at: Date.now(), pstate, clock: Number(clock) });
 });
+const cpuSamples = [];
+const cpu = spawn('typeperf', ['\\Processor(_Total)\\% Processor Time', '-si', '1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+cpu.on('error', () => {});
+createInterface({ input: cpu.stdout }).on('line', line => {
+  const value = Number(/^"[^"]*","([\d.]+)"/.exec(line)?.[1]);
+  if (Number.isFinite(value)) cpuSamples.push({ at: Date.now(), value });
+});
+const cpuDuring = (from, to) => {
+  const window = cpuSamples.filter(sample => sample.at >= from && sample.at <= to).map(sample => sample.value);
+  return window.length ? window.reduce((a, b) => a + b, 0) / window.length : null;
+};
 const gpuDuring = (from, to) => {
   const window = gpuSamples.filter(sample => sample.at >= from && sample.at <= to);
   return { samples: window.length, p0: window.filter(sample => sample.pstate === 'P0').length, clockMedian: window.length ? quantile(window.map(sample => sample.clock), 0.5) : null };
@@ -88,7 +101,8 @@ await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen))
 
 const summary = (side, run, samples, from, to, extra = {}) => {
   const times = samples.map(([, ms]) => ms);
-  return { side, run, samples: times.length, p50: quantile(times, 0.5), p95: quantile(times, 0.95), min: Math.min(...times), max: Math.max(...times), gpu: gpuDuring(from, to), ...extra };
+  const cpuLoad = cpuDuring(from, to);
+  return { side, run, samples: times.length, p50: quantile(times, 0.5), p95: quantile(times, 0.95), min: Math.min(...times), max: Math.max(...times), gpu: gpuDuring(from, to), cpuLoad, void: cpuLoad === null || cpuLoad > 40, ...extra };
 };
 
 async function edge(run) {
@@ -181,11 +195,14 @@ try {
   }
 } finally {
   smi.kill();
+  cpu.kill();
   server.close();
 }
-const medianOf = side => quantile(results.filter(result => result.side === side).map(result => result.p50), 0.5);
+const counted = side => results.filter(result => result.side === side && !result.void);
+const medianOf = side => quantile(counted(side).map(result => result.p50), 0.5);
 const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, edgeP50: medianOf('edge'), nativeP50: medianOf('native') };
 verdict.limit = verdict.edgeP50 * (1 + options.margin);
-verdict.pass = verdict.nativeP50 <= verdict.limit;
-console.log(`GPU time p50 over ${options.runs} runs each: Edge ${verdict.edgeP50.toFixed(3)} ms, native ${verdict.nativeP50.toFixed(3)} ms, limit ${verdict.limit.toFixed(3)} ms: ${verdict.pass ? 'PASS' : 'FAIL'}`);
+verdict.counted = { edge: counted('edge').length, native: counted('native').length };
+verdict.pass = verdict.counted.edge > 0 && verdict.counted.native > 0 && verdict.nativeP50 <= verdict.limit;
+console.log(`GPU time p50 over ${verdict.counted.edge} Edge and ${verdict.counted.native} native runs under 40% CPU of ${options.runs} each: Edge ${verdict.edgeP50.toFixed(3)} ms, native ${verdict.nativeP50.toFixed(3)} ms, limit ${verdict.limit.toFixed(3)} ms: ${verdict.pass ? 'PASS' : 'FAIL'}`);
 await writeFile(resolve(out, 'gpu-time.json'), JSON.stringify({ options, results, verdict }, null, 2));
