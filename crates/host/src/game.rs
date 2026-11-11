@@ -231,6 +231,17 @@ mod tests {
         scene: Option<&str>,
         period: std::time::Duration,
     ) -> Result<String> {
+        run_cycled(name, entry, scene, &[period])
+    }
+
+    /// Runs `entry` with the gaps between frame starts taken from `periods` in turn, until it
+    /// turns the clear colour green, and returns its log.
+    fn run_cycled(
+        name: &str,
+        entry: &str,
+        scene: Option<&str>,
+        periods: &[std::time::Duration],
+    ) -> Result<String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -241,12 +252,13 @@ mod tests {
         let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
         let started = Instant::now();
         let mut next = started;
+        let mut periods = periods.iter().cycle();
         while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
             assert!(
                 started.elapsed().as_secs() < 10,
                 "{name} never turned green"
             );
-            next += period;
+            next += *periods.next().expect("at least one period");
             std::thread::sleep(next.saturating_duration_since(Instant::now()));
         }
         Ok(std::fs::read_to_string(log_path)?)
@@ -408,6 +420,33 @@ mod tests {
         let gap: f64 = result(&log, "fanout longest frame gap ms").parse()?;
         assert!(gap < 20.0, "a frame waited {gap} ms");
         assert_eq!(result(&log, "fanout ticks in 1500 ms"), "63");
+        Ok(())
+    }
+
+    #[test]
+    fn a_turn_keeps_its_zero_delay_timers_when_frames_arrive_unevenly() -> Result<()> {
+        // The host's game thread starts some frames 0.5 ms after the last, when it catches up
+        // after a late one (C:\3jsc\swarm\e3-r15\kit\out\runs\head\attack-rearm0\frames.csv).
+        // Those starts must not cut a turn short: Edge runs a zero-delay chain's first 6 ticks
+        // together and clamps from tick 7.
+        let periods = [
+            std::time::Duration::from_micros(500),
+            std::time::Duration::from_micros(11_500),
+        ];
+        for scene in ["rearm0", "promise0"] {
+            let log = run_cycled(
+                &format!("timer-attack-uneven-{scene}"),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-attack.js"),
+                Some(scene),
+                &periods,
+            )?;
+            assert_eq!(
+                result(&log, &format!("{scene} first tick whose gap >= 3.5 ms")),
+                "7",
+                "{scene}: {}",
+                result(&log, &format!("{scene} first tick gaps"))
+            );
+        }
         Ok(())
     }
 
