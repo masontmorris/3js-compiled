@@ -1,7 +1,7 @@
 // Compares the GPU time of a scene's frames in Edge and in the native host, from three's timestamp queries. Runs
 // alternate Edge and native. Each run draws --warmup frames and then --frames measured frames at --width x --height,
-// uncapped on both sides (Edge in a window with vsync and its frame rate limit off, the host with --vsync off), so the
-// GPU runs at the same load. A frame's GPU time is the sum of its render passes' timestamp spans, which
+// with Edge in a window. --vsync on (the default) paces both sides to the display. --vsync off runs both uncapped, Edge
+// with vsync and its frame rate limit off and the host with --vsync off, which loads the CPU more. A frame's GPU time is the sum of its render passes' timestamp spans, which
 // renderer.resolveTimestampsAsync() reports for the last frame each resolution covers, so each side samples the
 // measured frames its resolutions reach. Edge runs with --enable-webgpu-developer-features, which turns off its
 // 100-microsecond timestamp quantization. nvidia-smi records the GPU's performance state through every run.
@@ -10,7 +10,7 @@
 // native median exceeds Edge's by more than --margin (default 0.1).
 // Usage, from the repository root, under the GPU lease:
 //   node tools/perf/gpu-time.mjs [--scene post] [--runs 3] [--warmup 120] [--frames 600] [--width 1920] [--height 1080]
-//     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1]
+//     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1] [--vsync on]
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -20,13 +20,14 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 
-const options = { scene: 'post', runs: 3, warmup: 120, frames: 600, width: 1920, height: 1080, host: 'C:/3jsc/target/release/host.exe', out: 'target/gpu-time', margin: 0.1 };
+const options = { scene: 'post', runs: 3, warmup: 120, frames: 600, width: 1920, height: 1080, host: 'C:/3jsc/target/release/host.exe', out: 'target/gpu-time', margin: 0.1, vsync: 'on' };
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i += 2) {
   const key = args[i].replace(/^--/, '');
   if (!(key in options) || args[i + 1] === undefined) throw new Error(`Unknown or incomplete argument: ${args[i]}`);
   options[key] = typeof options[key] === 'number' ? Number(args[i + 1]) : args[i + 1];
 }
+if (!['on', 'off'].includes(options.vsync)) throw new Error('--vsync is on or off');
 const root = resolve('.');
 const out = resolve(options.out);
 await mkdir(out, { recursive: true });
@@ -36,18 +37,21 @@ const callTimeout = 60000;
 // Rejects when `promise` takes longer than a DevTools call may, naming the step.
 const call = (step, promise) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${step} passed 60 s`)), callTimeout).unref())]);
 
-// The page script: it keeps the GPU time of each measured frame, numbered as three numbers frames, and prints them
-// once a resolution reaches past the measured frames.
+// The page script: it keeps the GPU time of each measured frame, numbered as three numbers frames, and the wall-clock
+// window from the first measured sample to the end, and prints them once a resolution reaches past the measured frames.
+// The CPU load and the GPU's states count over that window, which leaves out the page's load and warm-up.
 const script = native => `globalThis.__gpuTime = {
   first: ${options.warmup}, last: ${options.warmup + options.frames}, samples: new Map(), done: false,
   record(ms, frame) {
     if (this.done || frame === undefined || frame <= this.first) return;
     if (frame > this.last) {
       this.done = true;
-      console.log('gpu-time ' + JSON.stringify([...this.samples]));
+      this.to = Date.now();
+      console.log('gpu-time ' + JSON.stringify({ from: this.from, to: this.to, samples: [...this.samples] }));
       ${native ? '' : 'globalThis.__gpuTimeDone = true;'}
       return;
     }
+    this.from ??= Date.now();
     this.samples.set(frame, ms);
   },
 };`;
@@ -116,7 +120,7 @@ async function edge(run) {
     const context = await call(step, chromium.launchPersistentContext(profile, {
       channel: 'msedge', headless: false, viewport: { width: options.width, height: options.height }, deviceScaleFactor: 1,
       args: ['--enable-unsafe-webgpu', '--enable-webgpu-developer-features', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=d3d11',
-        '--disable-gpu-vsync', '--disable-frame-rate-limit', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+        ...(options.vsync === 'off' ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []), '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion', '--window-position=0,0',
         `--window-size=${options.width},${options.height + 200}`],
     }));
@@ -127,13 +131,11 @@ async function edge(run) {
       await tab.addInitScript(script(false));
       step = 'goto';
       await call(step, tab.goto(`http://127.0.0.1:${server.address().port}/gpu-time.html?scene=${options.scene}`));
-      const from = Date.now();
       step = 'measured frames';
       await call(step, tab.waitForFunction(() => globalThis.__gpuTimeDone || globalThis.__sceneError, null, { timeout: callTimeout, polling: 250 }));
-      const to = Date.now();
       step = 'read samples';
-      const { samples, error, size } = await call(step, tab.evaluate(() => ({
-        samples: [...(globalThis.__gpuTime.samples ?? [])], error: globalThis.__sceneError ?? null,
+      const { samples, from, to, error, size } = await call(step, tab.evaluate(() => ({
+        samples: [...(globalThis.__gpuTime.samples ?? [])], from: globalThis.__gpuTime.from, to: globalThis.__gpuTime.to, error: globalThis.__sceneError ?? null,
         size: `${globalThis.__scene?.renderer.domElement.width}x${globalThis.__scene?.renderer.domElement.height}`,
       })));
       if (error || errors.length) throw new Error(`Edge scene failed: ${error ?? errors.join('; ')}`);
@@ -159,13 +161,12 @@ async function native(run) {
     { type: 'wait', frames: options.warmup + options.frames + 120 },
     { type: 'close' },
   ]));
-  const from = Date.now();
-  const child = spawn(options.host, ['--entry', resolve(dir, 'entry.js'), '--scene', options.scene, '--script', 'steps.json', '--vsync', 'off'], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
-  let samples = null;
+  const child = spawn(options.host, ['--entry', resolve(dir, 'entry.js'), '--scene', options.scene, '--script', 'steps.json', '--vsync', options.vsync], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+  let measured = null;
   for (const stream of [child.stdout, child.stderr]) {
     createInterface({ input: stream }).on('line', line => {
-      const match = /gpu-time (\[.*\])$/.exec(line);
-      if (match) samples = JSON.parse(match[1]);
+      const match = /gpu-time (\{.*\})$/.exec(line);
+      if (match) measured = JSON.parse(match[1]);
     });
   }
   const timer = setTimeout(() => child.kill(), 300000);
@@ -174,14 +175,13 @@ async function native(run) {
     child.on('exit', resolveExit);
   });
   clearTimeout(timer);
-  const to = Date.now();
   if (code !== 0) throw new Error(`Host exited with code ${code}; see ${dir}/host.log`);
-  if (!samples) {
+  if (!measured) {
     const log = await readFile(resolve(dir, 'host.log'), 'utf8').catch(() => '');
-    samples = JSON.parse(/gpu-time (\[.*\])/.exec(log)?.[1] ?? 'null');
+    measured = JSON.parse(/gpu-time (\{.*\})/.exec(log)?.[1] ?? 'null');
   }
-  if (!samples) throw new Error(`Native run ${run} printed no GPU times; see ${dir}/host.log`);
-  return summary('native', run, samples, from, to);
+  if (!measured) throw new Error(`Native run ${run} printed no GPU times; see ${dir}/host.log`);
+  return summary('native', run, measured.samples, measured.from, measured.to);
 }
 
 const results = [];
@@ -201,8 +201,10 @@ try {
 const counted = side => results.filter(result => result.side === side && !result.void);
 const medianOf = side => quantile(counted(side).map(result => result.p50), 0.5);
 const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, edgeP50: medianOf('edge'), nativeP50: medianOf('native') };
-verdict.limit = verdict.edgeP50 * (1 + options.margin);
+verdict.limit = verdict.edgeP50 === undefined ? undefined : verdict.edgeP50 * (1 + options.margin);
 verdict.counted = { edge: counted('edge').length, native: counted('native').length };
 verdict.pass = verdict.counted.edge > 0 && verdict.counted.native > 0 && verdict.nativeP50 <= verdict.limit;
-console.log(`GPU time p50 over ${verdict.counted.edge} Edge and ${verdict.counted.native} native runs under 40% CPU of ${options.runs} each: Edge ${verdict.edgeP50.toFixed(3)} ms, native ${verdict.nativeP50.toFixed(3)} ms, limit ${verdict.limit.toFixed(3)} ms: ${verdict.pass ? 'PASS' : 'FAIL'}`);
+const ms = value => value === undefined ? 'none' : `${value.toFixed(3)} ms`;
+const outcome = verdict.counted.edge && verdict.counted.native ? (verdict.pass ? 'PASS' : 'FAIL') : 'INCONCLUSIVE';
+console.log(`GPU time p50 over ${verdict.counted.edge} Edge and ${verdict.counted.native} native runs under 40% CPU of ${options.runs} each: Edge ${ms(verdict.edgeP50)}, native ${ms(verdict.nativeP50)}, limit ${ms(verdict.limit)}: ${outcome}`);
 await writeFile(resolve(out, 'gpu-time.json'), JSON.stringify({ options, results, verdict }, null, 2));
