@@ -843,6 +843,30 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
     }
 }
 
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn compile_async_settles_before_the_first_frame_and_while_drawing_as_in_edge() {
+    // compile.js against Edge (C:\3jsc\swarm\e3-r13\kit\out\edge\compile-host-*): compileAsync
+    // resolves at the top level, before the loop and while drawing, with no error, and the box draws.
+    for (mode, line) in [
+        ("top-level", "compileAsync at the top level: resolved"),
+        ("before-loop", "compileAsync before the loop: resolved"),
+        ("mid-run", "compileAsync mid-run: resolved"),
+    ] {
+        let (_, f70, errors, log) = edge_case("compile", mode);
+        assert_eq!(errors, [], "{mode}\n{log}");
+        assert!(
+            log.contains(line) && log.contains("frame 60: 0 uncaptured errors so far"),
+            "{mode}\n{log}"
+        );
+        assert_eq!(
+            [f70.get_pixel(8, 8).0, f70.get_pixel(640, 360).0],
+            [[255, 0, 0, 255], GREEN],
+            "{mode}"
+        );
+    }
+}
+
 /// What error-rules.js logged in one mode: its `R <name>: <value>` results, with any message in
 /// parentheses, its `case <name>: <n> errors` counts, and the whole host log.
 struct Rules {
