@@ -513,8 +513,11 @@ export class RecordingDevice {
       copyExternalImageToTexture: notImplemented('GPUQueue.copyExternalImageToTexture'),
       // Resolves once the executor has run this frame's earlier work, which a readback after it shows.
       onSubmittedWorkDone: () => {
+        if (this.destroyed) return Promise.resolve();
         this.workDone ??= this.createBuffer({ size: 4, usage: GPUBufferUsage.COPY_SRC });
-        return this.readBuffer(this.workDone, 0, 4).then(() => undefined);
+        const request = this.handles.allocate();
+        this.commands.readBuffer(request, this.workDone.handle, 0, 4);
+        return new Promise((resolve, reject) => this.pending.set(request, { resolve: () => resolve(), reject, lost: undefined }));
       },
       submit: commands => {
         if (new Set(commands).size !== commands.length || commands.some(command => command.device !== this || command.submitted)) throw new Error('Invalid command buffer');
@@ -532,9 +535,7 @@ export class RecordingDevice {
     const handle = this.handles.allocate();
     const request = this.handles.allocate();
     const code = descriptor.code.replace(/^[\t ]*enable[\t ]+subgroups[\t ]*;[\t ]*(?:\/\/[^\r\n]*)?(?=\r?$)/gm, '');
-    const compilationInfo = new Promise(resolve => {
-      this.pending.set(request, { shader: true, resolve, reject: error => resolve({ messages: [{ type: 'error', message: error.message, lineNum: 0, linePos: 0 }] }) });
-    });
+    const compilationInfo = new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, lost: { messages: [] } }));
     this.commands.createShader(handle, descriptor.label ?? '', code, request);
     const shader = { handle, label: descriptor.label ?? '', getCompilationInfo: () => compilationInfo };
     this.shaders.add(shader);
@@ -558,12 +559,15 @@ export class RecordingDevice {
 
   pushErrorScope(filter) {
     if (!(filter in errorFilters)) throw new TypeError(`'${filter}' is not a valid GPUErrorFilter`);
+    if (this.destroyed) return;
     this.errorScopes++;
     this.commands.words(Opcode.PUSH_ERROR_SCOPE, [errorFilters[filter]]);
   }
 
-  // Resolves with the first error the scope captured, or null, once the executor pops it.
+  // Resolves with the first error the scope captured, or null, once the executor pops it. A lost
+  // device's scopes capture nothing, so its pops resolve with null, even from an empty stack.
   popErrorScope() {
+    if (this.destroyed) return Promise.resolve(null);
     if (this.errorScopes === 0) {
       const error = new Error('No error scopes to pop');
       error.name = 'OperationError';
@@ -572,7 +576,7 @@ export class RecordingDevice {
     this.errorScopes--;
     const request = this.handles.allocate();
     this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
-    return new Promise((resolve, reject) => this.pending.set(request, { scope: true, resolve, reject }));
+    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, lost: null }));
   }
 
   readBuffer(buffer, offset, size) {
@@ -772,8 +776,10 @@ export class RecordingDevice {
     return pipeline;
   }
 
-  // Validation errors reach the error scope around the call, as three's async path expects.
+  // Validation errors reach the error scope around the call, as three's async path expects. A lost
+  // device resolves with a pipeline that draws nothing, as WebGPU does.
   createRenderPipelineAsync(descriptor) {
+    if (this.destroyed) return Promise.resolve({ handle: 0, getBindGroupLayout: () => ({ handle: 0 }) });
     try {
       return Promise.resolve(this.createRenderPipeline(descriptor));
     } catch (error) {
@@ -858,9 +864,10 @@ export class RecordingDevice {
     this.destroyed = true;
     if (host.device === this) host.device = null;
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
-    // A lost WebGPU device resolves its error scopes with no error and rejects its readbacks.
+    // A lost WebGPU device resolves its error scopes with no error, its compilation information with
+    // no message, and its work done, and it rejects its readbacks.
     for (const pending of this.pending.values()) {
-      if (pending.scope) pending.resolve(null);
+      if ('lost' in pending) pending.resolve(pending.lost);
       else pending.reject(new Error('Device is destroyed'));
     }
     this.pending.clear();
