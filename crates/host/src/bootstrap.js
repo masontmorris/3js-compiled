@@ -32,33 +32,40 @@ globalThis.removeEventListener = (type, callback) => listeners.get(type)?.delete
 globalThis.requestAnimationFrame = callback => { const id = nextFrame++; callbacks.set(id, callback); return id; };
 let running = null;
 globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(id); };
-// HTML's timers. The host runs each due timer as its own task before a frame's callbacks, and runs the timers that
-// become due meanwhile too, as a browser runs its tasks between frames. A timer nested more than 5 deep waits at
-// least 4 ms, as in HTML, so a chain of zero-delay timers cannot hold frames back.
+// HTML's timers. Each frame begins with a turn of timer tasks, each with its promise jobs after it: the timers due as
+// the turn starts, and the zero-delay timers that the turn's callbacks set or re-arm. A timer that becomes due any other
+// way while the turn runs waits for the next frame's turn, as a browser renders between such tasks, so a timer that
+// re-arms itself and works longer than its delay cannot hold frames back. A timer nested more than 5 deep waits at
+// least 4 ms, as in HTML, which also ends a turn's zero-delay chains. Delays and ids convert as WebIDL's long does.
 const timers = new Map();
 let nextTimer = 1;
 let timerOrder = 0;
 let nesting = 0;
+let turn = null;
 function schedule(callback, delay, args, repeat) {
   const id = nextTimer++;
   const handler = typeof callback === "function" ? callback : () => (0, eval)(String(callback));
-  const timeout = Math.max(nesting > 5 ? 4 : 0, Number(delay) || 0);
+  const timeout = Math.max(nesting > 5 ? 4 : 0, delay | 0);
   timers.set(id, { handler, args, timeout, repeat, deadline: performance.now() + timeout, order: timerOrder++, nesting: nesting + 1 });
+  if (turn && timeout === 0) turn.add(id);
   return id;
 }
 globalThis.setTimeout = (callback, delay, ...args) => schedule(callback, delay, args, false);
 globalThis.setInterval = (callback, delay, ...args) => schedule(callback, delay, args, true);
-globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(id); };
+globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(id | 0); };
 function runTimers() {
+  const start = performance.now();
+  turn = new Set([...timers].filter(([, timer]) => timer.deadline <= start).map(([id]) => id));
   for (;;) {
-    const now = performance.now();
     let due = null;
-    for (const entry of timers) {
-      const timer = entry[1];
-      if (timer.deadline <= now && (!due || timer.deadline < due[1].deadline || (timer.deadline === due[1].deadline && timer.order < due[1].order))) due = entry;
+    for (const id of turn) {
+      const timer = timers.get(id);
+      if (!timer) turn.delete(id);
+      else if (!due || timer.deadline < due[1].deadline || (timer.deadline === due[1].deadline && timer.order < due[1].order)) due = [id, timer];
     }
-    if (!due) return;
+    if (!due) break;
     const [id, timer] = due;
+    turn.delete(id);
     if (!timer.repeat) timers.delete(id);
     nesting = timer.nesting;
     try { timer.handler(...timer.args); } catch (error) { report(error); }
@@ -67,9 +74,11 @@ function runTimers() {
     if (timer.repeat && timers.get(id) === timer) {
       timer.timeout = Math.max(timer.nesting > 5 ? 4 : 0, timer.timeout);
       Object.assign(timer, { deadline: performance.now() + timer.timeout, order: timerOrder++, nesting: timer.nesting + 1 });
+      if (timer.timeout === 0) turn.add(id);
     }
     ops.op_run_microtasks();
   }
+  turn = null;
 }
 // The page keeps frames and timers coming however long its entry module awaits, as a browser does.
 ops.op_host_alive();
@@ -79,7 +88,26 @@ globalThis.submitGpuCommands = bytes => {
 };
 const gamepads = [];
 globalThis.navigator = { getGamepads: () => gamepads };
-function report(error) { console.error(error?.stack ?? String(error)); }
+// HTML's "report an exception": an error event at the window, and the console unless a listener cancels the event or
+// onerror returns true. An exception thrown while reporting goes to the console only.
+let reporting = false;
+function report(error) {
+  let canceled = false;
+  if (!reporting) {
+    reporting = true;
+    const message = String(error?.message ?? error);
+    const event = { type: "error", message, error, filename: "", lineno: 0, colno: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    try {
+      if (typeof globalThis.onerror === "function" && globalThis.onerror(message, "", 0, 0, error) === true) event.preventDefault();
+    } catch (inner) { console.error(inner?.stack ?? String(inner)); }
+    for (const callback of listeners.get("error") ?? []) {
+      try { callback(event); } catch (inner) { console.error(inner?.stack ?? String(inner)); }
+    }
+    reporting = false;
+    canceled = event.defaultPrevented;
+  }
+  if (!canceled) console.error(error?.stack ?? String(error));
+}
 globalThis.__hostDispatch = event => {
   if (event.type === "gpu-response") {
     for (const response of event.responses) {
