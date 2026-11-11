@@ -130,9 +130,9 @@ globalThis.__hostDispatch = event => {
     try { callback(event); } catch (error) { report(error); }
   }
 };
-// Runs the due timers and then the frame's callbacks, each with its promise jobs after it, as HTML does. A frame in
-// which the page submits no command stream hands the stream's recorded work to the host, as a browser's GPU work
-// moves on without the page.
+// Runs the due timers and then the frame's callbacks, each with its promise jobs after it, as HTML does. At the end
+// of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
+// page awaits a response to.
 globalThis.__hostFrame = () => {
   runTimers();
   running = new Map(callbacks);

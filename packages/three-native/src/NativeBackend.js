@@ -498,11 +498,11 @@ function stream() {
 // The host replays every NativeBackend in the realm with one executor, and it has one window surface.
 const host = { ...stream(), device: null };
 
-// The host calls this at the end of a frame in which the page submitted no command stream. The work recorded since
-// the last one goes to the executor, as a browser's GPU work moves on without the page, so that what waits on it,
-// such as compileAsync()'s error scopes before the page's first frame, settles.
+// The host calls this at the end of a frame in which the page submitted no command stream. While the page awaits a
+// response to the work recorded since the last one, such as compileAsync()'s error scopes before the page's first
+// frame, that work goes to the executor, as Chrome flushes for a pending callback, so what waits on it settles.
 globalThis.__gpuFrameEnd = () => {
-  if (host.device && !host.device.destroyed && !host.commands.empty) submitGpuCommands(host.device.takeFrame());
+  if (host.device && !host.device.destroyed && host.device.waiting) submitGpuCommands(host.device.takeFrame());
 };
 
 // A device has the features its descriptor requires and the limits deviceLimits() gives for them, as a
@@ -525,6 +525,9 @@ export class RecordingDevice {
     // How many error scopes are open. The executor holds the scopes, because it raises the errors.
     this.errorScopes = 0;
     this.pending = new Map();
+    // The requests recorded since the stream was last taken, and those whose responses the page awaits.
+    this.unsent = new Set();
+    this.awaited = new Set();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
     this.destroyed = false;
@@ -572,7 +575,7 @@ export class RecordingDevice {
         this.workDone ??= this.createBuffer({ size: 4, usage: GPUBufferUsage.COPY_SRC });
         const request = this.handles.allocate();
         this.commands.readBuffer(request, this.workDone.handle, 0, 4);
-        return new Promise((resolve, reject) => this.pending.set(request, { resolve: () => resolve(), reject, lost: undefined }));
+        return this.expect(request, true, resolve => () => resolve(), undefined);
       },
       submit: commands => {
         if (new Set(commands).size !== commands.length || commands.some(command => command.device !== this || command.submitted)) throw new Error('Invalid command buffer');
@@ -590,9 +593,12 @@ export class RecordingDevice {
     const handle = this.handles.allocate();
     const request = this.handles.allocate();
     const code = descriptor.code.replace(/^[\t ]*enable[\t ]+subgroups[\t ]*;[\t ]*(?:\/\/[^\r\n]*)?(?=\r?$)/gm, '');
-    const compilationInfo = new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, lost: { messages: [] } }));
+    const compilationInfo = this.expect(request, false, resolve => resolve, { messages: [] });
     this.commands.createShader(handle, descriptor.label ?? '', code, request);
-    const shader = { handle, label: descriptor.label ?? '', getCompilationInfo: () => compilationInfo };
+    const shader = { handle, label: descriptor.label ?? '', getCompilationInfo: () => {
+      if (this.pending.has(request)) this.awaited.add(request);
+      return compilationInfo;
+    } };
     this.shaders.add(shader);
     return shader;
   }
@@ -631,14 +637,30 @@ export class RecordingDevice {
     this.errorScopes--;
     const request = this.handles.allocate();
     this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
-    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, lost: null }));
+    return this.expect(request, true, resolve => resolve, null);
   }
 
   readBuffer(buffer, offset, size) {
     if (!(buffer instanceof RecordingBuffer) || buffer.device !== this || buffer.destroyed) throw new Error('Invalid buffer');
     const request = this.handles.allocate();
     this.commands.readBuffer(request, buffer.handle, offset, size);
-    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject }));
+    return this.expect(request, true, resolve => resolve);
+  }
+
+  // The promise of the response the executor sends for `request`, which settles with `lost` once the device is
+  // lost, or rejects without one. A frame in which the page submits no stream hands its work to the host only while the page awaits one of
+  // its responses, as Chrome flushes its GPU work for a pending callback, so errors with nothing waiting on them
+  // arrive when the page next submits, as in Edge.
+  expect(request, awaited, settle, ...lost) {
+    this.unsent.add(request);
+    if (awaited) this.awaited.add(request);
+    return new Promise((resolve, reject) => this.pending.set(request, { resolve: settle(resolve), reject, ...(lost.length && { lost: lost[0] }) }));
+  }
+
+  // Whether the stream not yet taken holds a request the page awaits.
+  get waiting() {
+    for (const request of this.unsent) if (this.awaited.has(request)) return true;
+    return false;
   }
 
   receiveResponses(responses) {
@@ -646,6 +668,7 @@ export class RecordingDevice {
       const pending = this.pending.get(response.request);
       if (pending) {
         this.pending.delete(response.request);
+        this.awaited.delete(response.request);
         if (response.type === 'compilation') {
           const location = response.message?.match(/:(\d+):(\d+)/);
           pending.resolve({ messages: response.message == null ? [] : [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] });
@@ -896,7 +919,7 @@ export class RecordingDevice {
     if (!(texture instanceof RecordingTexture) || texture.device !== this || texture.destroyed) throw new Error('Invalid texture');
     const request = this.handles.allocate();
     this.commands.readTexture(request, texture.handle, descriptor);
-    return new Promise((resolve, reject) => this.pending.set(request, { resolve, reject }));
+    return this.expect(request, true, resolve => resolve);
   }
 
   createBuffer(descriptor) {
@@ -929,6 +952,7 @@ export class RecordingDevice {
       else pending.reject(new Error('Device is destroyed'));
     }
     this.pending.clear();
+    this.awaited.clear();
     this.resolveLost({ reason: 'destroyed', message: '' });
   }
 
@@ -937,6 +961,7 @@ export class RecordingDevice {
     if (this.context) this.resizeSurface(...this.context.takeSize());
     this.surface?.destroy();
     this.surface = null;
+    this.unsent.clear();
     return this.commands.finish(this.output.frame++);
   }
 }
