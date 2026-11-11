@@ -195,7 +195,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         size,
         Some(&target.adapter_limits()),
     )?;
-    game.set_display_interval(display_interval(&window))?;
+    // A display rate forced for testing, as at 60 Hz on a faster display (docs/testing.md): the
+    // host paces frames to it and ignores the display's own rate.
+    let forced = std::env::var("THREEJSC_DISPLAY_HZ")
+        .ok()
+        .and_then(|hz| hz.parse::<f64>().ok())
+        .filter(|hz| *hz > 0.0)
+        .map(|hz| 1000.0 / hz);
+    game.set_display_interval(forced.unwrap_or_else(|| display_interval(&window)))?;
+    if let Some(ms) = forced {
+        game.set_frame_pacing(ms)?;
+    }
     let progress = Arc::new(RenderProgress::default());
     game.set_render_progress(progress.clone());
     let rendering = progress.clone();
@@ -228,7 +238,11 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     win_event: sdl3::event::WindowEvent::DisplayChanged(_),
                     ..
                 }
-                | Event::Display { .. } => game.set_display_interval(display_interval(&window))?,
+                | Event::Display { .. } => {
+                    if forced.is_none() {
+                        game.set_display_interval(display_interval(&window))?
+                    }
+                }
                 Event::KeyDown {
                     scancode: Some(code),
                     keymod,

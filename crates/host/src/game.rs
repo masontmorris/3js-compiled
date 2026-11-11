@@ -184,6 +184,13 @@ impl<'a> Game<'a> {
         game.tick().context("load entry module")?;
         Ok(game)
     }
+    /// Starts each frame no sooner than `ms` after the frame before began its callbacks, as on a
+    /// display of that interval, for testing a slower display than the one at hand.
+    pub fn set_frame_pacing(&mut self, ms: f64) -> Result<()> {
+        self.js
+            .execute_script("host:pacing", format!("globalThis.__framePacing = {ms};"))?;
+        Ok(())
+    }
     /// Lets the frame's turn of timers end once the render thread has caught up with `render`.
     pub fn set_render_progress(&mut self, render: Arc<RenderProgress>) {
         self.js.op_state().borrow_mut().borrow_mut::<State>().render = Some(render);
@@ -507,6 +514,45 @@ mod tests {
             }
         }
         assert!(misses.is_empty(), "{}", misses.join("; "));
+        Ok(())
+    }
+
+    #[test]
+    fn a_forced_frame_rate_paces_frames_and_keeps_intervals_on_schedule() -> Result<()> {
+        // THREEJSC_DISPLAY_HZ=60 on a faster display: the host paces frames to 60 Hz, and a 10 ms
+        // interval still keeps its schedule of 300 ticks in 3 s.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path = std::env::temp_dir().join(format!(
+            "threejsc-timer-patterns-paced-step10-{}.log",
+            std::process::id()
+        ));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-patterns.js");
+        let mut game = Game::new(entry, log, &runtime, Some("step10"), (1280, 720), None)?;
+        game.set_display_interval(1000.0 / 60.0)?;
+        game.set_frame_pacing(1000.0 / 60.0)?;
+        let progress = Arc::new(RenderProgress::default());
+        game.set_render_progress(progress.clone());
+        let started = Instant::now();
+        while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "step10 never turned green"
+            );
+            // A render thread that finishes each frame at once, as on a display much faster than
+            // 60 Hz.
+            game.idle()?;
+            progress.submitted.fetch_add(1, Ordering::Release);
+            progress.finished.fetch_add(1, Ordering::Release);
+        }
+        let log = std::fs::read_to_string(log_path)?;
+        let frames: f64 = result(&log, "step10 frames inside the window").parse()?;
+        let ticks: f64 = result(&log, "step10 ticks").parse()?;
+        assert!((171.0..=181.0).contains(&frames), "{frames} frames in 3 s");
+        assert!((285.0..=300.0).contains(&ticks), "{ticks} ticks in 3 s");
         Ok(())
     }
 
