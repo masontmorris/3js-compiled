@@ -123,6 +123,14 @@ impl<'a> Game<'a> {
         game.tick().context("load entry module")?;
         Ok(game)
     }
+    /// Sets the display's refresh interval, which ends a frame's turn of timers.
+    pub fn set_display_interval(&mut self, ms: f64) -> Result<()> {
+        self.js.execute_script(
+            "host:display",
+            format!("globalThis.__displayInterval = {ms};"),
+        )?;
+        Ok(())
+    }
     pub fn event(&mut self, event: &serde_json::Value) -> Result<()> {
         self.js
             .execute_script("host:event", format!("__hostDispatch({event})"))?;
@@ -234,8 +242,9 @@ mod tests {
         run_cycled(name, entry, scene, &[period])
     }
 
-    /// Runs `entry` with the gaps between frame starts taken from `periods` in turn, until it
-    /// turns the clear colour green, and returns its log.
+    /// Runs `entry` with the gaps between frame starts taken from `periods` in turn, on a display
+    /// whose refresh interval is their mean, until it turns the clear colour green, and returns
+    /// its log.
     fn run_cycled(
         name: &str,
         entry: &str,
@@ -250,6 +259,8 @@ mod tests {
             std::env::temp_dir().join(format!("threejsc-{name}-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(&log_path)?));
         let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
+        let display = periods.iter().sum::<std::time::Duration>() / periods.len() as u32;
+        game.set_display_interval(display.as_secs_f64() * 1000.0)?;
         let started = Instant::now();
         let mut next = started;
         let mut periods = periods.iter().cycle();

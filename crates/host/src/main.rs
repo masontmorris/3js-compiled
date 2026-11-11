@@ -186,6 +186,15 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         size,
         Some(&target.adapter_limits()),
     )?;
+    if let Some(hz) = window
+        .get_display()
+        .ok()
+        .and_then(|display| display.get_mode().ok())
+        .map(|mode| mode.refresh_rate)
+        .filter(|hz| *hz > 0.0)
+    {
+        game.set_display_interval(1000.0 / f64::from(hz))?;
+    }
     let mut render = Worker::spawn("render", || Ok(Renderer::new(target)), Renderer::frame)?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;

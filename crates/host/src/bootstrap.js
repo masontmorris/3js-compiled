@@ -61,8 +61,8 @@ globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(
 // HTML's timers. Each frame begins with a turn of timer tasks, each with its promise jobs after it: the timers due as
 // the turn starts, and the zero-delay timers that the turn's callbacks and their promise jobs set or re-arm. A timer
 // that becomes due any other way while the turn runs waits for the next frame's turn, as a browser renders between
-// such tasks. The turn also ends once the next frame is due, so no pattern of timers holds a frame back by more than
-// the callback running then. A timer set from a timer task or its promise jobs is nested one deeper, and one nested
+// such tasks. The turn also ends once the next frame is due, a display refresh after the frame began, so no pattern of
+// timers holds a frame back by more than the callback running then. A timer set from a timer task or its promise jobs is nested one deeper, and one nested
 // more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as WebIDL's long does.
 const timers = new Map();
 let nextTimer = 1;
@@ -158,21 +158,15 @@ globalThis.__hostDispatch = event => {
     try { callback(event); } catch (error) { report(error); }
   }
 };
-// The next frame is due a display interval after this one begins: the shortest of the last 60 intervals between
-// frames, which frames that overrun it cannot stretch.
-const frameIntervals = [];
-let frameStart = null;
+// The display's refresh interval in ms, which the host sets from its display mode. Frame starts cannot measure it: the
+// game thread starts a frame at once when it catches up, and a turn that overruns stretches the next interval.
+globalThis.__displayInterval = 1000 / 60;
 // Runs the due timers and then the frame's callbacks, each with its promise jobs after it, as HTML does. At the end
 // of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
 // page awaits a response to.
 globalThis.__hostFrame = () => {
   const start = performance.now();
-  if (frameStart !== null) {
-    frameIntervals.push(start - frameStart);
-    if (frameIntervals.length > 60) frameIntervals.shift();
-  }
-  frameStart = start;
-  runTimers(start, start + (frameIntervals.length ? Math.min(...frameIntervals) : 1000 / 60));
+  runTimers(start, start + globalThis.__displayInterval);
   running = new Map(callbacks);
   callbacks.clear();
   const now = performance.now();
