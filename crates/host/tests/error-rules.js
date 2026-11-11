@@ -1,6 +1,6 @@
-// WebGPU's rules for limits, error scopes, copies and destroyed objects. The same code runs in headless Edge and in
-// the host. Every frame draws a red background with a
-// green box through three's WebGPURenderer, and a mode runs raw WebGPU cases. Each case starts at frame 10 + 4k, and
+// WebGPU's rules for limits, error scopes, copies, buffers and destroyed objects. The same code runs in headless
+// Edge and in the host. Every frame draws a red background with a green box through three's WebGPURenderer, and a
+// mode runs raw WebGPU cases. Each case starts at frame 10 + 4k, and
 // every uncaptured error counts toward the case whose 4-frame window it arrives in, because Edge delivers errors a
 // frame late and the host two. `R <name>: <value>` lines give results, and frame 80 logs `case <name>: <n> errors`.
 //   limits-rule       requiredLimits worse than WebGPU's defaults for maximums and alignments, one better one, and
@@ -10,6 +10,8 @@
 //   scopes            nested error scopes with the validation, out-of-memory and internal filters.
 //   copies            copy and clear validation errors on live objects, and destroyed buffers and textures in copies,
 //                     render pass attachments, bind groups and vertex buffers, destroyed in the same frame or before.
+//   buffers           buffers with MAP_READ or MAP_WRITE usage, valid and not, mapped at creation and copied into.
+//   timing            how many frames after its call a scope, work done and an uncaptured error answer.
 //   destroyed         promise-returning calls pending at device.destroy() and made after it.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
@@ -233,6 +235,58 @@ const cases = {
       result('write-texture-destroyed', attempt(() => device.queue.writeTexture({ texture: destination }, new Uint8Array(64), { bytesPerRow: 16 }, [4, 4])));
     }],
     ['valid-copy', () => submit('valid-copy', encoder => encoder.copyBufferToBuffer(buffer(), 0, buffer(), 0, 64))],
+  ],
+  timing: [
+    ['shader-scope', () => {
+      const from = frames;
+      device.pushErrorScope('validation');
+      broken('timed');
+      device.popErrorScope().then(() => result('shader scope resolved after frames', frames - from));
+    }],
+    ['pipeline-scope', () => {
+      const from = frames;
+      const module = broken('timed-pipeline');
+      device.pushErrorScope('validation');
+      device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'main' } });
+      device.popErrorScope().then(() => result('pipeline scope resolved after frames', frames - from));
+    }],
+    ['valid-scope', () => {
+      const from = frames;
+      device.pushErrorScope('validation');
+      device.popErrorScope().then(() => result('empty scope resolved after frames', frames - from));
+    }],
+    ['work-done', () => {
+      const from = frames;
+      device.queue.onSubmittedWorkDone().then(() => result('work done after frames', frames - from));
+    }],
+    ['uncaptured', () => {
+      const from = frames;
+      const report = device.onuncapturederror;
+      device.onuncapturederror = event => {
+        result('uncaptured error after frames', frames - from);
+        device.onuncapturederror = report;
+        report.call(device, event);
+      };
+      broken('timed-uncaptured');
+    }],
+  ],
+  buffers: [
+    ['map-read', () => buffer(256, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ)],
+    ['map-write', () => buffer(256, GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE)],
+    ['map-read-copy-src', () => buffer(256, GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ)],
+    ['map-write-mapped', () => {
+      const mapped = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE, mappedAtCreation: true });
+      new Uint8Array(mapped.getMappedRange()).fill(7);
+      mapped.unmap();
+    }],
+    ['map-read-copied', () => {
+      const readback = buffer(256, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
+      submit('map-read-copied', encoder => encoder.copyBufferToBuffer(buffer(), 0, readback, 0, 64));
+    }],
+    ['map-async', () => {
+      const readback = buffer(256, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
+      result('map-async', attempt(() => readback.mapAsync(GPUMapMode.READ).catch(() => {})));
+    }],
   ],
   destroyed: [
     ['destroy', () => {

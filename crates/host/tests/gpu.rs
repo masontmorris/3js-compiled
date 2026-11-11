@@ -820,8 +820,14 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
     // draws red until frame 20 and green from the new renderer, with no error, whether its device
     // has higher limits than the one that presented or the same.
     for (mode, limits) in [
-        ("higher", "limits: maxTextureDimension2D 16384 maxBufferSize 536870912"),
-        ("equal", "limits: maxTextureDimension2D 8192 maxBufferSize 268435456"),
+        (
+            "higher",
+            "limits: maxTextureDimension2D 16384 maxBufferSize 536870912",
+        ),
+        (
+            "equal",
+            "limits: maxTextureDimension2D 8192 maxBufferSize 268435456",
+        ),
     ] {
         let (f40, f70, errors, log) = edge_case("recreate", mode);
         assert_eq!(errors, [], "{mode}\n{log}");
@@ -829,7 +835,11 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
             log.contains(limits) && log.contains("frame 40: 0 uncaptured errors so far"),
             "{mode}\n{log}"
         );
-        assert_eq!([f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0], [GREEN, GREEN], "{mode}");
+        assert_eq!(
+            [f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0],
+            [GREEN, GREEN],
+            "{mode}"
+        );
     }
 }
 
@@ -962,6 +972,20 @@ fn error_scopes_copies_and_a_lost_device_answer_as_edge_does() {
         ("write-destroyed", 1),
         ("write-texture-destroyed", 1),
         ("valid-copy", 0),
+        ("after", 0),
+    ]
+    .into_iter()
+    .map(|(name, count)| (name.to_owned(), count))
+    .collect();
+    assert_eq!(cases, edge, "{log}");
+    let Rules { cases, log, .. } = rules("buffers");
+    let edge: Vec<_> = [
+        ("map-read", 0),
+        ("map-write", 0),
+        ("map-read-copy-src", 1),
+        ("map-write-mapped", 0),
+        ("map-read-copied", 0),
+        ("map-async", 0),
         ("after", 0),
     ]
     .into_iter()
