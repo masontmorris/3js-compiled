@@ -868,6 +868,9 @@ test('a frame that the page submits nothing in hands the recorded work to the ho
     backend.takeFrame();
     globalThis.__gpuFrameEnd();
     assert.deepEqual(submitted, [], 'nothing recorded, nothing submitted');
+    backend.recordingDevice.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.VERTEX });
+    globalThis.__gpuFrameEnd();
+    assert.deepEqual(submitted, [], 'work nothing waits on stays until the page submits, as Edge delivers its errors then');
     backend.recordingDevice.pushErrorScope('validation');
     const popped = backend.recordingDevice.popErrorScope();
     globalThis.__gpuFrameEnd();
@@ -881,6 +884,54 @@ test('a frame that the page submits nothing in hands the recorded work to the ho
   }
   globalThis.__gpuFrameEnd();
   assert.equal(submitted.length, 1, 'a disposed renderer submits nothing');
+});
+
+// Edge 157's adapter.limits names on the RTX 3060, and its device's values for the five that wgpu lacks or defaults
+// differently, from C:\3jsc\swarm\e3-r14v\lane-t\out\edge-limit-names.txt and out\edge\limits-*.
+test('a limit name Edge knows resolves with Edge\'s default, and its value converts as WebIDL does', () => {
+  const names = ['maxBindGroups', 'maxBindGroupsPlusVertexBuffers', 'maxBindingsPerBindGroup', 'maxBufferSize',
+    'maxColorAttachmentBytesPerSample', 'maxColorAttachments', 'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX',
+    'maxComputeWorkgroupSizeY', 'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupStorageSize', 'maxComputeWorkgroupsPerDimension',
+    'maxDynamicStorageBuffersPerPipelineLayout', 'maxDynamicUniformBuffersPerPipelineLayout', 'maxImmediateSize',
+    'maxInterStageShaderVariables', 'maxSampledTexturesPerShaderStage', 'maxSamplersPerShaderStage', 'maxStorageBufferBindingSize',
+    'maxStorageBuffersInFragmentStage', 'maxStorageBuffersInVertexStage', 'maxStorageBuffersPerShaderStage',
+    'maxStorageTexturesInFragmentStage', 'maxStorageTexturesInVertexStage', 'maxStorageTexturesPerShaderStage',
+    'maxTextureArrayLayers', 'maxTextureDimension1D', 'maxTextureDimension2D', 'maxTextureDimension3D',
+    'maxUniformBufferBindingSize', 'maxUniformBuffersPerShaderStage', 'maxVertexAttributes', 'maxVertexBufferArrayStride',
+    'maxVertexBuffers', 'minStorageBufferOffsetAlignment', 'minUniformBufferOffsetAlignment'];
+  assert.deepEqual(Object.keys(new RecordingDevice().limits).sort(), names);
+  for (const [name, value, edge] of [['maxStorageBuffersInFragmentStage', 4, 8], ['maxStorageBuffersInVertexStage', 4, 8],
+    ['maxStorageTexturesInFragmentStage', 4, 4], ['maxStorageTexturesInVertexStage', 4, 4], ['maxImmediateSize', 0, 64],
+    ['minUniformBufferOffsetAlignment', 256.5, 256]]) {
+    assert.equal(new RecordingDevice({ limits: { [name]: value } }).limits[name], edge, name);
+  }
+  for (const value of [-1, NaN, Infinity, 2 ** 53]) {
+    assert.throws(() => new RecordingDevice({ limits: { maxBindGroups: value } }), TypeError, `${value} is out of an unsigned long long's range`);
+  }
+});
+
+// Edge's results, from C:\3jsc\swarm\e3-r14v\lane-t\out\edge\limits-mapped-*.
+test('mapping follows Edge: mapState, a detached range after unmap, and unmap that does nothing twice or after destroy', () => {
+  const device = new RecordingDevice();
+  assert.equal(device.createBuffer({ size: 16, usage: GPUBufferUsage.VERTEX }).mapState, 'unmapped');
+  const buffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
+  assert.equal(buffer.mapState, 'mapped');
+  const range = buffer.getMappedRange();
+  new Uint8Array(range).fill(7);
+  buffer.unmap();
+  assert.equal(buffer.mapState, 'unmapped');
+  assert.equal(range.byteLength, 0, 'unmap detaches the range');
+  assert.doesNotThrow(() => buffer.unmap(), 'a second unmap does nothing');
+  assert.throws(() => buffer.getMappedRange(), { name: 'OperationError' });
+  const destroyed = device.createBuffer({ size: 16, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
+  const lost = destroyed.getMappedRange();
+  destroyed.destroy();
+  assert.equal(destroyed.mapState, 'unmapped');
+  assert.equal(lost.byteLength, 0, 'destroy detaches the range');
+  assert.doesNotThrow(() => destroyed.unmap(), 'unmap after destroy does nothing');
+  const records = decodeCommands(device.takeFrame());
+  assert.deepEqual(records.filter(record => record.opcode === Opcode.UNMAP_BUFFER).length, 1, 'only the first unmap records');
+  assert.deepEqual([...records.find(record => record.opcode === Opcode.UNMAP_BUFFER).payload.slice(4)], Array(16).fill(7));
 });
 
 // Edge's errors, from the round-12 adversary's C:\3jsc\worktrees\interrogate-e3r13-opus\repro13\out\edge-limits-*.log.

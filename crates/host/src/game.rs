@@ -217,8 +217,9 @@ mod tests {
         Ok(())
     }
 
-    /// Runs `entry` until it turns the clear color green, for at most 10 seconds, and returns its log.
-    fn run_until_green(name: &str, entry: &str) -> Result<String> {
+    /// Runs `entry` in `scene` until it turns the clear color green, for at most 10 seconds, and
+    /// returns its log.
+    fn run_until_green(name: &str, entry: &str, scene: Option<&str>) -> Result<String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -226,7 +227,7 @@ mod tests {
         let log_path =
             std::env::temp_dir().join(format!("threejsc-{name}-{}.log", std::process::id()));
         let log = Rc::new(RefCell::new(File::create(&log_path)?));
-        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
         let started = Instant::now();
         while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
             assert!(
@@ -244,6 +245,7 @@ mod tests {
         let log = run_until_green(
             "timers",
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timers.js"),
+            None,
         )?;
         for line in [
             "R order: rafA rafA.promise rafA.microtask rafB rafB.promise t1 t2 args(a,b) throws t3 t3.promise t4 t3.nested t3.nested.nested raf-from-timer",
@@ -263,11 +265,75 @@ mod tests {
         Ok(())
     }
 
+    fn timer_rules(scene: &str) -> Result<String> {
+        run_until_green(
+            &format!("timer-rules-{scene}"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-rules.js"),
+            Some(scene),
+        )
+    }
+
+    /// The `R <name>: <value>` result `name` that `log` holds.
+    fn result<'a>(log: &'a str, name: &str) -> &'a str {
+        let prefix = format!("R {name}: ");
+        log.lines()
+            .find_map(|line| line.strip_prefix(&prefix))
+            .unwrap_or_else(|| panic!("no result {name}\n{log}"))
+    }
+
+    #[test]
+    fn timer_rules_match_edges_order_conversions_and_error_event() -> Result<()> {
+        // Edge's results for the same page, from
+        // C:\3jsc\swarm\e3-r14v\lane-t\out\edge\timers-default\console.txt.
+        let log = timer_rules("default")?;
+        assert_eq!(
+            result(&log, "order"),
+            "rafA rafA.promise rafA.microtask rafB rafB.promise d0 e1 e2 e3 args(1,x,null,undefined) \
+             string-handler throws iv1(p) fromPromise fromRafB iv2(p) iv3(p) raf-from-rafA crossInterval1 \
+             frame10 never-early-1 never-early-4 never-early-16 never-early-30 never-early-100",
+            "a pending timer cleared by its id as a string never runs"
+        );
+        assert_eq!(result(&log, "timing order"), "d1 d4 d16");
+        assert_eq!(result(&log, "early"), "none");
+        assert_eq!(result(&log, "chain first level with gap >= 3.5 ms"), "7");
+        assert_eq!(result(&log, "10 ms interval early"), "false");
+        assert_eq!(result(&log, "window error events"), "1");
+        // WebIDL converts a delay to a long: Infinity, 2^31, -5 and NaN wait 0 ms, and 2^32 + 5
+        // waits 5 ms, so all seven run.
+        let odd = result(&log, "odd delays that ran within 900 ms");
+        let names: Vec<_> = odd
+            .split(' ')
+            .map(|item| item.split('@').next().unwrap())
+            .collect();
+        for name in ["Infinity", "2^31", "2^32+5", "-5", "'7'", "NaN", "4.9"] {
+            assert!(names.contains(&name), "{name} never ran: {odd}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn busy_timers_leave_frames_their_rate_as_in_edge() -> Result<()> {
+        // Edge runs the busy timer once a frame, 124 ticks in 125 frames, and the two busy
+        // intervals each once a frame, 249 ticks in 125 frames.
+        for (scene, ticks_per_frame) in [("busy", 1), ("busy2", 2)] {
+            let log = timer_rules(scene)?;
+            let ticks: usize = result(&log, &format!("{scene} timer ticks in 1500 ms")).parse()?;
+            let frames: usize =
+                result(&log, &format!("{scene} frames inside the 1500 ms window")).parse()?;
+            assert!(
+                frames + 2 >= ticks / ticks_per_frame,
+                "{scene}: {frames} frames for {ticks} ticks"
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn frames_and_timers_run_while_the_entry_module_awaits() -> Result<()> {
         run_until_green(
             "top-level-await",
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/top-level-await.js"),
+            None,
         )?;
         Ok(())
     }
