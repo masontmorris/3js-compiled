@@ -973,9 +973,9 @@ impl DocumentEventHandler {
         // https://w3c.github.io/uievents/#hit-test
         // Prevent mouse event if element is disabled.
         // TODO: also inert.
-        if element.is_actually_disabled() {
-            return;
-        }
+        // As in Chrome, a disabled element still gets pointer events, and a press on it still
+        // takes part in the click.
+        let disabled = element.is_actually_disabled();
 
         let mouse_event_type = match mouse_button_event.action {
             embedder_traits::MouseButtonAction::Up => atom!("mouseup"),
@@ -1056,6 +1056,10 @@ impl DocumentEventHandler {
                     self.process_pending_pointer_capture(cx, pointer_id, "mouse", true);
                 }
 
+                if disabled {
+                    return;
+                }
+
                 // Step 7. Let result = dispatch event at target
                 let result = mouse_event
                     .upcast::<Event>()
@@ -1083,12 +1087,6 @@ impl DocumentEventHandler {
                     document
                         .focus_handler()
                         .focus(cx, &node.find_click_focusable_area(cx));
-                }
-
-                // Step 9. If mbutton is the secondary mouse button, then
-                // Maybe show context menu with native, target.
-                if let MouseButton::Secondary = mouse_button_event.button {
-                    self.maybe_show_context_menu(cx, node.upcast(), &hit_test_result, input_event);
                 }
             },
             // https://w3c.github.io/pointerevents/#dfn-handle-native-mouse-up
@@ -1145,9 +1143,11 @@ impl DocumentEventHandler {
                 }
 
                 // Step 7. dispatch event at target.
-                mouse_event
-                    .upcast::<Event>()
-                    .dispatch(cx, node.upcast(), false);
+                if !disabled {
+                    mouse_event
+                        .upcast::<Event>()
+                        .dispatch(cx, node.upcast(), false);
+                }
 
                 // Click counts should still work for other buttons even though they
                 // do not trigger "click" and "dblclick" events, so we increment
@@ -1166,12 +1166,20 @@ impl DocumentEventHandler {
                     &hit_test_result,
                     &element,
                 );
+
+                // Step 9 of the native mouse down: if mbutton is the secondary mouse button,
+                // maybe show context menu with native, target. Browsers on Windows do this
+                // after the up and its auxclick.
+                if mouse_button_event.button == MouseButton::Secondary && !disabled {
+                    self.maybe_show_context_menu(cx, node.upcast(), &hit_test_result, input_event);
+                }
             },
         }
     }
 
     /// <https://w3c.github.io/pointerevents/#handle-native-mouse-click>
     /// <https://w3c.github.io/pointerevents/#handle-native-mouse-double-click>
+    /// <https://w3c.github.io/uievents/#event-type-auxclick>
     fn maybe_trigger_click_for_mouse_button_down_event(
         &self,
         cx: &mut JSContext,
@@ -1180,10 +1188,7 @@ impl DocumentEventHandler {
         hit_test_result: &HitTestResult,
         element: &Element,
     ) {
-        if event.button != MouseButton::Primary {
-            return;
-        }
-
+        // As in Chrome, each up ends the press of the last down, whatever their buttons.
         let Some(down_element) = self.last_mouse_button_down_element.take() else {
             return;
         };
@@ -1205,6 +1210,24 @@ impl DocumentEventHandler {
         // > The click event type MUST be dispatched on the topmost event target indicated by the
         // > pointer, when the user presses down and releases the primary pointer button.
         let element = &element.inclusive_ancestor_element_in_non_ua_shadow_root();
+        if element.is_actually_disabled() {
+            return;
+        }
+        if event.button != MouseButton::Primary {
+            MouseEvent::for_platform_button_event(
+                cx,
+                Atom::from("auxclick"),
+                event,
+                input_event.pressed_mouse_buttons,
+                &self.window,
+                hit_test_result,
+                input_event.active_keyboard_modifiers,
+                self.click_counting_info.borrow().count,
+            )
+            .upcast::<Event>()
+            .dispatch(cx, element.upcast(), false);
+            return;
+        }
         self.most_recently_clicked_element.set(Some(element));
 
         let click_count = self.click_counting_info.borrow().count;

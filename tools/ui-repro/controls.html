@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; }
+  .box { position: absolute; width: 200px; height: 80px; margin: 0; padding: 0; border: 0; box-sizing: border-box; }
+  /* Row 1, divs, as the two-buttons page: A 20 px from the right edge, B 420 px from it. */
+  #da { right: 20px; top: 20px; background: rgb(0, 200, 0); }
+  #db { right: 420px; top: 20px; background: rgb(0, 0, 200); }
+  /* Row 2, the same with <button> elements. */
+  #ba { right: 20px; top: 140px; background: rgb(0, 200, 200); }
+  #bb { right: 420px; top: 140px; background: rgb(200, 200, 0); }
+  /* Row 3: #r1 is rebuilt on every tick, as a HUD that re-renders its markup. */
+  #row { position: absolute; left: 40px; top: 260px; width: 600px; height: 80px; }
+  #r1 { left: 0; top: 0; background: rgb(200, 0, 200); }
+  /* Row 4: a disabled button and a div. */
+  #dis { right: 20px; top: 380px; background: rgb(120, 120, 120); }
+  #dc { right: 420px; top: 380px; background: rgb(200, 100, 0); }
+  /* Row 5: a shadow host whose root draws #s1 and slots the light child #l1 beside it. */
+  #sh { position: absolute; left: 40px; top: 500px; width: 400px; height: 80px; }
+  #l1 { width: 200px; height: 80px; background: rgb(100, 200, 100); }
+</style>
+</head>
+<body>
+<div id="da" class="box"></div>
+<div id="db" class="box"></div>
+<button id="ba" class="box"></button>
+<button id="bb" class="box"></button>
+<div id="row"></div>
+<button id="dis" class="box" disabled></button>
+<div id="dc" class="box"></div>
+<div id="sh"><div id="l1"></div></div>
+<script>
+const root = document.getElementById("sh").attachShadow({ mode: "open" });
+root.innerHTML = '<div id="wrap" style="display:flex"><div id="s1" style="width:200px;height:80px;background:rgb(100,100,200)"></div><slot></slot></div>';
+const row = document.getElementById("row");
+const rebuild = () => { row.innerHTML = '<div id="r1" class="box"></div>'; };
+rebuild();
+const events = [];
+const name = n => (n && (n.id || n.nodeName)) || "-";
+for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "auxclick", "contextmenu", "dblclick"]) {
+  window.addEventListener(type, e => events.push({
+    type, id: name(e.target), path0: name(e.composedPath()[0]), button: e.button, buttons: e.buttons,
+    detail: e.detail, x: e.clientX, y: e.clientY, w: innerWidth,
+  }), true);
+}
+const ids = ["da", "db", "ba", "bb", "r1", "dis", "dc", "sh"];
+window.__bridge = {
+  tick(patch) {
+    rebuild();
+    const rects = ids.map(id => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height];
+    });
+    return JSON.stringify({ events: events.splice(0), rects });
+  }
+};
+</script>
+</body>
+</html>

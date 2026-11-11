@@ -18,11 +18,16 @@ The patch passes `Rc::as_ptr` so that the hook holds the only reference. With it
 
 Upstream issue: not filed yet. Servo main at ced24a6 (2026-11-09) still passes `Rc::into_raw` at both sites. There the record type is `BaseScript`, which has no owner, so a leaked record keeps no global alive.
 
-## servo-script: fire a click where browsers fire it
+## servo-script: fire click events where browsers fire them
 
-`maybe_trigger_click_for_mouse_button_down_event` fires `click` on the element under the up, and only when the up is within 10 px of the last mouse button down, measured as points in the viewport. Chrome and Firefox fire a mouse `click` on the nearest common ancestor of the elements under the down and the up, with no distance rule. In Servo a press that starts and ends on one element gets no click when a resize between the down and the up moves the element more than 10 px, and a press that ends on another element clicks that element.
+`maybe_trigger_click_for_mouse_button_down_event` fires `click` on the element under the up, and only when the up is within 10 px of the last mouse button down, measured as points in the viewport. Chrome and Firefox fire a mouse `click` on the nearest common ancestor of the elements under the down and the up, with no distance rule. In Servo a press that starts and ends on one element gets no click when a resize between the down and the up moves the element more than 10 px, and a press that ends on another element clicks that element. Servo also fires no `auxclick`, fires `contextmenu` at the secondary button's down, and drops every pointer and mouse event over a disabled form control, so a press on one is never recorded and a press released on one never ends.
 
-The patch records the element under the last mouse button down in place of its point. On a primary up it fires `click`, and `dblclick` where Servo fires one, on the nearest element that is an inclusive ancestor of both elements in the flat tree. It fires none when the two have no common ancestor, for example after the down's element was removed from the document.
+The patch records the element under the last mouse button down in place of its point, and changes four things to match Edge 157 on Windows:
+
+- Each mouse button up ends the press of the last button down, whichever buttons they are, and takes the recorded element. A primary up fires `click`, and `dblclick` where Servo fires one, on the nearest element that is an inclusive ancestor of both elements in the flat tree. It fires none when the two have no common ancestor, for example after the down's element was removed from the document.
+- A middle or secondary up fires `auxclick` on that common ancestor instead.
+- `contextmenu` fires after the secondary button's up and its `auxclick`, on the element under the up.
+- A disabled form control receives `pointerdown`, `pointerup` and pointer moves, but no `mousedown`, `mouseup` or `contextmenu`. A down on it is recorded and an up on it ends the press as usual. No click event fires on a disabled control itself, so a press on it released on another element clicks their common ancestor, and a press that begins and ends on it clicks nothing.
 
 Upstream issue: not filed. Servo's policy forbids AI-written issues.
 
