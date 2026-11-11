@@ -9,8 +9,9 @@
 // replaced, such as a label that fills its button, or stops sharing the box, such as a column the
 // button fills at one width only.
 //
-// The elements are found by what costs least first: boxes the page measured with
-// `getBoundingClientRect` during the tick, latest first; the elements the same box, then the rect
+// The elements are found by what costs least first: elements whose last `getBoundingClientRect`
+// during the tick gave the item's box, so an element the page moved and measured again no longer
+// counts for its old box; the elements the same box, then the rect
 // at the same index, named in the last reply; and last a scan of the document shared by every rect
 // still unnamed, which stops after 1 ms and goes on in the next evaluation. A box a whole scan
 // finds no element for is named 0 and not looked for again for 60 evaluations. A second item with
@@ -24,22 +25,23 @@
     const measure = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function () {
       const box = measure.call(this);
-      if (state.measured) {
-        const key = `${box.x},${box.y},${box.width},${box.height}`;
-        const elements = state.measured.get(key);
-        if (!elements) state.measured.set(key, [this]);
-        else if (!elements.includes(this)) elements.push(this);
-      }
+      state.measured?.set(this, `${box.x},${box.y},${box.width},${box.height}`);
       return box;
     };
     return state;
   })());
-  const measured = (state.measured = new Map());
+  const lastBox = (state.measured = new Map());
   let json;
   try {
     json = tick();
   } finally {
     state.measured = null;
+  }
+  const measured = new Map();
+  for (const [element, key] of lastBox) {
+    const elements = measured.get(key);
+    if (elements) elements.push(element);
+    else measured.set(key, [element]);
   }
   state.evaluation += 1;
   let rects;
@@ -59,7 +61,7 @@
   const found = rects.map((rect, i) => {
     const key = keys[i];
     if (key === null || state.pending.has(key)) return [];
-    let elements = outlining(measured.get(key)?.slice().reverse(), rect);
+    let elements = measured.get(key) ?? [];
     if (!elements.length) elements = outlining(state.byBox.get(key), rect);
     if (!elements.length) elements = outlining(state.byIndex[i], rect);
     if (!elements.length && !(state.evaluation - (state.absent.get(key) ?? -Infinity) < 60)) {
@@ -68,8 +70,9 @@
     return elements;
   });
 
+  const listed = new Set(keys);
   for (const key of state.pending.keys()) {
-    if (!keys.includes(key)) state.pending.delete(key);
+    if (!listed.has(key)) state.pending.delete(key);
   }
   if (state.pending.size) {
     const corner = (x, y) => `${Math.round(x)},${Math.round(y)}`;
