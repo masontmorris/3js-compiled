@@ -143,9 +143,13 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(20);
 const UNPAINTED: usize = 2;
 
 /// Calls `__bridge.tick` with `state` through `proto::TICK`, which returns the viewport size,
-/// the page's reply and the id of the element each of the reply's rects outlines.
+/// the page's reply and the id of the element each of the reply's rects outlines. The page's
+/// global keeps the function, so later evaluations run the compiled function instead of a new one.
 fn tick_script(state: &str) -> String {
-    format!("{}(__bridge.tick({state}))", proto::TICK)
+    format!(
+        "(globalThis[Symbol.for(\"threejsc.tick\")] ??= {})(() => __bridge.tick({state}))",
+        proto::TICK
+    )
 }
 
 /// Decides when ui-host evaluates `__bridge.tick`: no more often than Servo frames arrive, no

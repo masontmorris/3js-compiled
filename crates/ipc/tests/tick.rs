@@ -3,12 +3,14 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! `TICK` in V8 against a page model: elements with border boxes, hit-tested front to back as
-//! Servo's layout does, which also hits boxes with no background.
+//! Servo's layout does, which also hits boxes with no background. Each case runs twice: with the
+//! page measuring its rects with `getBoundingClientRect` during the tick, and with rects the page
+//! computed some other way, which `TICK` finds by hit test and document scan.
 
 use deno_core::{JsRuntime, RuntimeOptions};
 
 const PAGE: &str = r#"
-class Element {
+globalThis.Element = class Element {
   constructor(name, box, parent, hit = true) {
     Object.assign(this, { name, box, parent, hit, children: [] });
     parent?.children.push(this);
@@ -18,7 +20,11 @@ class Element {
     return { x, y, width, height };
   }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
-}
+  contains(other) {
+    for (let element = other; element; element = element.parent) if (element === this) return true;
+    return false;
+  }
+};
 const html = new Element("html", [0, 0, 1280, 720], null);
 const body = new Element("body", [0, 0, 1280, 720], html);
 const resize = width => {
@@ -37,8 +43,13 @@ globalThis.document = {
   },
   elementFromPoint(x, y) { return this.elementsFromPoint(x, y)[0] ?? null; },
 };
+const box = element => {
+  if (!MEASURED || !(element instanceof Element)) return element.box;
+  const { x, y, width, height } = element.getBoundingClientRect();
+  return [x, y, width, height];
+};
 const ids = (...elements) =>
-  tick(JSON.stringify({ events: [], rects: elements.map(element => element.box) }))[3];
+  tick(() => JSON.stringify({ events: [], rects: elements.map(box) }))[3];
 const same = (got, want, what) => {
   if (JSON.stringify(got) !== JSON.stringify(want)) {
     throw new Error(`${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
@@ -47,10 +58,15 @@ const same = (got, want, what) => {
 "#;
 
 fn run(case: &str) {
-    let mut js = JsRuntime::new(RuntimeOptions::default());
-    let script = format!("const tick = {};\n{PAGE}\n{case}", threejsc_ipc::TICK);
-    if let Err(error) = js.execute_script("test:tick", script) {
-        panic!("{error}");
+    for measured in [true, false] {
+        let mut js = JsRuntime::new(RuntimeOptions::default());
+        let script = format!(
+            "const MEASURED = {measured};\nconst tick = {};\n{PAGE}\n{case}",
+            threejsc_ipc::TICK
+        );
+        if let Err(error) = js.execute_script("test:tick", script) {
+            panic!("measured by the page: {measured}: {error}");
+        }
     }
 }
 

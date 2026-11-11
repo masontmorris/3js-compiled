@@ -7,8 +7,8 @@ pub mod reply;
 
 use std::io::{self, Read, Write};
 
-/// The function ui-host calls the page's `__bridge.tick` through (`tick.js`): it names each of the
-/// reply's rects by the element whose border box the rect is.
+/// The function ui-host calls the page's `__bridge.tick` through (`tick.js`), given a function
+/// that calls it: it names each of the reply's rects by the element whose border box the rect is.
 pub const TICK: &str = include_str!("tick.js");
 
 /// Largest message payload either side writes or accepts.
