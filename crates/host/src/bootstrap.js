@@ -61,9 +61,11 @@ globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(
 // HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks until a rendering
 // opportunity: each due timer in order of deadline and then of setting, each with its promise jobs after it, until
 // the next frame is due. The game thread starts a frame while the render thread still renders the one before, so the
-// frame is due once the render thread has caught up, or a display refresh after the turn began when nothing renders.
-// The turn checks that between timers, so it runs at least one due timer and holds the frame callbacks back by at
-// most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
+// frame is due once the render thread has caught up and the turn has had its share: it starts timers for 3.5 ms, or a
+// display refresh if that is shorter, which with the one running then gives timers about 4 ms of each frame, as Edge
+// gives its tasks whatever the frame's own work costs. A turn also ends a display refresh after it began, whatever the
+// render thread does. The turn checks between timers, so it runs at
+// least one due timer and holds the frame callbacks back by at most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
 // nested one deeper, and one nested more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as
 // WebIDL's long does. The pending timers are a binary heap, so a turn takes O(log n) to find each next timer.
 const timers = new Map();
@@ -205,8 +207,13 @@ globalThis.__displayInterval = 1000 / 60;
 // of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
 // page awaits a response to.
 globalThis.__hostFrame = () => {
-  const due = performance.now() + globalThis.__displayInterval;
-  runTimers(() => ops.op_frame_due() || performance.now() >= due);
+  const start = performance.now();
+  const interval = globalThis.__displayInterval;
+  const shared = start + Math.min(3.5, interval);
+  runTimers(() => {
+    const now = performance.now();
+    return now >= start + interval || (now >= shared && ops.op_frame_due());
+  });
   running = new Map(callbacks);
   callbacks.clear();
   const now = performance.now();
