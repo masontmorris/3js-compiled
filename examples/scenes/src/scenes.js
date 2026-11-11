@@ -193,7 +193,18 @@ export async function buildScene(name, renderer) {
       scene.add(mesh);
     });
     box(scene, new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.4 }));
-    addFloor(scene);
+    // cheapDOF blurs the top and bottom of the frame, so a checker floor and a row of boxes give it edges there.
+    const map = checker();
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(8, 8);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshStandardMaterial({ map, roughness: 0.8 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    for (let i = 0; i < 9; i++) {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf0f0f0 : 0x202020 }));
+      block.position.set(i * 1.1 - 6, 2.8, -5);
+      scene.add(block);
+    }
     const pipeline = new THREE.RenderPipeline(renderer);
     const scenePass = TSL.pass(scene, camera);
     const scenePassColor = scenePass.getTextureNode('output');
