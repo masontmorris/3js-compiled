@@ -6,14 +6,11 @@ globalThis.GPUTextureUsage ??= Object.freeze({ COPY_SRC: 1, COPY_DST: 2, TEXTURE
 globalThis.GPUShaderStage ??= Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
 globalThis.GPUMapMode ??= Object.freeze({ READ: 1, WRITE: 2 });
 globalThis.GPURenderBundleEncoder ??= class GPURenderBundleEncoder {};
-globalThis.GPUError ??= class GPUError {
-  constructor(message) {
-    this.message = String(message);
-  }
-};
-globalThis.GPUValidationError ??= class GPUValidationError extends GPUError {};
-globalThis.GPUOutOfMemoryError ??= class GPUOutOfMemoryError extends GPUError {};
-globalThis.GPUInternalError ??= class GPUInternalError extends GPUError {};
+// three reports an error's constructor name, and object keys name these classes where a bundler renames bindings.
+globalThis.GPUError ??= { GPUError: class { constructor(message) { this.message = String(message); } } }.GPUError;
+for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalError']) {
+  globalThis[name] ??= { [name]: class extends globalThis.GPUError {} }[name];
+}
 
 // Each GPUErrorFilter, as the stream's PUSH_ERROR_SCOPE numbers it, and the error a scope of it captures.
 const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
