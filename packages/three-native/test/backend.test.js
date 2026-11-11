@@ -973,6 +973,32 @@ test('copies, clears, passes and queue writes record destroyed buffers and textu
   assert.throws(() => device.createCommandEncoder().copyBufferToBuffer({}, 0, source, 0, 4), TypeError, 'a value that is no buffer is a type error');
 });
 
+// Edge's results for the same calls, from rules.js `destroyed` in the round-12 kit's out/edge/rules-destroyed/console.txt.
+test('promises pending at device.destroy() and made after it resolve as in Edge, and record nothing', async () => {
+  const device = new RecordingDevice();
+  const shader = device.createShaderModule({ code: '@vertex fn v() -> @builtin(position) vec4f { return vec4f(0); }' });
+  device.pushErrorScope('validation');
+  const pendingPop = device.popErrorScope();
+  const pendingInfo = shader.getCompilationInfo();
+  const pendingWork = device.queue.onSubmittedWorkDone();
+  device.pushErrorScope('validation');
+  device.takeFrame();
+  device.destroy();
+  device.commands.finish();
+  assert.equal(await pendingPop, null);
+  assert.deepEqual((await pendingInfo).messages, []);
+  assert.equal(await pendingWork, undefined);
+  assert.equal(await device.popErrorScope(), null, 'a scope pushed before destroy');
+  assert.equal(await device.popErrorScope(), null, 'an empty stack');
+  device.pushErrorScope('validation');
+  assert.equal(await device.popErrorScope(), null, 'a scope pushed after destroy');
+  assert.equal(await device.queue.onSubmittedWorkDone(), undefined);
+  assert.deepEqual((await shader.getCompilationInfo()).messages, []);
+  const pipeline = await device.createRenderPipelineAsync({ layout: 'auto', vertex: { module: shader, entryPoint: 'v' } });
+  assert.equal(typeof pipeline.getBindGroupLayout, 'function');
+  assert.equal(device.commands.finish().byteLength, 20, 'after its releases, a destroyed device records nothing in the stream it shared');
+});
+
 test('a shader that fails to compile gets its compilation message, and its uncaptured error is its own response', async () => {
   const device = new RecordingDevice();
   const errors = [];
