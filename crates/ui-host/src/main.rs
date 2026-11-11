@@ -708,11 +708,15 @@ fn main() {
                             let rects = proto::reply::parse(json, &ids).rects;
                             let unnamed =
                                 rects.iter().flatten().filter(|rect| rect.id == 0).count() as u64;
-                            if unnamed > 0 && stats.borrow().rects_unnamed == 0 {
+                            let first = rects.iter().flatten().find(|rect| rect.id == 0);
+                            if let Some(first) = first
+                                && stats.borrow().rects_unnamed == 0
+                            {
                                 let text = format!(
-                                    "[ui-host] patch {seq}: {unnamed} of the page's rects outline \
-                                     no element, so input over them during a resize keeps its \
-                                     window point"
+                                    "[ui-host] patch {seq}: rect {:?} outlines no element of the \
+                                     page ({unnamed} such rects in this reply), so input over it \
+                                     during a resize keeps its window point",
+                                    first.bounds
                                 );
                                 eprintln!("{text}");
                                 send(&Msg::Report { text });
