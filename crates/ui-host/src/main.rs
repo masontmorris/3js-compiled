@@ -694,29 +694,34 @@ fn main() {
                             JSValue::Number(width),
                             JSValue::Number(height),
                             JSValue::String(json),
-                            JSValue::Array(ids),
+                            JSValue::Array(named),
+                            JSValue::Array(also),
+                            JSValue::Array(missing),
                         ],
                     ) => {
-                        let ids: Vec<proto::place::Ids> = ids
-                            .iter()
-                            .map(|id| match id {
-                                JSValue::Number(id) => [*id as u32, 0, 0, 0],
-                                _ => [0; 4],
+                        let number = |value: Option<&JSValue>| match value {
+                            Some(JSValue::Number(n)) => *n as u32,
+                            _ => 0,
+                        };
+                        let ids: Vec<proto::place::Ids> = (0..named.len())
+                            .map(|i| {
+                                let more = |k| number(also.get(3 * i + k));
+                                [number(named.get(i)), more(0), more(1), more(2)]
                             })
                             .collect();
                         if proto::events_fit(json, &ids) {
                             let rects = proto::reply::parse(json, &ids).rects;
-                            let unnamed =
-                                rects.iter().flatten().filter(|rect| rect.ids[0] == 0).count() as u64;
-                            let first = rects.iter().flatten().find(|rect| rect.ids[0] == 0);
-                            if let Some(first) = first
+                            // The rects a whole document scan found no element for; a rect still
+                            // being looked for has id 0 too, but is not counted.
+                            let unnamed = missing.len() as u64;
+                            if let Some(first) = missing.first()
                                 && stats.borrow().rects_unnamed == 0
                             {
                                 let text = format!(
-                                    "[ui-host] patch {seq}: rect {:?} outlines no element of the \
+                                    "[ui-host] patch {seq}: rects[{}] outlines no element of the \
                                      page ({unnamed} such rects in this reply), so input over it \
                                      during a resize keeps its window point",
-                                    first.bounds
+                                    number(Some(first))
                                 );
                                 eprintln!("{text}");
                                 send(&Msg::Report { text });
@@ -742,7 +747,7 @@ fn main() {
                             proto::MAX_JSON
                         )
                     }
-                    Ok([_, _, other, _]) => format!("page tick did not return a string: {other:?}"),
+                    Ok([_, _, other, ..]) => format!("page tick did not return a string: {other:?}"),
                     _ => format!("page tick did not return a string: {result:?}"),
                 };
                 stats.borrow_mut().eval_errors += 1;

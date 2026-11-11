@@ -3,140 +3,237 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // ui-host calls this in the page with a function that calls `__bridge.tick`. It returns the
-// viewport size, the page's reply, and for each item of the reply's `rects` an id that stays the
-// same while any element whose border box the item is (to within 1 px, when the tick returns)
-// stays in the page. All such elements carry the id, so a rect keeps it when one of them is
-// replaced, such as a label that fills its button, or stops sharing the box, such as a column the
-// button fills at one width only.
+// viewport size, the page's reply, and three lists for the reply's `rects`: for each rect the id
+// of the element it names, or 0; for each rect three more ids, of other elements whose box it is,
+// or 0; and the index of each rect that no element's box is. Every element has its own id for as
+// long as it is in the page, and no id ever passes to another element.
 //
-// The elements are found by what costs least first: elements whose last `getBoundingClientRect`
-// during the tick gave the item's box, so an element the page moved and measured again no longer
-// counts for its old box; the elements the same box, then the rect
-// at the same index, named in the last reply; and last a scan of the document shared by every rect
-// still unnamed, which stops after 1 ms and goes on in the next evaluation. A box a whole scan
-// finds no element for is named 0 and not looked for again for 60 evaluations. A second item with
-// the same box gets its elements' second id.
+// A rect's candidates are the elements whose border box it is (to within 1 px) when the tick
+// returns: those the page measured with that box during the tick (by their last
+// `getBoundingClientRect`), else those the same box, then the rect at the same index, named in the
+// last reply, else those a document scan finds; with each, its ancestors, descendants and next
+// siblings of the same box. The rect names the topmost hit-testable candidate, the last in
+// document order whose `pointer-events` is not `none`, or the topmost candidate when none is
+// hit-testable. Its more ids are of the other hit-testable candidates, topmost first, so a rect
+// whose named element the page rebuilds every tick, such as a label, still shares an id with the
+// rect it was. Rects that share one box name its candidates in document order, and a box with
+// fewer candidates than rects gives the later rects further ids of the same elements.
+//
+// Work after the tick is bounded. It stops 2 ms into the evaluation, box reads included: a rect
+// with no measured element left unchecked by then is named 0, and the next evaluation checks it
+// first. The scan walks the document from where it stopped and stops 1 ms in, going on in the next
+// evaluation until it has seen every element once. Looking at a candidate's relatives stops after
+// 16 elements per rect, and a rect has at most 8 candidates. A box a whole scan finds no element for
+// is not looked for again for 60 evaluations. Every cache holds only the boxes of the latest reply.
 (tick => {
-  const state = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
-    const state = {
-      next: 1, measured: null, evaluation: 0,
-      byBox: new Map(), byIndex: [], absent: new Map(), pending: new Map(), scanAt: 0,
+  const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
+    const S = {
+      next: 1, evaluation: 0, from: 0, measured: null, walker: null,
+      byBox: new Map(), byIndex: [], pending: new Map(), absent: new Map(),
     };
     const measure = Element.prototype.getBoundingClientRect;
+    S.read = element => measure.call(element);
     Element.prototype.getBoundingClientRect = function () {
       const box = measure.call(this);
-      state.measured?.set(this, `${box.x},${box.y},${box.width},${box.height}`);
+      S.measured?.set(this, box);
       return box;
     };
-    return state;
+    return S;
   })());
-  const lastBox = (state.measured = new Map());
+  const lastBox = (S.measured = new Map());
   let json;
   try {
     json = tick();
   } finally {
-    state.measured = null;
+    S.measured = null;
   }
-  const measured = new Map();
-  for (const [element, key] of lastBox) {
-    const elements = measured.get(key);
-    if (elements) elements.push(element);
-    else measured.set(key, [element]);
-  }
-  state.evaluation += 1;
+  S.evaluation += 1;
   let rects;
   if (typeof json === "string" && json.includes('"rects"')) {
     try { rects = JSON.parse(json).rects; } catch {}
   }
-  if (!Array.isArray(rects)) return [innerWidth, innerHeight, json, []];
+  if (!Array.isArray(rects)) return [innerWidth, innerHeight, json, [], [], []];
 
+  const started = performance.now();
+  const boxes = new Map(lastBox);
+  const boxOf = element => {
+    let box = boxes.get(element);
+    if (!box) boxes.set(element, (box = S.read(element)));
+    return box;
+  };
   const near = (box, rect) =>
     Math.abs(box.x - rect[0]) <= 1 && Math.abs(box.y - rect[1]) <= 1 &&
     Math.abs(box.width - rect[2]) <= 1 && Math.abs(box.height - rect[3]) <= 1;
-  const outlining = (elements, rect) =>
-    elements ? elements.filter(element => near(element.getBoundingClientRect(), rect)) : [];
   const valid = rect => Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite);
   const keys = rects.map(rect => (valid(rect) ? rect.join(",") : null));
-
-  const found = rects.map((rect, i) => {
-    const key = keys[i];
-    if (key === null || state.pending.has(key)) return [];
-    let elements = measured.get(key) ?? [];
-    if (!elements.length) elements = outlining(state.byBox.get(key), rect);
-    if (!elements.length) elements = outlining(state.byIndex[i], rect);
-    if (!elements.length && !(state.evaluation - (state.absent.get(key) ?? -Infinity) < 60)) {
-      state.pending.set(key, { rect, elements: [], covered: 0 });
-    }
-    return elements;
-  });
-
   const listed = new Set(keys);
-  for (const key of state.pending.keys()) {
-    if (!listed.has(key)) state.pending.delete(key);
+  for (const map of [S.pending, S.absent]) {
+    for (const key of map.keys()) if (!listed.has(key)) map.delete(key);
   }
-  if (state.pending.size) {
+
+  const measuredBy = new Map();
+  for (const [element, box] of lastBox) {
+    const key = `${box.x},${box.y},${box.width},${box.height}`;
+    if (listed.has(key)) measuredBy.set(key, [...(measuredBy.get(key) ?? []), element]);
+  }
+  const until = started + 2;
+  const outlining = (elements, rect) =>
+    (elements ?? []).filter(element => element.isConnected && near(boxOf(element), rect));
+  const missing = [];
+  // Each rect's elements found so far, or null for a rect not checked in this evaluation.
+  const seeds = rects.map(() => null);
+  let stopped = null;
+  for (let j = 0; j < rects.length; j++) {
+    const i = (j + S.from) % rects.length;
+    const key = keys[i], rect = rects[i];
+    if (key === null) {
+      seeds[i] = [];
+      continue;
+    }
+    let found = measuredBy.get(key) ?? [];
+    if (!found.length) {
+      if (performance.now() >= until) {
+        stopped ??= i;
+        continue;
+      }
+      found = outlining(S.byBox.get(key), rect);
+      if (!found.length) found = outlining(S.byIndex[i], rect);
+    }
+    if (found.length) {
+      S.pending.delete(key);
+    } else if (S.evaluation - (S.absent.get(key) ?? -Infinity) < 60) {
+      missing.push(i);
+    } else if (!S.pending.has(key)) {
+      S.absent.delete(key);
+      S.pending.set(key, { rect, found: [], start: null, done: false });
+    }
+    seeds[i] = found;
+  }
+  S.from = stopped ?? 0;
+
+  if (S.pending.size) {
+    const root = document.documentElement;
+    if (!S.walker || !S.walker.currentNode.isConnected) {
+      S.walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    }
     const corner = (x, y) => `${Math.round(x)},${Math.round(y)}`;
-    const buckets = new Map();
-    for (const wanted of state.pending.values()) {
+    const buckets = new Map(), ends = new Map();
+    for (const wanted of S.pending.values()) {
+      if (!wanted.start?.isConnected) wanted.start = S.walker.currentNode;
+      ends.set(wanted.start, [...(ends.get(wanted.start) ?? []), wanted]);
       for (const dx of [-1, 0, 1]) {
         for (const dy of [-1, 0, 1]) {
           const at = corner(wanted.rect[0] + dx, wanted.rect[1] + dy);
-          const list = buckets.get(at);
-          if (list) list.push(wanted);
-          else buckets.set(at, [wanted]);
+          buckets.set(at, [...(buckets.get(at) ?? []), wanted]);
         }
       }
     }
-    const every = document.querySelectorAll("*");
-    const count = every.length;
-    const deadline = performance.now() + 1;
-    let scanned = 0;
-    for (; scanned < count; scanned++) {
-      if ((scanned & 15) === 15 && performance.now() > deadline) break;
-      const element = every[(state.scanAt + scanned) % count];
-      const box = element.getBoundingClientRect();
+    let left = S.pending.size;
+    while (left && performance.now() < started + 1) {
+      const element = S.walker.currentNode;
+      const box = boxOf(element);
       for (const wanted of buckets.get(corner(box.x, box.y)) ?? []) {
-        if (near(box, wanted.rect) && !wanted.elements.includes(element)) wanted.elements.push(element);
+        if (near(box, wanted.rect) && !wanted.found.includes(element)) wanted.found.push(element);
+      }
+      if (!S.walker.nextNode()) S.walker.currentNode = root;
+      for (const wanted of ends.get(S.walker.currentNode) ?? []) {
+        if (!wanted.done) left -= 1;
+        wanted.done = true;
       }
     }
-    state.scanAt = count ? (state.scanAt + scanned) % count : 0;
-    const at = new Map();
-    keys.forEach((key, i) => {
-      if (key !== null && !found[i].length) at.set(key, [...(at.get(key) ?? []), i]);
-    });
-    for (const [key, wanted] of state.pending) {
-      wanted.covered += scanned;
-      const elements = outlining(wanted.elements, wanted.rect);
-      for (const i of at.get(key) ?? []) found[i] = elements;
-      if (wanted.covered < count) continue;
-      state.pending.delete(key);
-      if (!wanted.elements.length) state.absent.set(key, state.evaluation);
+    for (const [key, wanted] of [...S.pending]) {
+      const found = outlining(wanted.found, wanted.rect);
+      keys.forEach((k, i) => {
+        if (k !== key || seeds[i]?.length) return;
+        seeds[i] = found;
+        if (wanted.done && !found.length) missing.push(i);
+      });
+      if (!wanted.done) continue;
+      S.pending.delete(key);
+      if (!found.length) S.absent.set(key, S.evaluation);
     }
   }
 
-  const ID = Symbol.for("threejsc.rect-id"), MORE = Symbol.for("threejsc.rect-more-ids");
-  const get = (element, n) => (n === 0 ? element[ID] : element[MORE]?.[n - 1]);
-  const set = (element, n, id) => {
-    if (n === 0) element[ID] = id;
-    else (element[MORE] ??= [])[n - 1] = id;
+  const relatives = (found, rect) => {
+    const all = new Set(found);
+    let visits = 0;
+    const more = () => visits++ < 16 && all.size < 8 && performance.now() < until;
+    for (const seed of found) {
+      for (let up = seed.parentElement; up && more() && near(boxOf(up), rect); up = up.parentElement) {
+        all.add(up);
+      }
+      for (let next = seed.nextElementSibling; next && more() && near(boxOf(next), rect);) {
+        all.add(next);
+        next = next.nextElementSibling;
+      }
+      const down = [...seed.children];
+      while (down.length && more()) {
+        const child = down.shift();
+        if (near(boxOf(child), rect)) {
+          all.add(child);
+          down.push(...child.children);
+        }
+      }
+    }
+    return [...all].slice(0, 8);
   };
+  const hittable = new Map();
+  const hit = element => {
+    if (!hittable.has(element)) hittable.set(element, getComputedStyle(element).pointerEvents !== "none");
+    return hittable.get(element);
+  };
+  const above = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
+  // The candidates a rect can name, topmost first.
+  const pool = elements => {
+    if (elements.length < 2) return elements;
+    const sorted = [...elements].sort(above);
+    const hits = sorted.filter(hit);
+    return hits.length ? hits : sorted.slice(0, 1);
+  };
+  const ID = Symbol.for("threejsc.rect-id"), MORE = Symbol.for("threejsc.rect-more-ids");
+  const idOf = (element, n = 0) => {
+    if (n === 0) return (element[ID] ??= S.next++);
+    const more = (element[MORE] ??= []);
+    return (more[n - 1] ??= S.next++);
+  };
+
+  const shared = new Map();
+  keys.forEach(key => key !== null && shared.set(key, (shared.get(key) ?? 0) + 1));
   const seen = new Map();
   const byBox = new Map();
-  const ids = found.map((elements, i) => {
-    if (!elements.length) return 0;
-    const n = seen.get(keys[i]) ?? 0;
-    seen.set(keys[i], n + 1);
-    let id = 0;
-    for (const element of elements) {
-      id = get(element, n);
-      if (id) break;
+  const byIndex = [];
+  const ids = [], also = [];
+  rects.forEach((rect, i) => {
+    const key = keys[i];
+    if (seeds[i] === null) {
+      byIndex.push(S.byIndex[i]);
+      if (S.byBox.has(key)) byBox.set(key, S.byBox.get(key));
+      ids.push(0);
+      also.push(0, 0, 0);
+      return;
     }
-    id ||= state.next++;
-    for (const element of elements) set(element, n, id);
-    byBox.set(keys[i], elements);
-    return id;
+    const all = seeds[i].length ? relatives(seeds[i], rect) : [];
+    byIndex.push(all);
+    if (!all.length) {
+      ids.push(0);
+      also.push(0, 0, 0);
+      return;
+    }
+    byBox.set(key, all);
+    const top = pool(all);
+    let named = top[0], n = 0;
+    if (shared.get(key) > 1) {
+      const k = seen.get(key) ?? 0;
+      seen.set(key, k + 1);
+      const order = [...top].reverse();
+      named = order[k % order.length];
+      n = Math.floor(k / order.length);
+    }
+    ids.push(idOf(named, n));
+    const others = top.filter(element => element !== named).slice(0, 3).map(element => idOf(element));
+    also.push(...others, ...[0, 0, 0].slice(others.length));
   });
-  state.byBox = byBox;
-  state.byIndex = found;
-  return [innerWidth, innerHeight, json, ids];
+  S.byBox = byBox;
+  S.byIndex = byIndex;
+  return [innerWidth, innerHeight, json, ids, also, missing];
 })

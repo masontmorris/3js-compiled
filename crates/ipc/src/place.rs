@@ -53,10 +53,11 @@ pub struct Placed {
 /// Places the host's pointer events in the layout the page processes them in. An event the host
 /// hit-tested in a frame at the size Servo lays the page out at keeps its window point, as in a
 /// browser, whatever the page has since done to its rects. The frame on screen can be laid out
-/// at an older size than Servo's, so an event hit-tested in it goes to the same offset from the
-/// rect with its id in the page's latest layout. An event over a rect that has shrunk past the
-/// offset goes to the rect's centre instead. An event for an id the latest layout lacks keeps
-/// its window point. Every point is clamped into the viewport, because Servo drops input
+/// at an older size than Servo's, so an event hit-tested in it goes to the same offset from a
+/// rect of the page's latest layout: for the first of the event's ids that has one, the rect
+/// that names its element, else the first that lists it among its more ids. An event over a
+/// rect that has shrunk past the offset goes to the rect's centre instead. An event none of
+/// whose ids the latest layout has keeps its window point. Every point is clamped into the viewport, because Servo drops input
 /// outside its scene. While a resize waits for the page's layout at the new size, events wait
 /// with it, in order.
 #[derive(Debug)]
@@ -104,11 +105,16 @@ impl Placer {
         Some(self.place(pointer))
     }
     fn place(&self, pointer: Pointer) -> Placed {
+        // For each of the event's ids in order, the first rect named by it, else the first that
+        // lists it among its more ids.
         let rect = |ids: Ids| {
-            self.rects
-                .iter()
-                .find(|rect| ids[0] != 0 && rect.ids[0] == ids[0])
-                .map(|rect| rect.bounds)
+            ids.into_iter().filter(|id| *id != 0).find_map(|id| {
+                let rects = || self.rects.iter();
+                rects()
+                    .find(|rect| rect.ids[0] == id)
+                    .or_else(|| rects().find(|rect| rect.ids[1..].contains(&id)))
+                    .map(|rect| rect.bounds)
+            })
         };
         let (x, y) = match pointer.at {
             _ if pointer.size == self.size => (pointer.x, pointer.y),
