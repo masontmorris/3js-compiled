@@ -58,16 +58,17 @@ globalThis.removeEventListener = (type, callback) => listeners.get(type)?.delete
 globalThis.requestAnimationFrame = callback => { const id = nextFrame++; callbacks.set(id, callback); return id; };
 let running = null;
 globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(id); };
-// HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks until a rendering
-// opportunity: each due timer in order of deadline and then of setting, each with its promise jobs after it, until
-// the next frame is due. The game thread starts a frame while the render thread still renders the one before, so the
-// frame is due once the render thread has caught up and the turn has had its share: it starts timers for 3.5 ms, or a
-// display refresh if that is shorter, which with the one running then gives timers about 4 ms of each frame, as Edge
-// gives its tasks whatever the frame's own work costs. A turn also ends a display refresh after it began, whatever the
-// render thread does. The turn checks between timers, so it runs at
-// least one due timer and holds the frame callbacks back by at most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
-// nested one deeper, and one nested more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as
-// WebIDL's long does. The pending timers are a binary heap, so a turn takes O(log n) to find each next timer.
+// HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks between renderings: each
+// due timer in order of deadline and then of setting, each with its promise jobs after it, until the frame is due. The
+// game thread starts a frame while the render thread still renders the one before, so the frame is due once the render
+// thread has caught up and the turn has had its share: it starts timers for 3.5 ms, or a display refresh if that is
+// shorter, which with the one running then gives timers about 4 ms of each frame, as Edge gives its tasks whatever the
+// frame's own work costs. A turn also ends a display refresh after it began. While nothing is due and the frame is not,
+// the turn sleeps until the next timer falls due, so an interval shorter than a frame keeps its schedule. The turn
+// checks between timers, so it runs at least one due timer and holds the frame callbacks back by at most the callback
+// running when the frame falls due. A timer set from a timer task or its promise jobs is nested one deeper, and one
+// nested more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as WebIDL's long does. The pending
+// timers are a binary heap, so a turn takes O(log n) to find each next timer.
 const timers = new Map();
 // The heap of [deadline, order, id], earliest first. A cleared timer's entry, and an interval's entry from before it
 // re-armed, stay until they reach the top, where the timer's order no longer matches.
@@ -107,6 +108,15 @@ function popEarliest() {
   heap[i] = last;
 }
 // The earliest live timer whose deadline has passed, taken off the heap, or null.
+// The deadline of the earliest live timer, or Infinity.
+function nextDeadline() {
+  while (heap.length) {
+    const [deadline, order, id] = heap[0];
+    if (timers.get(id)?.order === order) return deadline;
+    popEarliest();
+  }
+  return Infinity;
+}
 function takeDue(now) {
   while (heap.length) {
     const [deadline, order, id] = heap[0];
@@ -130,21 +140,36 @@ function schedule(callback, delay, args, repeat) {
 globalThis.setTimeout = (callback, delay, ...args) => schedule(callback, delay, args, false);
 globalThis.setInterval = (callback, delay, ...args) => schedule(callback, delay, args, true);
 globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(id | 0); };
-function runTimers(frameDue) {
-  for (let ran = false; !ran || !frameDue(); ran = true) {
-    const due = takeDue(performance.now());
-    if (!due) return;
+// Runs due timers until `cap`, or once `shared` has passed and the frame is due, which is when the render thread has
+// caught up and, with a forced frame rate, `pacedAt` has come. A turn runs at least one due timer, and an idle wait
+// (`turn` false) none once the frame is due. While nothing is due and the frame is not, it sleeps until the next timer
+// falls due, the frame does, or `cap` comes, so a timer that falls due while the host waits for the frame runs then, as
+// a browser runs its tasks between renderings.
+function runTimers(cap, shared, pacedAt, turn) {
+  for (let ran = !turn; ;) {
+    const now = performance.now();
+    const rendered = ops.op_frame_due();
+    const frameDue = rendered && now >= pacedAt;
+    if (ran && (now >= cap || (now >= shared && frameDue))) return;
+    const due = takeDue(now);
+    if (!due) {
+      if (frameDue || now >= cap) return;
+      // A host with no render thread, as in the unit tests, does not wait.
+      if (!ops.op_wait(Math.min(nextDeadline(), cap, rendered ? pacedAt : Infinity), !rendered)) return;
+      continue;
+    }
+    ran = true;
     const [id, timer] = due;
     if (!timer.repeat) timers.delete(id);
     nesting = timer.nesting;
-    const ran = performance.now();
+    const began = performance.now();
     try { timer.handler(...timer.args); } catch (error) { report(error); }
     // An interval that its callback did not clear runs again at the next point of its schedule after this run began,
     // nested one level deeper, as Chrome does: its deadlines stay a timeout apart however late each run is, and a
     // run so late that it misses whole periods skips them rather than running them back to back.
     if (timer.repeat && timers.get(id) === timer) {
       timer.timeout = Math.max(timer.nesting > 5 ? 4 : 0, timer.timeout);
-      const next = timer.timeout > 0 ? ran + timer.timeout - ((ran - timer.deadline) % timer.timeout) : performance.now();
+      const next = timer.timeout > 0 ? began + timer.timeout - ((began - timer.deadline) % timer.timeout) : performance.now();
       Object.assign(timer, { deadline: next, order: timerOrder++, nesting: timer.nesting + 1 });
       arm(id, timer);
     }
@@ -207,17 +232,21 @@ globalThis.__hostDispatch = event => {
 // The display's refresh interval in ms, which the host sets from its display mode. Frame starts cannot measure it: the
 // game thread starts a frame at once when it catches up, and a turn that overruns stretches the next interval.
 globalThis.__displayInterval = 1000 / 60;
+// A frame interval in ms that the host forces for testing, as at 60 Hz on a faster display, or null: a frame is then
+// due no sooner than this long after the frame before began its callbacks.
+globalThis.__framePacing = null;
+let framesBegan = -Infinity;
+// Runs timers while the host waits for the render thread to catch up before it hands over the next frame: each timer as
+// it falls due, until the render thread has caught up, as a browser runs its tasks while it waits to render.
+globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
 // Runs the due timers and then the frame's callbacks, each with its promise jobs after it, as HTML does. At the end
 // of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
 // page awaits a response to.
 globalThis.__hostFrame = () => {
   const start = performance.now();
   const interval = globalThis.__displayInterval;
-  const shared = start + Math.min(3.5, interval);
-  runTimers(() => {
-    const now = performance.now();
-    return now >= start + interval || (now >= shared && ops.op_frame_due());
-  });
+  runTimers(start + interval, start + Math.min(3.5, interval), framesBegan + (globalThis.__framePacing ?? -Infinity), true);
+  framesBegan = performance.now();
   running = new Map(callbacks);
   callbacks.clear();
   const now = performance.now();

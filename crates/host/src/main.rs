@@ -309,13 +309,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     .map(|dir| dir.join(format!("{frame:06}.png"))),
             )
             .collect();
+        // The game thread waits for the render thread here, so timers that fall due meanwhile run as
+        // they do, and the wait counts as waiting for the render thread, not as the frame's work.
+        let commands = game.take_commands();
         let submitted = Instant::now();
+        game.idle()?;
         let rendered = render.submit(Frame {
             index: frame,
             started,
             size,
             clear,
-            commands: game.take_commands(),
+            commands,
             captures,
         })?;
         progress.submitted.fetch_add(1, Ordering::Release);

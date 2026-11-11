@@ -34,6 +34,12 @@ pub struct RenderProgress {
     pub finished: AtomicU64,
 }
 
+impl RenderProgress {
+    fn caught_up(&self) -> bool {
+        self.finished.load(Ordering::Acquire) >= self.submitted.load(Ordering::Acquire)
+    }
+}
+
 /// Whether the render thread has rendered every frame handed to it. A host with no render
 /// thread, as in the unit tests, never reports a frame due.
 #[op2(fast)]
@@ -42,9 +48,28 @@ fn op_frame_due(state: &mut OpState) -> bool {
         .borrow::<State>()
         .render
         .as_ref()
-        .is_some_and(|render| {
-            render.finished.load(Ordering::Acquire) >= render.submitted.load(Ordering::Acquire)
-        })
+        .is_some_and(|render| render.caught_up())
+}
+
+/// Sleeps until `until` ms on the page's clock or, with `render`, until the render thread has
+/// caught up, whichever comes first, and returns true. A host with no render thread, as in the
+/// unit tests, returns false at once.
+#[op2(fast)]
+fn op_wait(state: &mut OpState, until: f64, render: bool) -> bool {
+    let state = state.borrow::<State>();
+    let Some(progress) = state.render.as_ref() else {
+        return false;
+    };
+    loop {
+        if render && progress.caught_up() {
+            return true;
+        }
+        let left = until - state.start.elapsed().as_secs_f64() * 1000.0;
+        if left <= 0.0 {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_secs_f64(left.min(0.25) / 1000.0));
+    }
 }
 
 #[op2(fast)]
@@ -96,6 +121,7 @@ extension!(
         op_gpu_submit,
         op_gpu_submitted,
         op_frame_due,
+        op_wait,
         op_host_alive,
         op_gpu_readback,
         op_now,
@@ -200,6 +226,12 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    /// Runs timers as they fall due until the render thread has caught up. The host calls it
+    /// after it takes a frame's commands and before it hands the frame to the render thread.
+    pub fn idle(&mut self) -> Result<()> {
+        self.js.execute_script("host:idle", "__hostIdle()")?;
+        self.tick()
     }
     pub fn take_commands(&mut self) -> Option<Vec<u8>> {
         self.js
@@ -356,6 +388,7 @@ mod tests {
                 started.elapsed().as_secs() < 10,
                 "{name} never turned green"
             );
+            game.idle()?;
             if let Some(previous) = rendering.take() {
                 previous.join().expect("the render thread finishes");
             }
