@@ -19,8 +19,8 @@ pub const MAX_PAYLOAD: usize = 1 << 20;
 pub const MAX_JSON: usize = MAX_PAYLOAD - 21;
 
 /// Whether an `Events` message with this JSON text and these rect ids fits in a payload.
-pub fn events_fit(json: &str, ids: &[u32]) -> bool {
-    json.len() + 4 * (ids.len() + 1) <= MAX_JSON
+pub fn events_fit(json: &str, ids: &[place::Ids]) -> bool {
+    json.len() + 4 + 16 * ids.len() <= MAX_JSON
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,14 +68,14 @@ pub enum Msg {
         ready_value: u64,
     },
     /// Result of `__bridge.tick` for patch `seq`, or for a poll of the current state when
-    /// `seq` is 0, with the viewport size the page was laid out at and the id of the element
-    /// at the centre of each item of the reply's `rects`.
+    /// `seq` is 0, with the viewport size the page was laid out at and the ids of the elements
+    /// each item of the reply's `rects` names.
     Events {
         seq: u64,
         width: u32,
         height: u32,
         json: String,
-        ids: Vec<u32>,
+        ids: Vec<place::Ids>,
     },
     /// ui-host evaluates the next patch as soon as it arrives.
     Ready,
@@ -113,6 +113,9 @@ impl Cursor<'_> {
     }
     fn u32(&mut self) -> io::Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+    fn ids(&mut self) -> io::Result<place::Ids> {
+        Ok([self.u32()?, self.u32()?, self.u32()?, self.u32()?])
     }
     fn u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
@@ -167,12 +170,14 @@ impl Msg {
                 b.extend_from_slice(&pointer.button.to_le_bytes());
                 put_u32(&mut b, pointer.size.0);
                 put_u32(&mut b, pointer.size.1);
-                let (tag, id, offset) = match pointer.at {
-                    place::At::Rect { id, offset } => (0, id, offset),
-                    place::At::Beside { id, offset } => (1, id, offset),
+                let (tag, ids, offset) = match pointer.at {
+                    place::At::Rect { ids, offset } => (0, ids, offset),
+                    place::At::Beside { ids, offset } => (1, ids, offset),
                 };
                 b.push(tag);
-                put_u32(&mut b, id);
+                for id in ids {
+                    put_u32(&mut b, id);
+                }
                 put_f32(&mut b, offset.0);
                 put_f32(&mut b, offset.1);
             }
@@ -223,7 +228,7 @@ impl Msg {
                 put_u32(&mut b, *height);
                 put_str(&mut b, json);
                 put_u32(&mut b, ids.len() as u32);
-                for id in ids {
+                for id in ids.iter().flatten() {
                     put_u32(&mut b, *id);
                 }
             }
@@ -264,10 +269,10 @@ impl Msg {
                 button: i16::from_le_bytes(c.take(2)?.try_into().unwrap()),
                 size: (c.u32()?, c.u32()?),
                 at: {
-                    let (tag, id, offset) = (c.u8()?, c.u32()?, (c.f32()?, c.f32()?));
+                    let (tag, ids, offset) = (c.u8()?, c.ids()?, (c.f32()?, c.f32()?));
                     match tag {
-                        0 => place::At::Rect { id, offset },
-                        1 => place::At::Beside { id, offset },
+                        0 => place::At::Rect { ids, offset },
+                        1 => place::At::Beside { ids, offset },
                         _ => {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
@@ -313,13 +318,13 @@ impl Msg {
                 json: c.string()?,
                 ids: {
                     let n = c.u32()? as usize;
-                    if n > c.0.len() / 4 {
+                    if n > c.0.len() / 16 {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             "invalid id count",
                         ));
                     }
-                    (0..n).map(|_| c.u32()).collect::<io::Result<_>>()?
+                    (0..n).map(|_| c.ids()).collect::<io::Result<_>>()?
                 },
             },
             13 => Msg::Report { text: c.string()? },

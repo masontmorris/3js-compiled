@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use threejsc_ipc::place::{At, Rect};
+use threejsc_ipc::place::{At, Ids, Rect};
 
 pub(crate) type Size = (u32, u32);
 
@@ -35,9 +35,9 @@ pub(crate) enum Route {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Owner {
-    /// The page's, begun over the rect with id `id`, drawn with its corner at `corner`.
+    /// The page's, begun over the rect with ids `ids`, drawn with its corner at `corner`.
     Page {
-        id: u32,
+        ids: Ids,
         corner: (f64, f64),
     },
     Game,
@@ -54,8 +54,8 @@ struct Press {
 
 /// Routes pointer input by the HUD frame on screen. After a resize the host may show a frame
 /// laid out at the old size while Servo already lays the page out at the new one, so input is
-/// hit-tested against the rects measured at the shown frame's size and sent with the id of the
-/// rect it was made over. ui-host places it on the rect with that id in the page's current
+/// hit-tested against the rects measured at the shown frame's size and sent with the ids of the
+/// rect it was made over. ui-host places it on the rect with those ids in the page's current
 /// layout.
 #[derive(Default)]
 pub(crate) struct Pointers {
@@ -78,15 +78,15 @@ impl Pointers {
             .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
         self.layouts.push((size, self.last.clone()));
     }
-    /// The id and corner of the rect under `pointer` in the frame on screen.
-    fn hit(&self, shown: Option<Size>, pointer: Pointer) -> Option<(u32, (f64, f64))> {
+    /// The ids and corner of the rect under `pointer` in the frame on screen.
+    fn hit(&self, shown: Option<Size>, pointer: Pointer) -> Option<(Ids, (f64, f64))> {
         let (_, rects) = self.layouts.iter().find(|(at, _)| Some(*at) == shown)?;
-        rects.iter().find_map(|&Rect { id, bounds: r }| {
+        rects.iter().find_map(|&Rect { ids, bounds: r }| {
             (pointer.x >= r[0]
                 && pointer.y >= r[1]
                 && pointer.x < r[0] + r[2]
                 && pointer.y < r[1] + r[3])
-                .then_some((id, (r[0], r[1])))
+                .then_some((ids, (r[0], r[1])))
         })
     }
     /// Where `pointer` goes: during a press, where the press's down went; otherwise to the
@@ -96,8 +96,8 @@ impl Pointers {
         let hit = self.hit(shown, pointer);
         let offset =
             |corner: (f64, f64)| ((pointer.x - corner.0) as f32, (pointer.y - corner.1) as f32);
-        let on = hit.map(|(id, corner)| At::Rect {
-            id,
+        let on = hit.map(|(ids, corner)| At::Rect {
+            ids,
             offset: offset(corner),
         });
         let owner = if let Some(press) = &mut self.press {
@@ -113,7 +113,7 @@ impl Pointers {
             owner
         } else {
             let owner = match hit {
-                Some((id, corner)) => Owner::Page { id, corner },
+                Some((ids, corner)) => Owner::Page { ids, corner },
                 None => Owner::Game,
             };
             if pointer.action == 1 {
@@ -125,8 +125,8 @@ impl Pointers {
             owner
         };
         match owner {
-            Owner::Page { id, corner } => Route::Page(on.unwrap_or(At::Beside {
-                id,
+            Owner::Page { ids, corner } => Route::Page(on.unwrap_or(At::Beside {
+                ids,
                 offset: offset(corner),
             })),
             Owner::Game => Route::Game,
@@ -160,7 +160,10 @@ mod tests {
     const OTHER: u32 = 3;
 
     fn rect(id: u32, bounds: [f64; 4]) -> Rect {
-        Rect { id, bounds }
+        Rect {
+            ids: [id, 0, 0, 0],
+            bounds,
+        }
     }
 
     /// The kept-hit page: a 200x80 button 20 px from the right edge.

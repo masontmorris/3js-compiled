@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::place::Rect;
+use crate::place::{Ids, Rect};
 use serde_json::Value;
 use std::borrow::Cow;
 
@@ -20,8 +20,8 @@ pub struct Reply {
     pub rejected: Vec<String>,
 }
 
-/// The reply `json`, whose rect at index `i` of its `rects` has the id `ids[i]`, or 0.
-pub fn parse(json: &str, ids: &[u32]) -> Reply {
+/// The reply `json`, whose rect at index `i` of its `rects` has the ids `ids[i]`, or none.
+pub fn parse(json: &str, ids: &[Ids]) -> Reply {
     let mut reply = Reply::default();
     let value = match serde_json::from_str::<Value>(&well_formed(json)) {
         Ok(Value::Object(value)) => value,
@@ -60,8 +60,8 @@ pub fn parse(json: &str, ids: &[u32]) -> Reply {
                                 .push(format!("rects[{index}] is not [x, y, width, height]"));
                             return None;
                         };
-                        let id = ids.get(index).copied().unwrap_or(0);
-                        Some(Rect { id, bounds })
+                        let ids = ids.get(index).copied().unwrap_or_default();
+                        Some(Rect { ids, bounds })
                     })
                     .collect(),
             )
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(
             reply.rects,
             Some(vec![Rect {
-                id: 0,
+                ids: [0; 4],
                 bounds: [1.0, 2.0, 3.0, 4.0]
             }])
         );
@@ -152,18 +152,18 @@ mod tests {
     fn keeps_good_items_and_names_bad_ones() {
         let reply = parse(
             r#"{"events":[1,"two"],"rects":[[1,2],[0,0,10,10],"x",[0,0,5,null],[5,5,1,1]]}"#,
-            &[7, 8, 9, 10],
+            &[[7, 0, 0, 0], [8, 1, 0, 0], [9, 0, 0, 0], [10, 0, 0, 0]],
         );
         assert_eq!(reply.events, ["1", r#""two""#]);
         assert_eq!(
             reply.rects,
             Some(vec![
                 Rect {
-                    id: 8,
+                    ids: [8, 1, 0, 0],
                     bounds: [0.0, 0.0, 10.0, 10.0]
                 },
                 Rect {
-                    id: 0,
+                    ids: [0; 4],
                     bounds: [5.0, 5.0, 1.0, 1.0]
                 }
             ]),
@@ -177,11 +177,11 @@ mod tests {
                 "rects[3] is not [x, y, width, height]",
             ]
         );
-        let reply = parse(r#"{"events":{},"rects":[[0,0,1,1]]}"#, &[3]);
+        let reply = parse(r#"{"events":{},"rects":[[0,0,1,1]]}"#, &[[3, 0, 0, 0]]);
         assert_eq!(
             reply.rects,
             Some(vec![Rect {
-                id: 3,
+                ids: [3, 0, 0, 0],
                 bounds: [0.0, 0.0, 1.0, 1.0]
             }])
         );

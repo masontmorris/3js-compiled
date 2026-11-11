@@ -4,25 +4,29 @@
 
 use std::collections::VecDeque;
 
-/// One of the rects a page reply lists, `[x, y, width, height]` in window pixels, with the id of
-/// the element at its centre. ui-host gives each element one id for the page's lifetime, so an
-/// id names the same element in every reply, whatever the page does to the order of its rects.
+/// The ids of the elements a rect names: first the element it names, then up to three more
+/// elements whose box it is, or 0. ui-host gives each element one id for the page's lifetime, so
+/// an id names the same element in every reply, whatever the page does to the order of its rects.
 /// 0 names no element.
+pub type Ids = [u32; 4];
+
+/// One of the rects a page reply lists, `[x, y, width, height]` in window pixels, with the ids of
+/// the elements whose border box it is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
-    pub id: u32,
+    pub ids: Ids,
     pub bounds: [f64; 4],
 }
 
 /// Where the host saw a page pointer event, relative to one of the page's rects, named by its
-/// id.
+/// ids.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum At {
     /// Over the rect, `offset` from its top-left corner in the frame on screen.
-    Rect { id: u32, offset: (f32, f32) },
+    Rect { ids: Ids, offset: (f32, f32) },
     /// Over no rect, during a press whose down was over the rect: `offset` from the corner
     /// where the frame then on screen drew the rect.
-    Beside { id: u32, offset: (f32, f32) },
+    Beside { ids: Ids, offset: (f32, f32) },
 }
 
 /// A pointer event the host sends to the page, at its window point.
@@ -100,15 +104,15 @@ impl Placer {
         Some(self.place(pointer))
     }
     fn place(&self, pointer: Pointer) -> Placed {
-        let rect = |id: u32| {
+        let rect = |ids: Ids| {
             self.rects
                 .iter()
-                .find(|rect| id != 0 && rect.id == id)
+                .find(|rect| ids[0] != 0 && rect.ids[0] == ids[0])
                 .map(|rect| rect.bounds)
         };
         let (x, y) = match pointer.at {
             _ if pointer.size == self.size => (pointer.x, pointer.y),
-            At::Rect { id, offset } if let Some(r) = rect(id) => {
+            At::Rect { ids, offset } if let Some(r) = rect(ids) => {
                 let (dx, dy) = if f64::from(offset.0) < r[2] && f64::from(offset.1) < r[3] {
                     (f64::from(offset.0), f64::from(offset.1))
                 } else {
@@ -116,7 +120,7 @@ impl Placer {
                 };
                 ((r[0] + dx) as f32, (r[1] + dy) as f32)
             }
-            At::Beside { id, offset } if let Some(r) = rect(id) => {
+            At::Beside { ids, offset } if let Some(r) = rect(ids) => {
                 (r[0] as f32 + offset.0, r[1] as f32 + offset.1)
             }
             _ => (pointer.x, pointer.y),
@@ -139,7 +143,7 @@ mod tests {
     fn every_point_is_inside_the_viewport() {
         let mut placer = Placer::new((1280, 720));
         placer.replied(Some(vec![Rect {
-            id: 1,
+            ids: [1, 0, 0, 0],
             bounds: [1500.0, -40.0, 200.0, 80.0],
         }]));
         let up = |x, y, at| Pointer {
@@ -151,15 +155,15 @@ mod tests {
             at,
         };
         let on = At::Rect {
-            id: 1,
+            ids: [1, 0, 0, 0],
             offset: (100.0, 10.0),
         };
         let beside = At::Beside {
-            id: 1,
+            ids: [1, 0, 0, 0],
             offset: (-300.0, 900.0),
         };
         let missing = |id| At::Rect {
-            id,
+            ids: [id, 0, 0, 0],
             offset: (0.0, 0.0),
         };
         let placed = [

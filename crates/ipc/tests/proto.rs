@@ -25,7 +25,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             button: 0,
             size: (1280, 720),
             at: place::At::Rect {
-                id: 3,
+                ids: [3, 4, 0, 0],
                 offset: (100.5, 40.0),
             },
         }),
@@ -36,7 +36,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             button: 2,
             size: (1680, 720),
             at: place::At::Beside {
-                id: 1,
+                ids: [1, 0, 0, 0],
                 offset: (-960.0, 40.0),
             },
         }),
@@ -62,7 +62,7 @@ fn messages_round_trip_and_truncated_frames_fail() {
             width: 640,
             height: 480,
             json: "[]".into(),
-            ids: vec![4, 0, 9],
+            ids: vec![[4, 5, 6, 7], [0; 4], [9, 0, 0, 0]],
         },
         Msg::Report {
             text: "done".into(),
@@ -82,8 +82,8 @@ fn writer_refuses_what_the_reader_refuses() {
     for (seq, len, ids) in [
         (1, MAX_JSON - 4, vec![]),
         (2, MAX_JSON - 3, vec![]),
-        (3, MAX_JSON - 12, vec![1, 2]),
-        (4, MAX_JSON - 11, vec![1, 2]),
+        (3, MAX_JSON - 36, vec![[1, 0, 0, 0], [2, 3, 0, 0]]),
+        (4, MAX_JSON - 35, vec![[1, 0, 0, 0], [2, 3, 0, 0]]),
     ] {
         let json = "x".repeat(len);
         let fits = events_fit(&json, &ids);

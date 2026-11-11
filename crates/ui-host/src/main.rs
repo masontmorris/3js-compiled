@@ -697,18 +697,18 @@ fn main() {
                             JSValue::Array(ids),
                         ],
                     ) => {
-                        let ids: Vec<u32> = ids
+                        let ids: Vec<proto::place::Ids> = ids
                             .iter()
                             .map(|id| match id {
-                                JSValue::Number(id) => *id as u32,
-                                _ => 0,
+                                JSValue::Number(id) => [*id as u32, 0, 0, 0],
+                                _ => [0; 4],
                             })
                             .collect();
                         if proto::events_fit(json, &ids) {
                             let rects = proto::reply::parse(json, &ids).rects;
                             let unnamed =
-                                rects.iter().flatten().filter(|rect| rect.id == 0).count() as u64;
-                            let first = rects.iter().flatten().find(|rect| rect.id == 0);
+                                rects.iter().flatten().filter(|rect| rect.ids[0] == 0).count() as u64;
+                            let first = rects.iter().flatten().find(|rect| rect.ids[0] == 0);
                             if let Some(first) = first
                                 && stats.borrow().rects_unnamed == 0
                             {
