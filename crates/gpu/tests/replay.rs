@@ -1905,3 +1905,69 @@ fn errors_go_to_the_innermost_scope_of_their_filter_and_only_unmatched_ones_are_
         "a scope pushed in one frame captures an error of the next: {later:?}"
     );
 }
+
+/// The errors Edge raises for each case of the `copies` fixtures: rules.js `copies` in
+/// C:\3jsc\swarm\e3-r12\kit\out\edge\rules-copies\console.txt, and the round-11 adversary's
+/// `copy-destroyed` and `bundle-destroyed` in
+/// C:\3jsc\worktrees\interrogate-e3r12-opus\repro-opus\out-job2.log. A copy that fails validation
+/// raises one error as its encoder finishes and one at submit. A submit that uses a destroyed
+/// buffer or texture raises one, whether it was destroyed in its frame or before.
+const EDGE_COPY_ERRORS: [(&str, usize); 27] = [
+    ("setup", 0),
+    ("unaligned-offset", 2),
+    ("unaligned-size", 2),
+    ("out-of-range", 2),
+    ("clear-unaligned", 2),
+    ("bytes-per-row", 2),
+    ("texture-bounds", 2),
+    ("destroyed-before-submit", 1),
+    ("destroyed-earlier", 1),
+    ("attachment-destroyed", 1),
+    ("attachment-destroyed-earlier", 1),
+    ("bind-group-destroyed", 1),
+    ("bind-group-destroyed-earlier", 1),
+    ("vertex-destroyed", 1),
+    ("vertex-destroyed-earlier", 1),
+    ("size-and-destroyed", 2),
+    ("write-destroyed", 1),
+    ("write-texture-destroyed", 1),
+    ("valid-copy", 0),
+    ("probe-copy-buffer", 1),
+    ("probe-clear-buffer", 1),
+    ("probe-buffer-to-texture", 2),
+    ("probe-texture-to-buffer", 2),
+    ("probe-texture-to-texture", 1),
+    ("bundle-finish", 0),
+    ("bundle-execute-0", 1),
+    ("bundle-execute-1", 1),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn copies_and_passes_raise_edges_errors_for_invalid_and_destroyed_objects() {
+    let mut executor = executor();
+    let mut raised = Vec::new();
+    for (index, (name, _)) in EDGE_COPY_ERRORS.iter().enumerate() {
+        let path = format!(
+            "{}/tests/fixtures/copies-{index:02}-{name}.bin",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let responses = executor
+            .replay(&std::fs::read(path).unwrap(), None)
+            .unwrap();
+        let errors: Vec<_> = responses
+            .iter()
+            .filter_map(|response| match response {
+                Response::Error { message, .. } => Some(message.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            errors.iter().all(|message| !message.starts_with("unknown")),
+            "{name}: {errors:?}"
+        );
+        raised.push((*name, errors.len(), errors));
+    }
+    let counts: Vec<_> = raised.iter().map(|(name, count, _)| (*name, *count)).collect();
+    assert_eq!(counts, EDGE_COPY_ERRORS, "{raised:#?}");
+}

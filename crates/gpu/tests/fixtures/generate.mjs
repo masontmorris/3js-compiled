@@ -336,3 +336,143 @@ for (const bad of ['valid', 'buffer', 'sampler', 'layout', 'group', 'pipeline-la
   frames.push(objectsFrame(device, valid, 'valid'));
   frames.forEach((frame, index) => writeFileSync(new URL(`./objects-${bad}-${index}.bin`, import.meta.url), frame));
 }
+
+// Copies, clears, passes and queue writes with validation errors and destroyed objects, one frame per case, as
+// C:/3jsc/swarm/e3-r12/kit/apps/rules.js `copies` and the round-11 adversary's probe.js `copy-destroyed` and
+// `bundle-destroyed` make them for Edge. A case whose name ends in `-earlier` uses what the case before it destroyed.
+{
+const copyDevice = new RecordingDevice();
+const copyUsage = 12;
+const buffer = (size = 256, usage = copyUsage) => copyDevice.createBuffer({ size, usage });
+const texture = (usage = 3) => copyDevice.createTexture({ size: [4, 4], format: 'rgba8unorm', usage });
+const submit = encode => {
+  const encoder = copyDevice.createCommandEncoder();
+  encode(encoder);
+  copyDevice.queue.submit([encoder.finish()]);
+};
+const pass = (encoder, view) => encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+const copyModule = copyDevice.createShaderModule({ code: `
+@group(0) @binding(0) var<uniform> u: vec4f;
+@vertex fn vsUniform(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { return u + vec4f(f32(i), 0, 0, 1); }
+@vertex fn vsVertex(@location(0) p: vec4f) -> @builtin(position) vec4f { return p; }
+@fragment fn fsMain() -> @location(0) vec4f { return vec4f(1); }` });
+const copyTargets = [{ format: 'rgba8unorm' }];
+const uniformPipeline = copyDevice.createRenderPipeline({ layout: 'auto', vertex: { module: copyModule, entryPoint: 'vsUniform' }, fragment: { module: copyModule, entryPoint: 'fsMain', targets: copyTargets } });
+const vertexPipeline = copyDevice.createRenderPipeline({
+  layout: 'auto', fragment: { module: copyModule, entryPoint: 'fsMain', targets: copyTargets },
+  vertex: { module: copyModule, entryPoint: 'vsVertex', buffers: [{ arrayStride: 16, attributes: [{ format: 'float32x4', offset: 0, shaderLocation: 0 }] }] },
+});
+const target = () => texture(16).createView();
+const kept = {};
+const copyCases = [
+  ['setup', () => {}],
+  ['unaligned-offset', () => submit(encoder => encoder.copyBufferToBuffer(buffer(), 2, buffer(), 0, 64))],
+  ['unaligned-size', () => submit(encoder => encoder.copyBufferToBuffer(buffer(), 0, buffer(), 0, 6))],
+  ['out-of-range', () => submit(encoder => encoder.copyBufferToBuffer(buffer(), 0, buffer(), 0, 512))],
+  ['clear-unaligned', () => submit(encoder => encoder.clearBuffer(buffer(), 2))],
+  ['bytes-per-row', () => submit(encoder => encoder.copyBufferToTexture({ buffer: buffer(1024), bytesPerRow: 100 }, { texture: texture() }, [4, 4]))],
+  ['texture-bounds', () => submit(encoder => encoder.copyTextureToTexture({ texture: texture() }, { texture: texture() }, [8, 8]))],
+  ['destroyed-before-submit', () => {
+    kept.buffer = buffer();
+    const encoder = copyDevice.createCommandEncoder();
+    encoder.copyBufferToBuffer(kept.buffer, 0, buffer(), 0, 64);
+    const commands = encoder.finish();
+    kept.buffer.destroy();
+    copyDevice.queue.submit([commands]);
+  }],
+  ['destroyed-earlier', () => submit(encoder => encoder.copyBufferToBuffer(kept.buffer, 0, buffer(), 0, 64))],
+  ['attachment-destroyed', () => {
+    const attachment = texture(16);
+    kept.view = attachment.createView();
+    attachment.destroy();
+    submit(encoder => pass(encoder, kept.view).end());
+  }],
+  ['attachment-destroyed-earlier', () => submit(encoder => pass(encoder, kept.view).end())],
+  ['bind-group-destroyed', () => {
+    const uniform = buffer(16, 64);
+    kept.group = copyDevice.createBindGroup({ layout: uniformPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniform } }] });
+    uniform.destroy();
+    submit(encoder => {
+      const p = pass(encoder, target());
+      p.setPipeline(uniformPipeline);
+      p.setBindGroup(0, kept.group);
+      p.draw(3);
+      p.end();
+    });
+  }],
+  ['bind-group-destroyed-earlier', () => submit(encoder => {
+    const p = pass(encoder, target());
+    p.setPipeline(uniformPipeline);
+    p.setBindGroup(0, kept.group);
+    p.draw(3);
+    p.end();
+  })],
+  ['vertex-destroyed', () => {
+    kept.vertices = buffer(64, 32);
+    kept.vertices.destroy();
+    submit(encoder => {
+      const p = pass(encoder, target());
+      p.setPipeline(vertexPipeline);
+      p.setVertexBuffer(0, kept.vertices);
+      p.draw(3);
+      p.end();
+    });
+  }],
+  ['vertex-destroyed-earlier', () => submit(encoder => {
+    const p = pass(encoder, target());
+    p.setPipeline(vertexPipeline);
+    p.setVertexBuffer(0, kept.vertices);
+    p.draw(3);
+    p.end();
+  })],
+  ['size-and-destroyed', () => {
+    const source = buffer();
+    source.destroy();
+    submit(encoder => encoder.copyBufferToBuffer(source, 2, buffer(), 0, 64));
+  }],
+  ['write-destroyed', () => {
+    const destination = buffer();
+    destination.destroy();
+    copyDevice.queue.writeBuffer(destination, 0, new Uint8Array(16));
+  }],
+  ['write-texture-destroyed', () => {
+    const destination = texture();
+    destination.destroy();
+    copyDevice.queue.writeTexture({ texture: destination }, new Uint8Array(64), { bytesPerRow: 16 }, [4, 4]);
+  }],
+  ['valid-copy', () => submit(encoder => encoder.copyBufferToBuffer(buffer(), 0, buffer(), 0, 64))],
+  ...[
+    ['probe-copy-buffer', (encoder, set) => encoder.copyBufferToBuffer(set.src, 0, set.dst, 0, 64)],
+    ['probe-clear-buffer', (encoder, set) => encoder.clearBuffer(set.src)],
+    ['probe-buffer-to-texture', (encoder, set) => encoder.copyBufferToTexture({ buffer: set.src, bytesPerRow: 256 }, { texture: set.other }, [4, 4])],
+    ['probe-texture-to-buffer', (encoder, set) => encoder.copyTextureToBuffer({ texture: set.texture }, { buffer: set.dst, bytesPerRow: 256 }, [4, 4])],
+    ['probe-texture-to-texture', (encoder, set) => encoder.copyTextureToTexture({ texture: set.texture }, { texture: set.other }, [4, 4])],
+  ].map(([name, copy]) => [name, () => {
+    const set = { src: buffer(), dst: buffer(), texture: texture(), other: texture() };
+    set.src.destroy();
+    set.texture.destroy();
+    submit(encoder => copy(encoder, set));
+  }]),
+  ['bundle-finish', () => {
+    const layout = { colorFormats: ['rgba8unorm'] };
+    const before = buffer(16, 32);
+    const after = buffer(16, 32);
+    const first = copyDevice.createRenderBundleEncoder(layout);
+    first.setVertexBuffer(0, before);
+    before.destroy();
+    const second = copyDevice.createRenderBundleEncoder(layout);
+    second.setVertexBuffer(0, after);
+    kept.bundles = [first.finish(), second.finish()];
+    after.destroy();
+  }],
+  ...[0, 1].map(index => [`bundle-execute-${index}`, () => submit(encoder => {
+    const p = pass(encoder, target());
+    p.executeBundles([kept.bundles[index]]);
+    p.end();
+  })]),
+];
+copyCases.forEach(([name, run], index) => {
+  run();
+  writeFileSync(new URL(`./copies-${String(index).padStart(2, '0')}-${name}.bin`, import.meta.url), copyDevice.takeFrame());
+});
+}
