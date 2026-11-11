@@ -60,9 +60,17 @@ CASES = {
     'S1-dc': [move(760, 420), down(760, 420), hold(10), move(1160, 420), hold(10), up(1160, 420)],
     'S2-dis': [move(1160, 420), down(1160, 420), hold(10), move(760, 420), hold(10), up(760, 420)],
     'C-dis': click(1160, 420),
+    # The pointer moved over the disabled button and off it, with no press.
+    'V-dis': [move(1100, 420), hold(10), move(1160, 420), hold(10), move(760, 420)],
     # A press on s1 in the shadow root dragged onto the slotted light child l1.
     'SH': [move(140, 540), down(140, 540), hold(10), move(340, 540), hold(10), up(340, 540)],
 }
+
+# Each case starts from a point on da that no case presses, so none begins with a move to where
+# the last one ended: Servo fires nothing for a move that does not change the point, and Edge's
+# DevTools input fires one. The point is on a rect so that the host gives the move to the page,
+# and held so that Servo does not coalesce it with the case's first move.
+CASES = {name: [move(1100, 60), hold(10)] + ops for name, ops in CASES.items()}
 
 
 def script():

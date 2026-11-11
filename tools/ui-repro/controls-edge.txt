@@ -1,103 +1,109 @@
-Edg/157.0.4341.42
-CASE C-ba 0 clicks: click:ba:b0
+Edg/157.0.4341.46
+CASE C-ba 0 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1160/1280 mouseup:ba:b0@1160/1280 click:ba:b0@1160/1280
-CASE C-r1 0 clicks: click:r1:b0
+CASE C-r1 0 clicks: click:r1:b0 on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280 click:r1:b0@140/1280
-CASE P-ba 0 clicks: click:ba:b0
+CASE P-ba 0 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1560/1680 mouseup:ba:b0@1560/1680 click:ba:b0@1560/1680
-CASE Y-div 0 clicks: click:BODY:b0
+CASE Y-div 0 clicks: click:BODY:b0 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 pointerup:db:b0@760/1280 mouseup:db:b0@760/1280 click:BODY:b0@760/1280
-CASE D-ba 0 clicks: click:HTML:b0
+CASE D-ba 0 clicks: click:HTML:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:HTML:b0@400/1280 mouseup:HTML:b0@400/1280 click:HTML:b0@400/1280
-CASE Y-ba 0 clicks: click:BODY:b0
+CASE Y-ba 0 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@760/1280 mouseup:bb:b0@760/1280 click:BODY:b0@760/1280
-CASE H-ba 0 clicks: click:BODY:b0
+CASE H-ba 0 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@1160/1680 mouseup:bb:b0@1160/1680 click:BODY:b0@1160/1680
-CASE K1 0 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE K1 0 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K2 0 clicks: auxclick:da:b2 contextmenu:da:b2
+CASE K2 0 clicks: auxclick:da:b2 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:da:b2@1160/1280 mouseup:da:b2@1160/1280 auxclick:da:b2@1160/1280 contextmenu:da:b2@1160/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K3 0 clicks: click:da:b0 contextmenu:da:b2
+CASE K3 0 clicks: click:da:b0 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b2@1160/1280 mousedown:da:b2@1160/1280 mousedown:da:b0@1160/1280 mouseup:da:b0@1160/1280 click:da:b0@1160/1280 pointerup:da:b2@1160/1280 mouseup:da:b2@1160/1280 contextmenu:da:b2@1160/1280
-CASE M-db 0 clicks: auxclick:db:b1
+CASE M-db 0 clicks: auxclick:db:b1 on dis: -
   all: pointerdown:db:b1@760/1280 mousedown:db:b1@760/1280 pointerup:db:b1@760/1280 mouseup:db:b1@760/1280 auxclick:db:b1@760/1280
-CASE R-db 0 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE R-db 0 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:db:b2@760/1280 mousedown:db:b2@760/1280 pointerup:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280
-CASE RM-r1 0 clicks: -
+CASE RM-r1 0 clicks: - on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280
-CASE S1-dc 0 clicks: click:BODY:b0
-  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
-CASE S2-dis 0 clicks: click:BODY:b0
-  all: pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
-CASE C-dis 0 clicks: -
-  all: pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
-CASE SH 0 clicks: click:sh/wrap:b0
+CASE S1-dc 0 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointermove,pointerover,pointerup
+  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
+CASE S2-dis 0 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointerdown,pointermove,pointerover
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
+CASE C-dis 0 clicks: - on dis: mousemove,mouseover,pointerdown,pointermove,pointerover,pointerup
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
+CASE V-dis 0 clicks: - on dis: mousemove,mouseover,pointermove,pointerover
+  all: pointerover:dis:b-1@1100/1280 mouseover:dis:b0@1100/1280 pointermove:dis:b-1@1100/1280 mousemove:dis:b0@1100/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280
+CASE SH 0 clicks: click:sh/wrap:b0 on dis: -
   all: pointerdown:sh/s1:b0@140/1280 mousedown:sh/s1:b0@140/1280 pointerup:l1:b0@340/1280 mouseup:l1:b0@340/1280 click:sh/wrap:b0@340/1280
-CASE C-ba 1 clicks: click:ba:b0
+CASE C-ba 1 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1160/1280 mouseup:ba:b0@1160/1280 click:ba:b0@1160/1280
-CASE C-r1 1 clicks: click:r1:b0
+CASE C-r1 1 clicks: click:r1:b0 on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280 click:r1:b0@140/1280
-CASE P-ba 1 clicks: click:ba:b0
+CASE P-ba 1 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1560/1680 mouseup:ba:b0@1560/1680 click:ba:b0@1560/1680
-CASE Y-div 1 clicks: click:BODY:b0
+CASE Y-div 1 clicks: click:BODY:b0 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 pointerup:db:b0@760/1280 mouseup:db:b0@760/1280 click:BODY:b0@760/1280
-CASE D-ba 1 clicks: click:HTML:b0
+CASE D-ba 1 clicks: click:HTML:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:HTML:b0@400/1280 mouseup:HTML:b0@400/1280 click:HTML:b0@400/1280
-CASE Y-ba 1 clicks: click:BODY:b0
+CASE Y-ba 1 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@760/1280 mouseup:bb:b0@760/1280 click:BODY:b0@760/1280
-CASE H-ba 1 clicks: click:BODY:b0
+CASE H-ba 1 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@1160/1680 mouseup:bb:b0@1160/1680 click:BODY:b0@1160/1680
-CASE K1 1 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE K1 1 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K2 1 clicks: auxclick:da:b2 contextmenu:da:b2
+CASE K2 1 clicks: auxclick:da:b2 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:da:b2@1160/1280 mouseup:da:b2@1160/1280 auxclick:da:b2@1160/1280 contextmenu:da:b2@1160/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K3 1 clicks: click:da:b0 contextmenu:da:b2
+CASE K3 1 clicks: click:da:b0 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b2@1160/1280 mousedown:da:b2@1160/1280 mousedown:da:b0@1160/1280 mouseup:da:b0@1160/1280 click:da:b0@1160/1280 pointerup:da:b2@1160/1280 mouseup:da:b2@1160/1280 contextmenu:da:b2@1160/1280
-CASE M-db 1 clicks: auxclick:db:b1
+CASE M-db 1 clicks: auxclick:db:b1 on dis: -
   all: pointerdown:db:b1@760/1280 mousedown:db:b1@760/1280 pointerup:db:b1@760/1280 mouseup:db:b1@760/1280 auxclick:db:b1@760/1280
-CASE R-db 1 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE R-db 1 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:db:b2@760/1280 mousedown:db:b2@760/1280 pointerup:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280
-CASE RM-r1 1 clicks: -
+CASE RM-r1 1 clicks: - on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280
-CASE S1-dc 1 clicks: click:BODY:b0
-  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
-CASE S2-dis 1 clicks: click:BODY:b0
-  all: pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
-CASE C-dis 1 clicks: -
-  all: pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
-CASE SH 1 clicks: click:sh/wrap:b0
+CASE S1-dc 1 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointermove,pointerover,pointerup
+  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
+CASE S2-dis 1 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointerdown,pointermove,pointerover
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
+CASE C-dis 1 clicks: - on dis: mousemove,mouseover,pointerdown,pointermove,pointerover,pointerup
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
+CASE V-dis 1 clicks: - on dis: mousemove,mouseover,pointermove,pointerover
+  all: pointerover:dis:b-1@1100/1280 mouseover:dis:b0@1100/1280 pointermove:dis:b-1@1100/1280 mousemove:dis:b0@1100/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280
+CASE SH 1 clicks: click:sh/wrap:b0 on dis: -
   all: pointerdown:sh/s1:b0@140/1280 mousedown:sh/s1:b0@140/1280 pointerup:l1:b0@340/1280 mouseup:l1:b0@340/1280 click:sh/wrap:b0@340/1280
-CASE C-ba 2 clicks: click:ba:b0
+CASE C-ba 2 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1160/1280 mouseup:ba:b0@1160/1280 click:ba:b0@1160/1280
-CASE C-r1 2 clicks: click:r1:b0
+CASE C-r1 2 clicks: click:r1:b0 on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280 click:r1:b0@140/1280
-CASE P-ba 2 clicks: click:ba:b0
+CASE P-ba 2 clicks: click:ba:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:ba:b0@1560/1680 mouseup:ba:b0@1560/1680 click:ba:b0@1560/1680
-CASE Y-div 2 clicks: click:BODY:b0
+CASE Y-div 2 clicks: click:BODY:b0 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 pointerup:db:b0@760/1280 mouseup:db:b0@760/1280 click:BODY:b0@760/1280
-CASE D-ba 2 clicks: click:HTML:b0
+CASE D-ba 2 clicks: click:HTML:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:HTML:b0@400/1280 mouseup:HTML:b0@400/1280 click:HTML:b0@400/1280
-CASE Y-ba 2 clicks: click:BODY:b0
+CASE Y-ba 2 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@760/1280 mouseup:bb:b0@760/1280 click:BODY:b0@760/1280
-CASE H-ba 2 clicks: click:BODY:b0
+CASE H-ba 2 clicks: click:BODY:b0 on dis: -
   all: pointerdown:ba:b0@1160/1280 mousedown:ba:b0@1160/1280 pointerup:bb:b0@1160/1680 mouseup:bb:b0@1160/1680 click:BODY:b0@1160/1680
-CASE K1 2 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE K1 2 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K2 2 clicks: auxclick:da:b2 contextmenu:da:b2
+CASE K2 2 clicks: auxclick:da:b2 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b0@1160/1280 mousedown:da:b0@1160/1280 mousedown:da:b2@1160/1280 mouseup:da:b2@1160/1280 auxclick:da:b2@1160/1280 contextmenu:da:b2@1160/1280 pointerup:da:b0@1160/1280 mouseup:da:b0@1160/1280
-CASE K3 2 clicks: click:da:b0 contextmenu:da:b2
+CASE K3 2 clicks: click:da:b0 contextmenu:da:b2 on dis: -
   all: pointerdown:da:b2@1160/1280 mousedown:da:b2@1160/1280 mousedown:da:b0@1160/1280 mouseup:da:b0@1160/1280 click:da:b0@1160/1280 pointerup:da:b2@1160/1280 mouseup:da:b2@1160/1280 contextmenu:da:b2@1160/1280
-CASE M-db 2 clicks: auxclick:db:b1
+CASE M-db 2 clicks: auxclick:db:b1 on dis: -
   all: pointerdown:db:b1@760/1280 mousedown:db:b1@760/1280 pointerup:db:b1@760/1280 mouseup:db:b1@760/1280 auxclick:db:b1@760/1280
-CASE R-db 2 clicks: auxclick:db:b2 contextmenu:db:b2
+CASE R-db 2 clicks: auxclick:db:b2 contextmenu:db:b2 on dis: -
   all: pointerdown:db:b2@760/1280 mousedown:db:b2@760/1280 pointerup:db:b2@760/1280 mouseup:db:b2@760/1280 auxclick:db:b2@760/1280 contextmenu:db:b2@760/1280
-CASE RM-r1 2 clicks: -
+CASE RM-r1 2 clicks: - on dis: -
   all: pointerdown:r1:b0@140/1280 mousedown:r1:b0@140/1280 pointerup:r1:b0@140/1280 mouseup:r1:b0@140/1280
-CASE S1-dc 2 clicks: click:BODY:b0
-  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
-CASE S2-dis 2 clicks: click:BODY:b0
-  all: pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
-CASE C-dis 2 clicks: -
-  all: pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
-CASE SH 2 clicks: click:sh/wrap:b0
+CASE S1-dc 2 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointermove,pointerover,pointerup
+  all: pointerdown:dc:b0@760/1280 mousedown:dc:b0@760/1280 pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerup:dis:b0@1160/1280 click:BODY:b0@1160/1280
+CASE S2-dis 2 clicks: click:BODY:b0 on dis: mousemove,mouseover,pointerdown,pointermove,pointerover
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dc:b0@760/1280 mouseup:dc:b0@760/1280 click:BODY:b0@760/1280
+CASE C-dis 2 clicks: - on dis: mousemove,mouseover,pointerdown,pointermove,pointerover,pointerup
+  all: pointerover:dis:b-1@1160/1280 mouseover:dis:b0@1160/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280 pointerdown:dis:b0@1160/1280 pointerup:dis:b0@1160/1280
+CASE V-dis 2 clicks: - on dis: mousemove,mouseover,pointermove,pointerover
+  all: pointerover:dis:b-1@1100/1280 mouseover:dis:b0@1100/1280 pointermove:dis:b-1@1100/1280 mousemove:dis:b0@1100/1280 pointermove:dis:b-1@1160/1280 mousemove:dis:b0@1160/1280
+CASE SH 2 clicks: click:sh/wrap:b0 on dis: -
   all: pointerdown:sh/s1:b0@140/1280 mousedown:sh/s1:b0@140/1280 pointerup:l1:b0@340/1280 mouseup:l1:b0@340/1280 click:sh/wrap:b0@340/1280

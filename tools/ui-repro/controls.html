@@ -39,8 +39,10 @@ const rebuild = () => { row.innerHTML = '<div id="r1" class="box"></div>'; };
 rebuild();
 const events = [];
 const name = n => (n && (n.id || n.nodeName)) || "-";
-for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "auxclick", "contextmenu", "dblclick"]) {
-  window.addEventListener(type, e => events.push({
+// Moves and overs are logged on the disabled button only, to show which of them it receives.
+const moves = ["pointermove", "pointerover", "mousemove", "mouseover"];
+for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "auxclick", "contextmenu", "dblclick", ...moves]) {
+  window.addEventListener(type, e => (moves.includes(type) && name(e.target) !== "dis") || events.push({
     type, id: name(e.target), path0: name(e.composedPath()[0]), button: e.button, buttons: e.buttons,
     detail: e.detail, x: e.clientX, y: e.clientY, w: innerWidth,
   }), true);

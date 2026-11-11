@@ -1,8 +1,8 @@
 # Per press of `host --entry tools/ui-repro/controls.js --script tools/ui-repro/controls.json`,
-# the page's click events (click, auxclick, contextmenu, dblclick) from host.log, and any game
-# pointer events, against the same case in an edge-ui-controls.mjs reference. A press is wrong
-# when its click events differ from every Edge repeat of its case, or when the game received any
-# of it.
+# the page's click events (click, auxclick, contextmenu, dblclick) and the kinds of event the
+# disabled button `dis` received, from host.log, and any game pointer events, against the same
+# case in an edge-ui-controls.mjs reference. A press is wrong when those differ from every Edge
+# repeat of its case, or when the game received any of it.
 # Usage: python tools/check-ui-controls.py <host.log> [reference, default tools/ui-repro/controls-edge.txt]
 import json
 import re
@@ -44,6 +44,7 @@ for n, t in enumerate(trials):
     events = [e for f, e in page if t['start'] - 1 <= f < end]
     g = [k for k, f in game if t['start'] - 1 <= f < end]
     clicks = ' '.join(fmt(e) for e in events if e['type'] in CLICKS) or '-'
+    clicks += ' on dis: ' + (','.join(sorted({e['type'] for e in events if e['id'] == 'dis'})) or '-')
     want = edge.get(t['name'], set())
     ok = clicks in want and not g
     wrong[t['name']] += not ok

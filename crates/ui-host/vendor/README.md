@@ -27,7 +27,7 @@ The patch records the element under the last mouse button down in place of its p
 - Each mouse button up ends the press of the last button down, whichever buttons they are, and takes the recorded element. A primary up fires `click`, and `dblclick` where Servo fires one, on the nearest element that is an inclusive ancestor of both elements in the flat tree. It fires none when the two have no common ancestor, for example after the down's element was removed from the document.
 - A middle or secondary up fires `auxclick` on that common ancestor instead.
 - `contextmenu` fires after the secondary button's up and its `auxclick`, on the element under the up.
-- A disabled form control receives `pointerdown`, `pointerup` and pointer moves, but no `mousedown`, `mouseup` or `contextmenu`. A down on it is recorded and an up on it ends the press as usual. No click event fires on a disabled control itself, so a press on it released on another element clicks their common ancestor, and a press that begins and ends on it clicks nothing.
+- A disabled form control receives `pointerdown`, `pointerup` and pointer moves, but no `mousedown`, `mouseup` or `contextmenu`. A down on it is recorded and an up on it ends the press as usual. No `click` or `auxclick` fires when the common ancestor is a disabled control, so a press on it released on another element clicks their common ancestor, and a press that begins and ends on it clicks nothing. Mouse moves and overs reach a disabled control as before, because Servo dispatches them outside this function.
 
 Upstream issue: not filed. Servo's policy forbids AI-written issues.
 
