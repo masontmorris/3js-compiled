@@ -1,9 +1,9 @@
 # 3js-compiled v1 plan
 
-This plan takes 3js-compiled from an empty repo to folio-2025 running as a native Windows program. Players get the same game as the web build, with HTML menus drawn by Servo in its own process.
-The rule the program enforces is that the web build of every game keeps working and native frames match the browser's frames.
+This plan takes 3js-compiled from an empty repo to folio-2025 running as a native Windows program. Players get the same game as the web build, with its music and sound, and with HTML menus drawn by Servo in its own process.
+The rule the program enforces is that the web build of every game keeps working and native frames and sound match the browser's.
 Engine PRs land in `masontmorris/3js-compiled`. Port PRs land in the private `masontmorris/3js-compiled-folio`.
-PR ids in order are E1, E2, E3, E4, E5, E6, F1, F2, F3, F4.
+PR ids in order are E1, E2, E3, E4, E5, E6, E7, F1, F2, F3, F4, F5.
 
 ## How to read this
 
@@ -26,6 +26,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] `C:\Users\mason\.agents\skills\poteto-mode\playbooks\opening-a-pr.md`
   - [ ] `C:\Users\mason\.agents\skills\how\SKILL.md`, `interrogate\SKILL.md`, and `show-me-your-work\SKILL.md` in the same folder.
 - [ ] Install `ffmpeg` in user scope before the first review gate. The review videos need it.
+- [ ] Install the `AudioDeviceCmdlets` PowerShell module in user scope before E7's live lanes. E7 lane 9 needs it.
 - [ ] Install the Azure CLI, log in to the student subscription, and run `az vm list-usage` for NV-series and NGads V620 quota. Record the result in Appendix A. Azure lanes stay optional either way.
 - [ ] On the operator's go, arm the audit tick as `/loop 1h` with the tick prompt below. Never leave the cadence to memory.
 - [ ] Use this tick prompt, verbatim. "Re-read the execution playbook from trunk. Audit the operation against it and fix drift in this tick. Probe every active lane and judge progress by side effects only. Stand down a stuck lane and dispatch its replacement now. Then post a short status message to the operator in chat only when the audit found a tracked change that no earlier status message reported, such as a PR opened, a code-ready head, a round launched or closed, a verdict, a merge, a stuck agent and the action taken, a blocker added or cleared, or a decision only the operator can make. Name every such change and nothing else. Do not repeat a table, the merged list, or an unchanged blocker. If the audit found none, end the turn with no reply text. Either way, log this tick's row in your decision trail. The row names the items reported, or none."
@@ -37,11 +38,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [ ] E1 is first. It branches from `main` in the engine repo.
   - [ ] E2 and E3 are independent of each other. Both stack on E1's branch.
-  - [ ] E4 stacks on E3. E5 stacks on E3. E6 stacks on E5.
+  - [ ] E4 stacks on E3. E5 stacks on E3. E6 and E7 each stack on E5.
   - [ ] F1 starts after E4 and E6 merge. It branches from `main` in the port repo and pins the engine by SHA.
-  - [ ] F2 stacks on F1. F3 stacks on F2 and starts after E2 merges. F4 stacks on F3.
+  - [ ] F2 stacks on F1. F3 stacks on F2 and starts after E2 merges. F4 stacks on F3. F5 stacks on F4 and starts after E7 merges.
 - [ ] Hold the file boundaries. E PRs touch only the engine repo. F PRs touch only the port repo. An engine bug found during an F PR opens a new engine PR from `main`, and the F PR pins the fix by SHA.
-- [ ] Hold the review gate. E2, F1, F2, F3, and F4 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge.
+- [ ] Hold the review gate. E2, F1, F2, F3, F4, and F5 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge.
 
 ### PR mechanics, for every PR
 
@@ -62,12 +63,13 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 Each live lane runs on the operator's Windows 11 PC with the RTX 3060, one lane at a time, at the PR head. No control skill covers a native window, so the host's `--script` mode drives every lane.
 
-Checks that need no GPU run on Modal in parallel. Modal containers are Linux, and their only working Vulkan device is Mesa llvmpipe, a CPU renderer. Modal runs the WGSL gate, the JS unit tests, and command-buffer replay tests, never a perf or GPU parity lane. Azure Windows GPU VMs are an optional extra once the quota check passes, and no verdict waits on them.
+Checks that need no GPU run on Modal in parallel. Modal containers are Linux, and their only working Vulkan device is Mesa llvmpipe, a CPU renderer. Modal runs the WGSL gate, the JS unit tests, command-buffer replay tests, and offline audio renders, never a perf or GPU parity lane. Azure Windows GPU VMs are an optional extra once the quota check passes, and no verdict waits on them.
 
 - [ ] `git fetch origin <head-branch> && git checkout <head SHA>` in a worktree under `C:\3jsc\worktrees\<pr-id>`.
 - [ ] Set `CARGO_TARGET_DIR=C:\3jsc\target`. Run `cargo build --release -p threejsc-host -p threejsc-ui-host`, then `npm ci` and the PR's bundle build. Wait for both to finish.
 - [ ] Deliver input only through `host --script <lane file>`. The read-only diagnostics are `frames.csv`, `host.log`, and `ui-host.log`.
 - [ ] Save every screenshot to `C:\3jsc\swarm\<pr-id>\worker-<n>\<slug>.png` and return the paths with the report.
+- [ ] In audio lanes, play the host to the `Speakers (Steam Streaming Speakers)` virtual device with `--audio-device`, and capture its mix with `--audio-out` as `<slug>.wav` beside the screenshot. Run Edge with `--autoplay-policy=no-user-gesture-required` and `--mute-audio`. Lane audio never plays through the operator's speakers. An audio lane's `<slug>.png` is the plot from `tools/audio-parity`.
 - [ ] Run Modal checks with `modal run tools/modal/lanes.py::<check>` and save their logs to `C:\3jsc\swarm\<pr-id>\modal\`.
 
 ## Create the native host with a JS runtime and a scripted test mode (E1)
@@ -415,6 +417,72 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 - [ ] Rebased onto E5's branch after the verdict, patch-id unchanged.
 - [ ] The root appends E6 to the stack and the operator lands it bottom-up.
 
+## Play sound through Web Audio (E7)
+
+**Depends on.** E5. E7 stacks on E5's branch.
+
+**Files.**
+
+- [ ] Create `crates/audio/` with package `threejsc-audio`, with no Windows-only code so it builds and tests on Linux.
+- [ ] Create `crates/host/src/audio.rs` for the audio ops, `--audio-device`, and `--audio-out`.
+- [ ] Create `packages/three-native/src/platform/audio.js` and `packages/three-native/src/platform/xhr.js`.
+- [ ] Create `tools/audio-parity/`.
+- [ ] Create `examples/audio/` with generated test signals and CC0 clips only.
+- [ ] Create `docs/native-audio.md` with the supported and unsupported methods.
+- [ ] Edit `tools/modal/lanes.py` to add `audio_offline`.
+
+**Build.**
+
+- [ ] Hold E7 to this rule. For the same Web Audio calls, the host renders the same samples and throws the same errors as Edge, within each lane's threshold. The scope is everything Howler 2.2.4's Web Audio path and three.js 0.187.0's audio classes reach, plus every method `docs/native-audio.md` lists as supported. Every other method throws an error that names it.
+- [ ] Render the reference graphs with web-audio-api-rs and in headless Edge before binding it, and diff each pair. Record the result in Appendix A. If it misses a lane rule, record which one and ask the operator before choosing another engine.
+- [ ] Expose `AudioContext`, `OfflineAudioContext`, the audio nodes, and `AudioParam` automation to JS over ops.
+- [ ] Send graph changes to the audio thread without blocking JS. A change made during a frame reaches the audio thread before that frame ends. Read `currentTime` from the audio thread's position.
+- [ ] Decode with `decodeAudioData` off the main thread. Match Edge's decoded length, including how it trims MP3 encoder delay and padding.
+- [ ] Play through the default output device in WASAPI shared mode, and follow a change of default device. Add `--audio-device <name>` to pick another device by name.
+- [ ] Start each context `running` with no user gesture, as Edge does with `--autoplay-policy=no-user-gesture-required`.
+- [ ] Add `--audio-out <file.wav>`, which writes the mix the device receives. Write each quantum's render time and every underrun to `audio.csv`.
+- [ ] Add `XMLHttpRequest` for local files with `arraybuffer`, `json`, and `text` responses, for Howler's loader.
+- [ ] Add `Audio` with Edge's `canPlayType` answers, for Howler's codec check. Media playback on `Audio` throws an error that names the method.
+- [ ] Make `tools/audio-parity` render a page's `OfflineAudioContext` graph in headless Edge and in the host. It aligns two captures by cross-correlation, reports their RMS difference in dBFS, records WASAPI loopback from a named device, and plots both waveforms as a PNG.
+
+**You see.**
+
+- [ ] `host --entry examples/audio/index.js` plays a tone that pans with a cube moving across the window, and `tools/audio-parity` reports every reference graph under its threshold.
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] `crates/audio/tests/offline.rs` renders the reference graphs offline and compares them to Edge renders stored as short 16-bit WAV files. Run `modal run tools/modal/lanes.py::audio_offline`.
+- [ ] `packages/three-native/test/audio.test.js` checks `AudioParam` event lists, `XMLHttpRequest` ready states, and the unsupported-method errors. Run `npm test -w packages/three-native`.
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `opencode:opencode-go/deepseek-v4.1-flash max` at the PR head, run one after another per the boot recipe.
+
+- [ ] Lane 1. Regression lane against trunk. Run the E5 platform example and the E3 scene set at trunk and head. Save `e7-regression.png`. Pass when every capture matches and head opens no audio device for a page that makes no `AudioContext`.
+- [ ] Lane 2. Decode MP3, Ogg Vorbis, and WAV clips, mono and stereo, at 22,050, 44,100, and 48,000 Hz, into contexts at 44,100 and 48,000 Hz. Save `e7-decode.png`. Pass when length, channel count, and sample rate equal Edge's and the RMS difference is -60 dBFS or lower.
+- [ ] Lane 3. Render graphs with gain automation (`setValueAtTime`, linear and exponential ramps, `setTargetAtTime`, `setValueCurveAtTime`), `playbackRate` from 0.5 to 4, loops with `loopStart` and `loopEnd`, and sources that start and stop at offsets. Save `e7-graph.png`. Pass when every render's RMS difference against Edge is -60 dBFS or lower.
+- [ ] Lane 4. Pan a source to 8 positions with `StereoPannerNode`, with `PannerNode` in `equalpower` under each distance model, and with `PannerNode` in `HRTF`, Howler's default. Save `e7-pan.png`. Pass when the stereo and equal-power renders are -60 dBFS or lower against Edge and each HRTF channel's level is within 1 dB of Edge's.
+- [ ] Lane 5. Play lane 3's graphs in real time and capture them with `--audio-out`. Block the game thread for 200 ms in the middle of a sound. Save `e7-realtime.png`. Pass when each capture matches the host's offline render at -60 dBFS or lower with no gap, `audio.csv` shows no underrun, and `baseLatency` plus `outputLatency` is 50 ms or lower.
+- [ ] Lane 6. Run a Howler 2.2.4 page that makes folio's calls: pools of 2, `rate`, `pos`, `volume`, `mute`, `Howler.mute`, `fade`, and loops, loaded through `XMLHttpRequest`. Inject a key to run Howler's unlock. Save `e7-howler.png`. Pass when Howler's events and `Howler.ctx.state` changes come in Edge's order, no `loaderror` fires, and each `play()` starts in the capture within 10 ms of the `currentTime` it was called at.
+- [ ] Lane 7. Run three.js's `AudioListener`, `PositionalAudio` on a moving mesh, `AudioLoader`, and `AudioAnalyser`. Save `e7-three.png`. Pass when the panner position follows the mesh every frame as in Edge and the analyser's peak bin for a 1 kHz tone matches Edge's.
+- [ ] Lane 8. Call `suspend`, `resume`, and `close` in the middle of a sound, then create a new context, as Howler's auto-suspend and unload do. Save `e7-lifecycle.png`. Pass when `state`, `onstatechange`, and promise order match Edge and the capture is silent while suspended.
+- [ ] Lane 9. On the operator's go, change the default output device in the middle of a sound with `AudioDeviceCmdlets`, between two outputs the operator names, then restore the default. Save `e7-device.png`. Pass when a loopback capture of the new device has the sound within 1 second and no game frame interval exceeds 50 ms.
+- [ ] Lane 10. Call `createMediaElementSource`, `createMediaStreamSource`, `createScriptProcessor`, `audioWorklet.addModule`, and `Audio.play`. Save `e7-unsupported.png`. Pass when each throws an error that names the method and sound already playing keeps playing.
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. Render time per 128-frame quantum, p99, and underruns, from `audio.csv`. Game-thread CPU time per frame added by audio, p50.
+- [ ] Probe. Run `examples/audio/stress.js`, 32 voices with HRTF panners and per-frame rate, volume, and position changes, for 5 minutes with its audio calls on and off, interleaved, three runs each.
+- [ ] Baseline. Trunk has no audio. Record that, then record the stress page's game-thread time with audio calls off first.
+- [ ] Rule. E7 fails on any underrun, when the p99 quantum render time exceeds half the quantum's length (1.33 ms at 48 kHz), or when audio adds more than 0.1 ms p50 to the game thread.
+
+**Review gate.** None. E7 is not review-gated.
+
+**Merge.**
+
+- [ ] Root's clean verdict at the exact head SHA.
+- [ ] Review-bot triage done.
+- [ ] Rebased onto E5's branch after the verdict, patch-id unchanged.
+- [ ] The root appends E7 to the stack and the operator lands it bottom-up.
+
 ## Boot folio-2025 natively (F1)
 
 **Depends on.** E4 and E6 merged in the engine repo. F1 branches from `main` in the port repo.
@@ -424,14 +492,14 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 - [ ] Create `sources/index.native.js`.
 - [ ] Create `vite.config.native.js`.
 - [ ] Edit `package.json` to pin the engine by SHA and add `build:native`.
-- [ ] Edit `sources/Game/Audio.js` to do nothing in the native build.
+- [ ] Edit `sources/Game/Audio.js` to do nothing in the native build. F5 removes this stub.
 - [ ] Edit `sources/Game/ResourcesLoader.js` to load uncompressed assets in the native build.
 
 **Build.**
 
 - [ ] Build a native bundle with Vite and load it with `host --entry dist-native/index.js`.
 - [ ] Leave the web build unchanged.
-- [ ] Turn off the server, audio, and the worker-based decoders in the native build.
+- [ ] Turn off the server, audio, and the worker-based decoders in the native build. F5 turns audio back on.
 - [ ] Keep vsync on so physics steps at the display rate, as in the browser.
 
 **You see.**
@@ -652,6 +720,68 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 - [ ] Rebased onto F3's branch after the verdict, patch-id unchanged.
 - [ ] The root appends F4 to the stack and the operator lands it bottom-up.
 
+## Play folio's music and sound natively (F5)
+
+**Depends on.** F4, and E7 merged in the engine repo. F5 stacks on F4's branch.
+
+**Files.**
+
+- [ ] Edit `sources/Game/Audio.js` to remove F1's native stub.
+- [ ] Edit `package.json` to pin an engine SHA that includes E7.
+- [ ] Edit `vite.config.native.js` to ship the MP3 files the code loads and leave out the WAV masters.
+- [ ] Edit `sources/Game/UiBridge.js` so the page's sound cues reach `game.audio`.
+- [ ] Create `tools/audio-trace/`.
+
+**Build.**
+
+- [ ] Run folio's `Audio.js` unchanged on Howler and the engine's Web Audio.
+- [ ] Load the 85 sound effects and the 3 CC0 songs of the playlist. The sound effects are dev-only, so they stay in this private repo and never ship.
+- [ ] Mute on window blur and unmute on focus through E5's focus events, as in the browser.
+- [ ] Play every sound cue the page sends.
+- [ ] Make `tools/audio-trace` log every Howler call per frame in Edge and natively. In Edge it also records the mix through an `AudioWorklet` tap on Howler's master gain.
+- [ ] Step time by a fixed 1/60 s in both builds for trace runs, on top of F2's frozen clock, so both runs make the same calls on the same frames.
+
+**You see.**
+
+- [ ] The native build plays the music and the car's engine, and the engine sound pitches with speed and pans with the camera, as in Edge.
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] `tests/native-audio.test.mjs` runs the native bundle for 600 frames with sound on and fails on any Howler `loaderror` or uncaught exception. Run `npm run test:native`.
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `opencode:opencode-go/deepseek-v4.1-flash max` at the PR head, run one after another per the boot recipe.
+
+- [ ] Lane 1. Regression lane against trunk. Run the scripted route in Edge at trunk and at head with sound on. Save `f5-web.png`. Pass when the web head's Howler trace matches the web trunk's.
+- [ ] Lane 2. Load every sound. Save `f5-load.png`. Pass when no `loaderror` fires and each decoded duration equals Edge's.
+- [ ] Lane 3. Drive the route. Save `f5-route.png`. Pass when the native Howler trace of sounds, plays, stops, rates, volumes, and positions matches Edge's within 1 percent at every frame and the engine sound is audible in the capture.
+- [ ] Lane 4. Play the playlist into its next song. Save `f5-music.png`. Pass when the next song starts as in Edge, with no gap longer than Edge's plus 50 ms.
+- [ ] Lane 5. Press L to mute and again to unmute, then mute and restart. Save `f5-mute.png`. Pass when the capture is silent while muted, the page root has `is-audio-muted`, and the mute survives the restart.
+- [ ] Lane 6. Lose window focus and regain it. Save `f5-focus.png`. Pass when the capture goes silent within 50 ms of the blur, the music pauses, and both come back after focus, as in Edge.
+- [ ] Lane 7. Hit explosive crates and ring the bell. Save `f5-hits.png`. Pass when each hit's sound starts in the capture within 30 ms of the frame of the hit.
+- [ ] Lane 8. Click menu items and open and close modals. Save `f5-cues.png`. Pass when each page sound cue plays once per action, as in Edge.
+- [ ] Lane 9. Circle the camera around a positional sound such as the fire. Save `f5-pan.png`. Pass when the capture's left-right balance follows the source's side and stays within 2 dB of Edge's at each checkpoint.
+- [ ] Lane 10. Drive the route for 10 minutes. Save `f5-soak.png`. Pass when `audio.csv` shows no underrun and memory grows less than 5 percent after every sound has loaded.
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. Frame time p95 along the scripted route with sound on, and underruns.
+- [ ] Probe. Run the route in Edge and natively at head with sound on, interleaved, three runs each.
+- [ ] Baseline. Record Edge's numbers with sound on first, then F4's native numbers.
+- [ ] Rule. F5 fails when the native frame time p95 exceeds Edge's p95 or any native run has an underrun.
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 3, 5, and 9 screenshots into `C:\3jsc\review\f5-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of the route with sound. Mux the `--record` frames and the `--audio-out` capture with `ffmpeg` on the `frames.csv` timestamps. Save it as `C:\3jsc\review\f5-review.mp4`.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] Root's clean verdict at the exact head SHA.
+- [ ] Review-bot triage done.
+- [ ] Rebased onto F4's branch after the verdict, patch-id unchanged.
+- [ ] The root appends F5 to the stack and the operator lands it bottom-up.
+
 ## Close the program
 
 - [ ] Every box above is checked with its evidence.
@@ -676,6 +806,7 @@ These questions stay unproven:
 
 - Whether an Azure NGads V620 VM can cover the AMD path that `spikes/xproc` never tested.
 - Which canvas 2D rasterizer matches Edge closely enough. E6 settles it with its first box.
+- Whether web-audio-api-rs matches Edge's Web Audio closely enough. E7 settles it with its second box.
 - Servo on AMD and Intel GPUs, on two-GPU laptops, and at other DPI scales.
 - Pointer forwarding into a Servo page. E2 lanes 5 and 6 settle it.
 - The GPU import path on Linux and macOS.
@@ -691,6 +822,8 @@ These questions stay unproven:
 - threepp and threers are ports of three.js, so existing games would not run on them unchanged.
 - A three.js fork would turn every monthly release into a merge. A pinned version with a patch keeps upgrades deliberate.
 - Vulkan on Windows is not used, because the Servo import path on Windows targets DX12.
+- Reimplementing folio's small `Audio.register` API on native audio would leave every other game silent. A Web Audio implementation runs Howler and three.js audio unchanged.
+- A Web Audio graph of our own on SDL3 audio would repeat what web-audio-api-rs already implements. E7 uses that library and its WASAPI output.
 
 ## Appendix C. Risks
 
@@ -703,21 +836,24 @@ These questions stay unproven:
 - Folio's physics steps by frame time with a 1/30 s cap. F1 keeps vsync on, which matches the browser on the same display. Uncapped native frame rates could change how the car drives.
 - three.js internals such as `RenderObject` and `Backend` change between releases. The pin holds them still. Every upgrade reruns the E3 and E4 parity sets.
 - Servo makes breaking changes in its monthly releases. E2 pins 0.7.0, and each upgrade is its own PR.
-- 85 folio sound effects and the Pally font ship without a license. They stay in the private port and never ship.
-- Audio is off in v1, so the native build is silent until audio lands.
+- 85 folio sound effects and the Pally font ship without a license. They stay in the private port and never ship. F5 plays the sound effects in dev builds only, and E7's examples use generated signals and CC0 clips.
+- F1 through F4 run with folio's audio stubbed out, so the native build is silent until F5 lands.
+- The engine's HRTF data can differ from Chromium's, so HRTF panning can't match Edge sample for sample. E7 lane 4 checks it by level instead.
+- Audio lanes make sound. They play to a virtual device so the operator's speakers stay quiet, and E7 lane 9 changes the default device only on the operator's go.
 
 ## Appendix D. Links and reading list
 
 - `spikes/README.md`, `spikes/xproc/README.md`, `spikes/xproc/results.md`, and `spikes/folio-2025-assessment.md` before any E or F PR.
 - E3 runs `C:\Users\mason\.agents\skills\how\SKILL.md` on the command-buffer format before it writes code, and `interrogate\SKILL.md` on the result before code-ready.
 - E2 runs `how` on the bridge protocol. F4 runs `interrogate` on the input routing rules.
+- E7 runs `how` on web-audio-api-rs's render thread and decoding before it writes code.
 - The decision trail follows `C:\Users\mason\.agents\skills\show-me-your-work\SKILL.md` and stays local in `C:\3jsc\trail\decisions.tsv`.
 
 ## Appendix E. Later work
 
 These items are out of v1 and get their own plan.
 
-- Audio through a Web Audio implementation for Howler.
+- `AudioWorklet`, media element and media stream sources, and HTML5 audio playback. E7 makes each throw an error that names it.
 - Linux and Steam Deck with the DMA-BUF import path. Modal runs the Linux builds and CPU lanes. GPU lanes run on the operator's Steam Deck and Bazzite laptop.
 - Native-retained rendering that promotes stable objects out of the per-frame JS path.
 - Steamworks for achievements and cloud saves.
