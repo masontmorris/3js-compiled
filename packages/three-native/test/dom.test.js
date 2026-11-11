@@ -190,3 +190,36 @@ test('keys reach the focused element with Edge codes, and printable keys add key
   assert.equal(keyCode('Numpad7'), 103);
   assert.equal(keyCode('Semicolon'), 186);
 });
+
+test('routing follows the Edge rows of the event table', () => {
+  const { window, document } = page();
+  const canvas = document.createElement('canvas');
+  document.body.append(canvas);
+  const router = new InputRouter(window, document);
+  const seen = [];
+  document.body.addEventListener('pointerenter', event => seen.push(`enter ${event.target.localName}`));
+  window.addEventListener('mousemove', event => seen.push(`mousemove ${event.clientX},${event.clientY}`));
+  window.addEventListener('pointermove', event => seen.push(`pointermove ${event.clientX},${event.clientY}`));
+  router.pointer({ type: 'pointermove', clientX: 300.5, clientY: 200.25, button: 0 });
+  assert.deepEqual(seen, ['enter body', 'pointermove 300.5,200.25', 'mousemove 300,200'], 'enter fires only where it is listened for, and mouse events get whole pixels');
+  seen.length = 0;
+  for (const type of ['mouseup', 'click', 'auxclick']) window.addEventListener(type, event => seen.push(`${type} ${event.button} ${event.detail}`));
+  router.pointer({ type: 'pointerdown', clientX: 10, clientY: 10, button: 0 });
+  router.pointer({ type: 'pointerdown', clientX: 10, clientY: 10, button: 2 });
+  router.pointer({ type: 'pointerup', clientX: 10, clientY: 10, button: 2 });
+  router.pointer({ type: 'pointerup', clientX: 10, clientY: 10, button: 0 });
+  assert.deepEqual(seen.filter(line => !line.includes('move')), ['mouseup 2 1', 'auxclick 2 1', 'mouseup 0 0'], 'a chord cancels the first button click');
+  const wheels = [];
+  window.addEventListener('wheel', event => wheels.push(`${event.cancelable} ${event.wheelDeltaY}`));
+  router.wheel({ deltaX: 0, deltaY: 250 });
+  canvas.addEventListener('wheel', event => event.preventDefault());
+  router.wheel({ deltaX: 0, deltaY: -100 });
+  assert.deepEqual(wheels, ['false -120', 'true 120'], 'window wheel listeners are passive by default');
+  const field = document.createElement('input');
+  document.body.append(field);
+  const presses = [];
+  window.addEventListener('keydown', () => field.focus());
+  window.addEventListener('keypress', event => presses.push(event.target.localName));
+  router.key({ type: 'keydown', code: 'KeyF', key: 'f' });
+  assert.deepEqual(presses, ['input'], 'keypress goes to the element the keydown focused');
+});
