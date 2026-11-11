@@ -412,7 +412,9 @@ class RecordingCanvasContext {
   }
 }
 
-// WebGPU's default limits, which a device has unless its request asks for more.
+// WebGPU's default limits, which a device has unless its request asks for more. Their names are exactly those of
+// Edge 157's adapter.limits on the RTX 3060 (C:\3jsc\swarm\e3-r14v\lane-t\out\edge-limit-names.txt), and the values
+// those of Edge's device for a request that asks for nothing.
 const defaultLimits = Object.freeze({
   maxTextureDimension1D: 8192, maxTextureDimension2D: 8192, maxTextureDimension3D: 2048, maxTextureArrayLayers: 256,
   maxBindGroups: 4, maxBindGroupsPlusVertexBuffers: 24, maxBindingsPerBindGroup: 1000,
@@ -424,7 +426,25 @@ const defaultLimits = Object.freeze({
   maxInterStageShaderVariables: 16, maxColorAttachments: 8, maxColorAttachmentBytesPerSample: 32,
   maxComputeWorkgroupStorageSize: 16384, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256,
   maxComputeWorkgroupSizeY: 256, maxComputeWorkgroupSizeZ: 64, maxComputeWorkgroupsPerDimension: 65535,
+  maxStorageBuffersInFragmentStage: 8, maxStorageBuffersInVertexStage: 8, maxStorageTexturesInFragmentStage: 4,
+  maxStorageTexturesInVertexStage: 4, maxImmediateSize: 64,
 });
+
+// wgpu has no per-stage storage limits, so the adapter's per-shader-stage limit bounds them, as WebGPU bounds a
+// device's. Their requests do not reach wgpu.
+const stageLimits = Object.freeze({
+  maxStorageBuffersInFragmentStage: 'maxStorageBuffersPerShaderStage', maxStorageBuffersInVertexStage: 'maxStorageBuffersPerShaderStage',
+  maxStorageTexturesInFragmentStage: 'maxStorageTexturesPerShaderStage', maxStorageTexturesInVertexStage: 'maxStorageTexturesPerShaderStage',
+});
+
+// WebIDL's [EnforceRange] unsigned long long, which requestDevice() converts each limit with.
+function enforceRange(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new TypeError(`Value of ${name} is not a finite number`);
+  const integer = Math.trunc(number);
+  if (integer < 0 || integer > Number.MAX_SAFE_INTEGER) throw new TypeError(`Value of ${name} is outside the 'unsigned long long' value range`);
+  return integer + 0;
+}
 
 // WebGPU's alignment limits, which are better when lower. Every other limit is better when higher.
 const alignments = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
@@ -435,13 +455,15 @@ const alignments = new Set(['minUniformBufferOffsetAlignment', 'minStorageBuffer
 // requestDevice(). Without `supported`, as in Node, no limit is checked against an adapter.
 function deviceLimits(requested, supported) {
   const limits = { ...defaultLimits };
+  if (supported) supported = { ...Object.fromEntries(Object.entries(stageLimits).map(([name, bound]) => [name, supported[bound]])), ...supported };
   const reject = message => {
     const error = new Error(message);
     error.name = 'OperationError';
     throw error;
   };
-  for (const [name, value] of Object.entries(requested)) {
+  for (let [name, value] of Object.entries(requested)) {
     if (value === undefined) continue;
+    value = enforceRange(value, name);
     if (!(name in defaultLimits)) reject(`The limit "${name}" with a non-undefined value is not recognized`);
     const alignment = alignments.has(name);
     if (alignment && !Number.isInteger(Math.log2(value))) reject(`Required limit (${value}) is not a power of two for ${name}`);
@@ -497,8 +519,11 @@ export class RecordingDevice {
     this.bundles = new FinalizationRegistry(handle => {
       if (!this.destroyed) this.commands.destroyResource(handle);
     });
-    const recorded = Object.keys(limits).filter(name => limits[name] !== undefined && name in granted);
-    this.commands.requestDevice({ features: [...this.features], limits: Object.fromEntries(recorded.map(name => [name, granted[name]])) });
+    // wgpu's device gets the limits the page asked for, those it has, and Edge's for the rest. Its immediate size
+    // defaults to 0, not Edge's 64, so it gets the size the page asked for.
+    const recorded = Object.keys(limits).filter(name => limits[name] !== undefined && name in granted && !(name in stageLimits));
+    const value = name => name === 'maxImmediateSize' ? enforceRange(limits[name], name) : granted[name];
+    this.commands.requestDevice({ features: [...this.features], limits: Object.fromEntries(recorded.map(name => [name, value(name)])) });
     this.lost = new Promise(resolve => { this.resolveLost = resolve; });
     this.queue = {
       writeBuffer: (buffer, offset, data, dataOffset = 0, size) => {
