@@ -518,7 +518,17 @@ mod tests {
                 "chain level {level} waited {gap} ms"
             );
         }
-        assert_eq!(result(&log, "10 ms interval early"), "false");
+        // A 10 ms interval keeps to its schedule, as in Edge: its fifth run comes 50 ms after its
+        // first, give or take the two runs' lateness of less than a 6 ms frame each. A gap can be
+        // shorter than 10 ms after a late run, as Edge's gaps of 8.6 to 11.4 ms show.
+        let gaps: f64 = result(&log, "10 ms interval gaps")
+            .split(' ')
+            .map(|gap| gap.parse::<f64>().unwrap())
+            .sum();
+        assert!(
+            (44.0..=56.0).contains(&gaps),
+            "five 10 ms gaps took {gaps} ms"
+        );
         assert_eq!(result(&log, "window error events"), "1");
         // WebIDL converts a delay to a long: Infinity, 2^31, -5 and NaN wait 0 ms, and 2^32 + 5
         // waits 5 ms, so all seven run.

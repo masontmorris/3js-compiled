@@ -137,11 +137,15 @@ function runTimers(frameDue) {
     const [id, timer] = due;
     if (!timer.repeat) timers.delete(id);
     nesting = timer.nesting;
+    const ran = performance.now();
     try { timer.handler(...timer.args); } catch (error) { report(error); }
-    // An interval that its callback did not clear runs again after its timeout, nested one level deeper.
+    // An interval that its callback did not clear runs again at the next point of its schedule after this run began,
+    // nested one level deeper, as Chrome does: its deadlines stay a timeout apart however late each run is, and a
+    // run so late that it misses whole periods skips them rather than running them back to back.
     if (timer.repeat && timers.get(id) === timer) {
       timer.timeout = Math.max(timer.nesting > 5 ? 4 : 0, timer.timeout);
-      Object.assign(timer, { deadline: performance.now() + timer.timeout, order: timerOrder++, nesting: timer.nesting + 1 });
+      const next = timer.timeout > 0 ? ran + timer.timeout - ((ran - timer.deadline) % timer.timeout) : performance.now();
+      Object.assign(timer, { deadline: next, order: timerOrder++, nesting: timer.nesting + 1 });
       arm(id, timer);
     }
     ops.op_run_microtasks();
