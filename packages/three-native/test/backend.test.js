@@ -859,6 +859,38 @@ test('a requested limit worse than its default gives the default, for maximums a
 });
 
 // Edge rejects requestDevice() with these OperationErrors (C:\3jsc\swarm\e3-r12\kit\out\edge\rules-limits-over-*).
+// Edge's errors, from the round-12 adversary's C:\3jsc\worktrees\interrogate-e3r13-opus\repro13\out\edge-limits-*.log.
+test('an unknown limit name and an alignment that is no power of two reject requestDevice, as in Edge', () => {
+  const supported = { maxTextureDimension2D: 16384, minUniformBufferOffsetAlignment: 256, maxBufferSize: 2 ** 31 };
+  for (const [limits, message] of [
+    [{ maxInterStageShaderComponents: 60 }, /maxInterStageShaderComponents.*not recognized/],
+    [{ minUniformBufferOffsetAlignment: 384 }, /Required limit \(384\) is not a power of two.*minUniformBufferOffsetAlignment/],
+    [{ minStorageBufferOffsetAlignment: 384 }, /Required limit \(384\) is not a power of two.*minStorageBufferOffsetAlignment/],
+  ]) {
+    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { name: 'OperationError', message });
+    assert.throws(() => new RecordingDevice({ limits }), { name: 'OperationError', message }, 'with no adapter too');
+  }
+  assert.doesNotThrow(() => new RecordingDevice({ limits: { maxInterStageShaderComponents: undefined } }), 'an undefined value is ignored');
+});
+
+// Edge's results, from the adversary's out\edge-mapped-invalid.log.
+test('a buffer mapped at creation throws for a size that is no multiple of 4, and its unmap is its own record', () => {
+  const device = new RecordingDevice();
+  device.takeFrame();
+  assert.throws(() => device.createBuffer({ size: 6, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true }), RangeError);
+  assert.deepEqual(decodeCommands(device.takeFrame()), [], 'a size Edge rejects at once records nothing');
+  const buffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.VERTEX, mappedAtCreation: true });
+  new Uint8Array(buffer.getMappedRange()).fill(7);
+  buffer.unmap();
+  const records = decodeCommands(device.takeFrame());
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.UNMAP_BUFFER]);
+  assert.deepEqual([...records[1].payload.slice(4)], Array(16).fill(7));
+  const huge = device.createBuffer({ size: device.limits.maxBufferSize + 4, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
+  huge.unmap();
+  const [, unmap] = decodeCommands(device.takeFrame());
+  assert.equal(unmap.payload.byteLength, 4, 'a buffer over maxBufferSize is invalid, so its unmap carries no data');
+});
+
 test('a requested limit better than the adapter has makes init() reject with an error that names the limit', async () => {
   const supported = { maxTextureDimension2D: 16384, maxBindGroups: 4, minUniformBufferOffsetAlignment: 256 };
   for (const [limits, message] of [
