@@ -8,7 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommandEncoder, decodeCommands, Opcode, streamFrame } from '../../../../packages/three-native/src/commands.js';
 
-const fixtures = [['basic-cube', 'basic-cube'], ['standard-shadow', 'standard-shadow'], ['invalid-wgsl', 'invalid-wgsl'], ['standard-shadow-off', 'standard-shadow', '--no-shadows']];
+// invalid-wgsl's pipeline validation is answered after frame 0, as the host answers it, so three stops drawing the
+// invalid material in frame 1 as it does in Edge and in the host.
+const fixtures = [['basic-cube', 'basic-cube'], ['standard-shadow', 'standard-shadow'],
+  ['invalid-wgsl', 'invalid-wgsl', '--fail-pipelines=invalid-wgsl-material'], ['standard-shadow-off', 'standard-shadow', '--no-shadows']];
 for (const [fixture, scene, ...flags] of fixtures) {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-scene-'));
   execFileSync(process.execPath, ['tools/scenes/record.mjs', scene, dir, '2', ...flags], { stdio: 'inherit' });

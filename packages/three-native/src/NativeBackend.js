@@ -19,6 +19,10 @@ class RecordingBuffer {
     device.commands.createBuffer(this.handle, descriptor.size, usage, descriptor.label ?? '');
   }
 
+  mapAsync() {
+    throw new Error('GPUBuffer.mapAsync is not implemented; the native device reads buffers back through three\'s getArrayBufferAsync()');
+  }
+
   getMappedRange(offset = 0, size = this.size - offset) {
     if (!this.mapped || offset !== 0 || size !== this.size) throw new Error('Only a whole mapped-at-creation buffer is supported');
     return this.mapped;
@@ -100,19 +104,50 @@ function origin(value = {}) {
     : { x: value.x ?? 0, y: value.y ?? 0, layer: value.z ?? 0 };
 }
 
-function drawCommands(device, commands, record) {
+// `uses` collects the handles of the objects the commands set.
+// The texture side of a copy, as a GPUTexelCopyTextureInfo names it.
+function copyTexture(device, info) {
+  const texture = info.texture;
+  if (!(texture instanceof RecordingTexture) || texture.device !== device || texture.destroyed) throw new Error('Invalid copy texture');
+  const aspect = { all: 0, 'depth-only': 1, 'stencil-only': 2 }[info.aspect ?? 'all'];
+  if (aspect === undefined) throw new TypeError('Invalid texture aspect');
+  return { handle: texture.handle, mip: info.mipLevel ?? 0, ...origin(info.origin), aspect };
+}
+
+function copyBuffer(device, buffer) {
+  if (!(buffer instanceof RecordingBuffer) || buffer.device !== device || buffer.destroyed) throw new Error('Invalid copy buffer');
+  return buffer.handle;
+}
+
+function notImplemented(method) {
+  return () => { throw new Error(`${method} is not implemented on the native device`); };
+}
+
+// Debug groups and markers, which a command encoder and a render pass both record.
+function debugCommands(commands, record) {
+  return {
+    pushDebugGroup: label => record(() => commands.debug(Opcode.PUSH_DEBUG_GROUP, String(label))),
+    popDebugGroup: () => record(() => commands.debug(Opcode.POP_DEBUG_GROUP)),
+    insertDebugMarker: label => record(() => commands.debug(Opcode.INSERT_DEBUG_MARKER, String(label))),
+  };
+}
+
+function drawCommands(device, commands, record, uses = new Set()) {
   const bufferHandle = buffer => {
     if (!(buffer instanceof RecordingBuffer) || !device.buffers.has(buffer) || buffer.destroyed) throw new Error('Invalid render buffer');
+    uses.add(buffer.handle);
     return buffer.handle;
   };
   return {
     setPipeline: pipeline => {
       if (!device.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
       record(() => commands.words(Opcode.SET_PIPELINE, [pipeline.handle]));
+      uses.add(pipeline.handle);
     },
     setBindGroup: (index, group, offsets = []) => {
       if (!device.bindGroups.has(group)) throw new Error('Invalid bind group');
       record(() => commands.words(Opcode.SET_BIND_GROUP, [index, group.handle, offsets.length, ...offsets]));
+      uses.add(group.handle);
     },
     setVertexBuffer: (slot, buffer, offset = 0, size = 0) => {
       record(() => commands.bufferRange(Opcode.SET_VERTEX_BUFFER, slot, bufferHandle(buffer), offset, size));
@@ -130,23 +165,28 @@ function drawCommands(device, commands, record) {
   };
 }
 
-// The executor has no bundles; a pass copies a bundle's commands when it executes the bundle.
+// A pass copies a bundle's commands when it executes the bundle. The executor keeps only whether the
+// bundle is valid, which it is when every object it sets is.
 class RecordingRenderBundleEncoder extends GPURenderBundleEncoder {
   constructor(device) {
     super();
     this.device = device;
     this.commands = new CommandEncoder();
+    this.uses = new Set();
     this.finished = false;
     Object.assign(this, drawCommands(device, this.commands, write => {
       if (this.finished) throw new Error('Render bundle is finished');
       write();
-    }));
+    }, this.uses));
   }
 
   finish() {
     if (this.finished) throw new Error('Render bundle is finished');
     this.finished = true;
-    return { device: this.device, commands: this.commands };
+    const bundle = { device: this.device, commands: this.commands, handle: this.device.handles.allocate() };
+    this.device.commands.words(Opcode.CREATE_RENDER_BUNDLE, [bundle.handle, this.uses.size, ...this.uses]);
+    this.device.bundles.register(bundle, bundle.handle);
+    return bundle;
   }
 }
 
@@ -157,6 +197,10 @@ class RecordingCommandEncoder {
     this.activePass = null;
     this.finished = false;
   }
+
+  beginComputePass = notImplemented('GPUCommandEncoder.beginComputePass');
+  resolveQuerySet = notImplemented('GPUCommandEncoder.resolveQuerySet');
+  writeTimestamp = notImplemented('GPUCommandEncoder.writeTimestamp');
 
   beginRenderPass(descriptor) {
     if (this.finished || this.activePass) throw new Error('Command encoder is not available');
@@ -207,15 +251,17 @@ class RecordingCommandEncoder {
     };
     const pass = {
       ...drawCommands(this.device, this.commands, record),
+      ...debugCommands(this.commands, record),
+      beginOcclusionQuery: notImplemented('GPURenderPassEncoder.beginOcclusionQuery'),
+      endOcclusionQuery: notImplemented('GPURenderPassEncoder.endOcclusionQuery'),
       setViewport: (x, y, width, height, minDepth, maxDepth) => record(() => this.commands.floats(Opcode.SET_VIEWPORT, [x, y, width, height, minDepth, maxDepth], 4)),
       setScissorRect: (x, y, width, height) => record(() => this.commands.words(Opcode.SET_SCISSOR, [x, y, width, height])),
       setBlendConstant: color => record(() => this.commands.floats(Opcode.SET_BLEND_CONSTANT, Array.isArray(color) ? color : [color.r, color.g, color.b, color.a], 8)),
       setStencilReference: reference => record(() => this.commands.words(Opcode.SET_STENCIL_REFERENCE, [reference])),
       executeBundles: bundles => record(() => {
-        for (const bundle of bundles) {
-          if (bundle?.device !== this.device) throw new Error('Invalid render bundle');
-          bundle.commands.copyTo(this.commands);
-        }
+        if (bundles.some(bundle => bundle?.device !== this.device)) throw new Error('Invalid render bundle');
+        this.commands.words(Opcode.EXECUTE_BUNDLES, [bundles.length, ...bundles.map(bundle => bundle.handle)]);
+        for (const bundle of bundles) bundle.commands.copyTo(this.commands);
       }),
       end: () => {
         if (this.activePass !== pass) throw new Error('Render pass has ended');
@@ -226,6 +272,46 @@ class RecordingCommandEncoder {
     this.activePass = pass;
     return pass;
   }
+
+  // Records an encoder command, which WebGPU allows only outside a pass of an unfinished encoder.
+  encode(write) {
+    if (this.finished || this.activePass) throw new Error('Command encoder is not available');
+    write();
+  }
+
+  copyBufferToBuffer(source, ...rest) {
+    const [sourceOffset, destination, destinationOffset, size] = rest[0] instanceof RecordingBuffer ? [0, rest[0], 0, rest[1]] : rest;
+    this.encode(() => this.commands.copyBufferToBuffer(copyBuffer(this.device, source), sourceOffset, copyBuffer(this.device, destination),
+      destinationOffset, size ?? source.size - sourceOffset));
+  }
+
+  clearBuffer(buffer, offset = 0, size = buffer.size - offset) {
+    this.encode(() => this.commands.clearBuffer(copyBuffer(this.device, buffer), offset, size));
+  }
+
+  copyBufferToTexture(source, destination, size) {
+    this.encode(() => this.commands.bufferTextureCopy(Opcode.COPY_BUFFER_TO_TEXTURE, {
+      handle: copyBuffer(this.device, source.buffer), offset: source.offset ?? 0,
+      bytesPerRow: source.bytesPerRow ?? 0, rowsPerImage: source.rowsPerImage ?? 0,
+    }, copyTexture(this.device, destination), extent(size)));
+  }
+
+  copyTextureToBuffer(source, destination, size) {
+    this.encode(() => this.commands.bufferTextureCopy(Opcode.COPY_TEXTURE_TO_BUFFER, {
+      handle: copyBuffer(this.device, destination.buffer), offset: destination.offset ?? 0,
+      bytesPerRow: destination.bytesPerRow ?? 0, rowsPerImage: destination.rowsPerImage ?? 0,
+    }, copyTexture(this.device, source), extent(size)));
+  }
+
+  copyTextureToTexture(source, destination, size) {
+    this.encode(() => this.commands.copyTextureToTexture(copyTexture(this.device, source), copyTexture(this.device, destination), extent(size)));
+  }
+
+  pushDebugGroup(label) { this.encode(() => this.commands.debug(Opcode.PUSH_DEBUG_GROUP, String(label))); }
+
+  popDebugGroup() { this.encode(() => this.commands.debug(Opcode.POP_DEBUG_GROUP)); }
+
+  insertDebugMarker(label) { this.encode(() => this.commands.debug(Opcode.INSERT_DEBUG_MARKER, String(label))); }
 
   finish() {
     if (this.finished || this.activePass) throw new Error('Command encoder is not complete');
@@ -279,7 +365,7 @@ class RecordingCanvasContext {
     // resizes of the canvas the device draws.
     if (configuration.device.context !== this) this.sizeSets = sizeSets.get(this.canvas);
     configuration.device.context = this;
-    configuration.device.commands.append(Opcode.CONFIGURE_SURFACE);
+    configuration.device.expireSurface(Opcode.CONFIGURE_SURFACE);
   }
 
   // The canvas size, and whether a script set it since the last call.
@@ -291,6 +377,7 @@ class RecordingCanvasContext {
   }
 
   unconfigure() {
+    this.configuration?.device.expireSurface(Opcode.UNCONFIGURE_SURFACE);
     this.configuration = null;
   }
 
@@ -307,6 +394,20 @@ class RecordingCanvasContext {
   }
 }
 
+// WebGPU's default limits, which a device has unless its request asks for more.
+const defaultLimits = Object.freeze({
+  maxTextureDimension1D: 8192, maxTextureDimension2D: 8192, maxTextureDimension3D: 2048, maxTextureArrayLayers: 256,
+  maxBindGroups: 4, maxBindGroupsPlusVertexBuffers: 24, maxBindingsPerBindGroup: 1000,
+  maxDynamicUniformBuffersPerPipelineLayout: 8, maxDynamicStorageBuffersPerPipelineLayout: 4,
+  maxSampledTexturesPerShaderStage: 16, maxSamplersPerShaderStage: 16, maxStorageBuffersPerShaderStage: 8,
+  maxStorageTexturesPerShaderStage: 4, maxUniformBuffersPerShaderStage: 12, maxUniformBufferBindingSize: 65536,
+  maxStorageBufferBindingSize: 134217728, minUniformBufferOffsetAlignment: 256, minStorageBufferOffsetAlignment: 256,
+  maxVertexBuffers: 8, maxBufferSize: 268435456, maxVertexAttributes: 16, maxVertexBufferArrayStride: 2048,
+  maxInterStageShaderVariables: 16, maxColorAttachments: 8, maxColorAttachmentBytesPerSample: 32,
+  maxComputeWorkgroupStorageSize: 16384, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256,
+  maxComputeWorkgroupSizeY: 256, maxComputeWorkgroupSizeZ: 64, maxComputeWorkgroupsPerDimension: 65535,
+});
+
 // The handle space, frame count and command stream that devices recording for one executor share.
 function stream() {
   return { handles: new Handles(), commands: new CommandEncoder(), frame: 0, canvasSize: null };
@@ -315,6 +416,8 @@ function stream() {
 // The host replays every NativeBackend in the realm with one executor, and it has one window surface.
 const host = { ...stream(), device: null };
 
+// A device has the features and limits its descriptor requires, and WebGPU's default limits otherwise, as
+// a browser's requestDevice() gives. The executor's device gets the same.
 export class RecordingDevice {
   constructor({ features = [], limits = {} } = {}, output = stream()) {
     this.output = output;
@@ -335,7 +438,11 @@ export class RecordingDevice {
     globalThis.addEventListener?.('gpu-response', this.onResponse);
     this.destroyed = false;
     this.features = new Set(features.filter(feature => feature !== 'subgroups'));
-    this.limits = limits;
+    this.limits = Object.freeze({ ...defaultLimits, ...limits });
+    this.bundles = new FinalizationRegistry(handle => {
+      if (!this.destroyed) this.commands.destroyResource(handle);
+    });
+    this.commands.requestDevice({ features: [...this.features], limits });
     this.lost = new Promise(resolve => { this.resolveLost = resolve; });
     this.queue = {
       writeBuffer: (buffer, offset, data, dataOffset = 0, size) => {
@@ -361,6 +468,12 @@ export class RecordingDevice {
           mip: destination.mipLevel ?? 0, ...origin(destination.origin), ...extent(size),
           bytesPerRow: layout.bytesPerRow ?? 0, rowsPerImage: layout.rowsPerImage ?? 0,
         }, bytes.subarray(offset));
+      },
+      copyExternalImageToTexture: notImplemented('GPUQueue.copyExternalImageToTexture'),
+      // Resolves once the executor has run this frame's earlier work, which a readback after it shows.
+      onSubmittedWorkDone: () => {
+        this.workDone ??= this.createBuffer({ size: 4, usage: GPUBufferUsage.COPY_SRC });
+        return this.readBuffer(this.workDone, 0, 4).then(() => undefined);
       },
       submit: commands => {
         if (new Set(commands).size !== commands.length || commands.some(command => command.device !== this || command.submitted)) throw new Error('Invalid command buffer');
@@ -397,6 +510,11 @@ export class RecordingDevice {
     return new RecordingRenderBundleEncoder(this);
   }
 
+  createQuerySet = notImplemented('GPUDevice.createQuerySet');
+  importExternalTexture = notImplemented('GPUDevice.importExternalTexture');
+  createComputePipeline = notImplemented('GPUDevice.createComputePipeline');
+  createComputePipelineAsync = notImplemented('GPUDevice.createComputePipelineAsync');
+
   pushErrorScope(filter) {
     if (filter !== 'validation') throw new Error('Unsupported error scope');
     this.errorScopes.push([]);
@@ -423,6 +541,8 @@ export class RecordingDevice {
         if (pending.shader) {
           const location = response.message?.match(/:(\d+):(\d+)/);
           pending.resolve({ messages: response.type === 'error' ? [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] : [] });
+          // A shader module that fails to compile also raises an uncaptured error, as in WebGPU.
+          if (response.type === 'error') this.onuncapturederror?.({ error: new Error(response.message) });
         } else if (pending.validation) pending.resolve(response.type === 'error' ? { message: response.message } : null);
         else if (response.type === 'readback') pending.resolve(response.bytes instanceof ArrayBuffer ? response.bytes : Uint8Array.from(response.bytes).buffer);
         else pending.reject(new Error(response.message));
@@ -607,6 +727,15 @@ export class RecordingDevice {
     return pipeline;
   }
 
+  // Validation errors reach the error scope around the call, as three's async path expects.
+  createRenderPipelineAsync(descriptor) {
+    try {
+      return Promise.resolve(this.createRenderPipeline(descriptor));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
   releaseRenderPipeline(pipeline) {
     if (!this.renderPipelines.delete(pipeline)) return;
     for (const layout of pipeline.autoLayouts.values()) this.releaseBindGroupLayout(layout);
@@ -635,6 +764,13 @@ export class RecordingDevice {
     this.surface?.destroy();
     this.surface = null;
     this.commands.words(Opcode.RESIZE_SURFACE, [width, height]);
+  }
+
+  // A configure or an unconfigure expires the canvas texture, so the next getCurrentTexture() returns a new one.
+  expireSurface(opcode) {
+    this.surface?.destroy();
+    this.surface = null;
+    this.commands.append(opcode);
   }
 
   surfaceTexture(width, height, { format, usage }) {
@@ -716,7 +852,8 @@ export class NativeBackend extends WebGPUBackend {
     // that error in place of this one.
     renderer._getFallback = null;
     assertSurfaceFree();
-    const device = new RecordingDevice(this.capabilities, host);
+    const { features, limits } = this.capabilities;
+    const device = new RecordingDevice({ features, limits: { ...this.parameters.requiredLimits, ...limits } }, host);
     host.device = this.recordingDevice = this.parameters.device = device;
     const dispose = renderer.dispose;
     renderer.dispose = function () {

@@ -4,7 +4,10 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { WebGPURenderer } from 'three/webgpu';
 import { NativeBackend, RecordingDevice } from '../src/NativeBackend.js';
-import { decodeCommands, Opcode, streamFrame } from '../src/commands.js';
+import { decodeCommands as decodeAll, Opcode, streamFrame } from '../src/commands.js';
+
+// Each device's first stream starts with its REQUEST_DEVICE, which the device-request tests check.
+const decodeCommands = bytes => decodeAll(bytes).filter(record => record.opcode !== Opcode.REQUEST_DEVICE);
 
 Object.assign(globalThis, { self: globalThis, requestAnimationFrame: () => 0, cancelAnimationFrame() {} });
 
@@ -752,4 +755,142 @@ test('a renderer replaced without awaiting its dispose hands the surface to the 
     delete globalThis.addEventListener;
     delete globalThis.removeEventListener;
   }
+});
+
+test('configure() expires the canvas texture, so the next getCurrentTexture() acquires a new one', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const { backend, renderer, render } = await boxRenderer(canvas, 0xff0000);
+  try {
+    render();
+    backend.takeFrame();
+    const { context } = backend;
+    const before = context.getCurrentTexture();
+    context.configure(context.getConfiguration());
+    const after = context.getCurrentTexture();
+    assert.notEqual(after, before);
+    assert.equal(before.destroyed, true);
+    const records = decodeCommands(backend.takeFrame());
+    assert.deepEqual(records.map(record => record.opcode), [Opcode.ACQUIRE_SURFACE, Opcode.CONFIGURE_SURFACE, Opcode.ACQUIRE_SURFACE]);
+    const handle = record => new DataView(record.payload.buffer).getUint32(0, true);
+    assert.deepEqual([handle(records[0]), handle(records[2])], [before.handle, after.handle]);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
+test('unconfigure() records UNCONFIGURE_SURFACE and leaves no canvas texture until the next configure', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const { backend, renderer, render } = await boxRenderer(canvas, 0xff0000);
+  try {
+    render();
+    backend.takeFrame();
+    const { context } = backend;
+    const configuration = context.getConfiguration();
+    const before = context.getCurrentTexture();
+    context.unconfigure();
+    assert.equal(before.destroyed, true);
+    assert.throws(() => context.getCurrentTexture(), /not configured/);
+    context.configure(configuration);
+    assert.notEqual(context.getCurrentTexture(), before);
+    assert.deepEqual(decodeCommands(backend.takeFrame()).map(record => record.opcode),
+      [Opcode.ACQUIRE_SURFACE, Opcode.UNCONFIGURE_SURFACE, Opcode.CONFIGURE_SURFACE, Opcode.ACQUIRE_SURFACE]);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
+test('a device has WebGPU default limits unless its request asks for more, and records its request', async () => {
+  const device = new RecordingDevice({ features: ['core-features-and-limits'], limits: { maxTextureDimension2D: 16384 } });
+  assert.equal(device.limits.maxTextureDimension2D, 16384);
+  assert.equal(device.limits.maxBufferSize, 268435456);
+  assert.equal(device.limits.maxBindGroups, 4);
+  const [request] = decodeAll(device.takeFrame());
+  assert.equal(request.opcode, Opcode.REQUEST_DEVICE);
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(request.payload)), { features: ['core-features-and-limits'], limits: { maxTextureDimension2D: 16384 } });
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas, requiredLimits: { maxTextureDimension2D: 9000 } }, { limits: { maxBindGroups: 5 } });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  try {
+    assert.equal(backend.device.limits.maxTextureDimension2D, 9000, 'three requests its requiredLimits');
+    assert.equal(backend.device.limits.maxBindGroups, 5);
+    assert.equal(backend.device.limits.maxTextureDimension1D, 8192);
+  } finally {
+    await renderer.dispose();
+  }
+});
+
+test('a render bundle records the objects it sets, and a pass records the bundles it executes', () => {
+  const device = new RecordingDevice();
+  const shader = device.createShaderModule({ code: '' });
+  const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: shader }, fragment: { module: shader, targets: [{ format: 'bgra8unorm' }] } });
+  const buffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.VERTEX });
+  const encoder = device.createRenderBundleEncoder({ colorFormats: ['bgra8unorm'] });
+  encoder.setPipeline(pipeline);
+  encoder.setVertexBuffer(0, buffer);
+  encoder.draw(3);
+  const bundle = encoder.finish();
+  const texture = device.createTexture({ size: [1, 1], format: 'bgra8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+  const commands = device.createCommandEncoder();
+  const pass = commands.beginRenderPass({ colorAttachments: [{ view: texture.createView(), loadOp: 'clear', storeOp: 'store' }] });
+  pass.executeBundles([bundle]);
+  pass.end();
+  device.queue.submit([commands.finish()]);
+  const records = decodeCommands(device.takeFrame());
+  const words = record => Array.from({ length: record.payload.length / 4 }, (_, index) => new DataView(record.payload.buffer).getUint32(index * 4, true));
+  const create = records.find(record => record.opcode === Opcode.CREATE_RENDER_BUNDLE);
+  assert.deepEqual(words(create), [bundle.handle, 2, pipeline.handle, buffer.handle]);
+  const executed = records.findIndex(record => record.opcode === Opcode.EXECUTE_BUNDLES);
+  assert.deepEqual(words(records[executed]), [1, bundle.handle]);
+  assert.deepEqual(records.slice(executed + 1, executed + 4).map(record => record.opcode), [Opcode.SET_PIPELINE, Opcode.SET_VERTEX_BUFFER, Opcode.DRAW]);
+});
+
+test('encoder copies, clears and debug markers record their fields, and unsupported calls name themselves', async () => {
+  const device = new RecordingDevice();
+  const buffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const other = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST });
+  const texture = device.createTexture({ size: [4, 4, 2], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
+  const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_DST });
+  const encoder = device.createCommandEncoder();
+  encoder.pushDebugGroup('copies');
+  encoder.copyBufferToBuffer(buffer, 4, other, 8, 16);
+  encoder.copyBufferToBuffer(buffer, other);
+  encoder.clearBuffer(other, 16);
+  encoder.copyBufferToTexture({ buffer, offset: 0, bytesPerRow: 256 }, { texture, origin: { z: 1 } }, [4, 4]);
+  encoder.copyTextureToBuffer({ texture, mipLevel: 0, origin: [1, 2, 1] }, { buffer, bytesPerRow: 256, rowsPerImage: 2 }, { width: 2, height: 2 });
+  encoder.copyTextureToTexture({ texture, origin: [0, 0, 1] }, { texture: target }, [4, 4]);
+  encoder.insertDebugMarker('done');
+  encoder.popDebugGroup();
+  const unsupported = [[encoder, 'beginComputePass'], [encoder, 'resolveQuerySet'], [encoder, 'writeTimestamp'],
+    [device.queue, 'copyExternalImageToTexture'], [device, 'createQuerySet'], [device, 'createComputePipeline'], [buffer, 'mapAsync']];
+  for (const [object, method] of unsupported) assert.throws(() => object[method](), new RegExp(method + ' is not implemented'));
+  device.queue.submit([encoder.finish()]);
+  const records = decodeCommands(device.takeFrame()).filter(record => record.opcode >= Opcode.COPY_BUFFER_TO_BUFFER);
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.PUSH_DEBUG_GROUP, Opcode.COPY_BUFFER_TO_BUFFER, Opcode.COPY_BUFFER_TO_BUFFER, Opcode.CLEAR_BUFFER,
+    Opcode.COPY_BUFFER_TO_TEXTURE, Opcode.COPY_TEXTURE_TO_BUFFER, Opcode.COPY_TEXTURE_TO_TEXTURE, Opcode.INSERT_DEBUG_MARKER, Opcode.POP_DEBUG_GROUP]);
+  const view = record => new DataView(record.payload.buffer);
+  assert.equal(new TextDecoder().decode(records[0].payload), 'copies');
+  const copy = view(records[1]);
+  assert.deepEqual([copy.getUint32(0, true), copy.getBigUint64(4, true), copy.getUint32(12, true), copy.getBigUint64(16, true), copy.getBigUint64(24, true)],
+    [buffer.handle, 4n, other.handle, 8n, 16n]);
+  assert.equal(view(records[2]).getBigUint64(24, true), 256n, 'the short form copies the whole source');
+  assert.deepEqual([view(records[3]).getBigUint64(4, true), view(records[3]).getBigUint64(12, true)], [16n, 240n]);
+  const words = (record, count) => Array.from({ length: count }, (_, index) => view(record).getUint32(index * 4, true));
+  assert.deepEqual(words(records[5], 12), [buffer.handle, 256, 2, texture.handle, 0, 1, 2, 1, 0, 2, 2, 1]);
+  assert.deepEqual(words(records[6], 15), [texture.handle, 0, 0, 0, 1, 0, target.handle, 0, 0, 0, 0, 0, 4, 4, 1]);
+  const done = device.queue.onSubmittedWorkDone();
+  const [read] = decodeCommands(device.takeFrame()).filter(record => record.opcode === Opcode.READ_BUFFER);
+  device.receiveResponses([{ type: 'readback', request: view(read).getUint32(0, true), bytes: [0, 0, 0, 0] }]);
+  assert.equal(await done, undefined, 'work done resolves when the readback after the work returns');
+});
+
+test('a shader module that fails to compile raises an uncaptured error as well as its compilation message', async () => {
+  const device = new RecordingDevice();
+  const errors = [];
+  device.onuncapturederror = event => errors.push(event.error.message);
+  const shader = device.createShaderModule({ code: 'broken' });
+  const [record] = decodeCommands(device.takeFrame());
+  device.receiveResponses([{ type: 'error', request: new DataView(record.payload.buffer).getUint32(12, true), message: 'shader : wgsl:1:1 invalid' }]);
+  assert.equal((await shader.getCompilationInfo()).messages.length, 1);
+  assert.deepEqual(errors, ['shader : wgsl:1:1 invalid']);
 });

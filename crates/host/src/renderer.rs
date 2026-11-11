@@ -24,10 +24,23 @@ pub struct Rendered {
     pub latency: Duration,
 }
 
+/// The window's raw handles, from which the render thread makes a surface for a new device.
+#[derive(Clone, Copy)]
+struct WindowHandles {
+    display: Option<wgpu::rwh::RawDisplayHandle>,
+    window: wgpu::rwh::RawWindowHandle,
+}
+// SAFETY: the SDL window outlives the render thread, and DXGI makes a swap chain for a window on any
+// thread, as the surface the main thread hands the render thread already does.
+unsafe impl Send for WindowHandles {}
+
 /// The window surface and its device. The main thread creates it from the window, and the render
 /// thread owns it.
 pub struct Target {
     surface: wgpu::Surface<'static>,
+    instance: wgpu::Instance,
+    handles: WindowHandles,
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -46,6 +59,8 @@ pub struct Renderer {
 /// The window's surface and what draws the canvas into it.
 struct Presenter {
     surface: wgpu::Surface<'static>,
+    instance: wgpu::Instance,
+    handles: WindowHandles,
     device: wgpu::Device,
     config: wgpu::SurfaceConfiguration,
     /// Draws `scaled` over the whole window.
@@ -60,6 +75,14 @@ struct Shown {
     acquire_wait: Duration,
     capture: Option<wgpu::Buffer>,
 }
+impl WindowHandles {
+    fn target(self) -> wgpu::SurfaceTargetUnsafe {
+        wgpu::SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: self.display,
+            raw_window_handle: self.window,
+        }
+    }
+}
 impl Target {
     pub async fn new(window: &Window, vsync: bool) -> Result<(Self, String)> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -70,8 +93,18 @@ impl Target {
             display: None,
         });
         // The SDL window outlives the renderer and its surface.
-        let target = unsafe { wgpu::SurfaceTargetUnsafe::from_display_and_window(window, window)? };
-        let surface = unsafe { instance.create_surface_unsafe(target)? };
+        let handles =
+            match unsafe { wgpu::SurfaceTargetUnsafe::from_display_and_window(window, window)? } {
+                wgpu::SurfaceTargetUnsafe::RawHandle {
+                    raw_display_handle,
+                    raw_window_handle,
+                } => WindowHandles {
+                    display: raw_display_handle,
+                    window: raw_window_handle,
+                },
+                _ => bail!("the window has no raw handle"),
+            };
+        let surface = unsafe { instance.create_surface_unsafe(handles.target())? };
         let mut adapters: Vec<_> = instance
             .enumerate_adapters(wgpu::Backends::DX12)
             .await
@@ -100,8 +133,9 @@ impl Target {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("threejsc"),
+                // WebGPU's defaults, as a browser's device has until the game asks for more.
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                required_limits: wgpu::Limits::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::Performance,
                 trace: wgpu::Trace::Off,
@@ -139,30 +173,43 @@ impl Target {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
+        let description = format!(
+            "adapter: {} ({:?}, {:?}), maxTextureDimension2D {}",
+            info.name,
+            info.backend,
+            info.device_type,
+            adapter.limits().max_texture_dimension_2d
+        );
         Ok((
             Self {
                 surface,
+                instance,
+                handles,
+                adapter,
                 device,
                 queue,
                 config,
             },
-            format!(
-                "adapter: {} ({:?}, {:?})",
-                info.name, info.backend, info.device_type
-            ),
+            description,
         ))
     }
 }
 impl Renderer {
     pub fn new(target: Target) -> Self {
         Self {
-            executor: threejsc_gpu::Executor::new(target.device.clone(), target.queue.clone()),
+            executor: threejsc_gpu::Executor::with_adapter(
+                target.adapter,
+                target.device.clone(),
+                target.queue.clone(),
+            ),
             game: game_texture(&target.device, &target.config),
             drawn: false,
             window: Presenter {
                 stretch: stretch_pipeline(&target.device, target.config.format),
                 scaled: None,
                 surface: target.surface,
+                instance: target.instance,
+                handles: target.handles,
                 device: target.device,
                 config: target.config,
             },
@@ -192,6 +239,10 @@ impl Renderer {
             self.executor
                 .replay_then(&commands, Some(&mut self.game), Some(&mut trailer))
         });
+        if self.executor.took_device() {
+            self.window.adopt(self.executor.device())?;
+            self.queue = self.executor.queue().clone();
+        }
         self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
         let acquired_in_replay = acquired.is_some();
         let mut shown = match acquired {
@@ -226,6 +277,17 @@ impl Renderer {
     }
 }
 impl Presenter {
+    /// Draws the window with `device` from now on, which the game's `requestDevice()` replaced.
+    /// wgpu resizes a configured swap chain in place, and the old one belongs to the old device's
+    /// queue, so the new device gets a new surface.
+    fn adopt(&mut self, device: &wgpu::Device) -> Result<()> {
+        self.surface = unsafe { self.instance.create_surface_unsafe(self.handles.target())? };
+        self.device = device.clone();
+        self.stretch = stretch_pipeline(device, self.config.format);
+        self.scaled = None;
+        self.surface.configure(device, &self.config);
+        Ok(())
+    }
     fn resize(&mut self, (width, height): (u32, u32)) {
         if width != self.config.width || height != self.config.height {
             self.config.width = width;

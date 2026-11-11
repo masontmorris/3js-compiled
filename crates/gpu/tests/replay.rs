@@ -180,15 +180,24 @@ fn errors_name_their_frame_and_resource_label() {
             "invalid buffer write".to_string(),
         )
     };
-    assert_eq!(errors.len(), 4, "{errors:?}");
+    assert_eq!(errors.len(), 5, "{errors:?}");
     assert_eq!(errors[0], write(1));
-    assert_eq!(errors[3], write(3));
+    assert_eq!(errors[4], write(3));
     assert_eq!(
         (errors[1].0, errors[1].2.as_deref()),
         (2, Some("shadow-map"))
     );
-    assert_eq!(errors[2].0, 2);
-    assert!(errors[2].3.contains("'particles'"), "{}", errors[2].3);
+    // As in Edge, the invalid command buffer raises a second error when it is submitted.
+    assert_eq!(
+        (errors[2].0, errors[2].2.as_deref(), errors[2].3.as_str()),
+        (
+            2,
+            Some("shadow-map"),
+            "the command buffer is invalid due to a previous error"
+        )
+    );
+    assert_eq!(errors[3].0, 2);
+    assert!(errors[3].3.contains("'particles'"), "{}", errors[3].3);
 }
 
 #[test]
@@ -270,7 +279,7 @@ fn pipeline_layout_keeps_its_bind_group_layout_and_handle() {
         executor
             .replay(include_bytes!("fixtures/pipeline-layouts.bin"), None)
             .unwrap(),
-        vec![error(3, None, "invalid or duplicate buffer handle")]
+        vec![error(4, None, "invalid or duplicate buffer handle")]
     );
 }
 
@@ -469,7 +478,7 @@ fn a_stream_cannot_destroy_the_host_surface() {
             .unwrap(),
         vec![
             error(
-                1,
+                2,
                 None,
                 "the surface texture belongs to the host and cannot be destroyed"
             ),
@@ -947,13 +956,13 @@ struct Parity {
 
 /// Replays two recorded frames onto a 1280x720 surface and returns the mean RGB difference from
 /// the Edge capture over the frame and over `region` (inclusive pixel bounds), as fractions of
-/// full scale. Every error must name `expected_error`.
+/// full scale. Every error must contain one of `expected_errors`.
 fn parity(
     scene: &str,
     frames: [&[u8]; 2],
     edge: &[u8],
     region: [u32; 4],
-    expected_error: Option<&str>,
+    expected_errors: &[&str],
 ) -> Parity {
     let gpu = device();
     let (device, queue) = &*gpu;
@@ -964,9 +973,9 @@ fn parity(
     let unexpected: Vec<_> = responses
         .iter()
         .filter(|response| match response {
-            Response::Error { message, .. } => {
-                expected_error.is_none_or(|expected| !message.contains(expected))
-            }
+            Response::Error { message, .. } => !expected_errors
+                .iter()
+                .any(|expected| message.contains(expected)),
             _ => false,
         })
         .collect();
@@ -1016,7 +1025,7 @@ fn standard_shadow(frames: [&[u8]; 2]) -> Parity {
         frames,
         include_bytes!("fixtures/standard-shadow-edge.png"),
         SHADOW,
-        None,
+        &[],
     )
 }
 
@@ -1031,7 +1040,7 @@ fn recorded_three_scenes_match_edge_captures() {
         ],
         include_bytes!("fixtures/basic-cube-edge.png"),
         FULL_FRAME,
-        None,
+        &[],
     );
     assert!(basic.mean < BASIC_CUBE_BOUND, "basic-cube: {}", basic.mean);
     let shadow = standard_shadow([
@@ -1056,7 +1065,13 @@ fn recorded_three_scenes_match_edge_captures() {
         ],
         include_bytes!("fixtures/invalid-wgsl-edge.png"),
         FULL_FRAME,
-        Some("invalid-wgsl-material"),
+        // As in Edge, frame 0 draws the invalid pipeline before its error scope reports, which
+        // makes that frame's pass and command buffer invalid.
+        &[
+            "invalid-wgsl-material",
+            "the render pipeline is invalid due to a previous error",
+            "the command buffer is invalid due to a previous error",
+        ],
     );
     assert!(
         invalid.mean < INVALID_WGSL_BOUND,
@@ -1335,4 +1350,360 @@ fn mutated_streams_return_errors_and_never_panic() {
         let mutated = stream(&mutate(&mut rng, &records(target)));
         executor.replay(&mutated, Some(&mut surface)).unwrap();
     }
+}
+
+/// Edge's errors for one invalid object of each type, from C:\3jsc\swarm\e3-r11\kit\apps\objects.js:
+/// those its creates raise, and those each frame that uses it raises. A pass that uses an invalid
+/// object raises one error as its encoder finishes and one at submit, and draws nothing.
+const EDGE_OBJECT_ERRORS: [(&str, usize, usize); 10] = [
+    ("valid", 0, 0),
+    ("buffer", 2, 3),
+    ("sampler", 2, 2),
+    ("layout", 4, 2),
+    ("group", 3, 2),
+    ("pipeline-layout", 2, 2),
+    ("pipeline", 2, 2),
+    ("bundle", 3, 2),
+    ("empty", 0, 0),
+    ("copy", 3, 2),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn invalid_objects_of_every_type_raise_edges_errors_and_release_silently() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    for (mode, creates, uses) in EDGE_OBJECT_ERRORS {
+        let fixture = |index: usize| {
+            let path = format!(
+                "{}/tests/fixtures/objects-{mode}-{index}.bin",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            std::fs::read(path).unwrap()
+        };
+        let mut surface = surface_texture(device, 4, 4);
+        let mut executor = Executor::new(device.clone(), queue.clone());
+        for (index, (errors, color)) in [
+            (
+                creates + uses,
+                if uses == 0 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 255, 255, 255]
+                },
+            ),
+            (
+                uses,
+                if uses == 0 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 255, 255, 255]
+                },
+            ),
+            (0, [255, 0, 0, 255]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let responses = executor
+                .replay(&fixture(index), Some(&mut surface))
+                .unwrap();
+            let raised: Vec<_> = responses
+                .iter()
+                .filter_map(|response| match response {
+                    Response::Error { message, .. } => Some(message.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                raised.iter().all(|message| !message.starts_with("unknown")),
+                "{mode} frame {index}: {raised:?}"
+            );
+            assert_eq!(raised.len(), errors, "{mode} frame {index}: {raised:?}");
+            let pixels = responses.iter().find_map(|response| match response {
+                Response::Readback { bytes, .. } => Some(bytes.clone()),
+                _ => None,
+            });
+            assert_eq!(
+                pixels,
+                Some(color.repeat(16)),
+                "{mode} frame {index}: a pass with an invalid object draws nothing, as in Edge"
+            );
+        }
+    }
+}
+
+/// A frame that acquires canvas texture `handle` at `size` and clears it to `rgb`, as one render
+/// pass of three's does.
+fn clear_canvas(
+    handle: u32,
+    (width, height): (u32, u32),
+    [r, g, b]: [f64; 3],
+) -> Vec<(u16, Vec<u8>)> {
+    let mut payload = words(&[1, 1, handle + 1, 0, 1, 1]);
+    for component in [r, g, b, 1.0] {
+        payload.extend_from_slice(&component.to_bits().to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 32]);
+    vec![
+        (30, words(&[handle, width, height])),
+        (7, words(&[handle + 1, handle, 0, 0, 0, 0, 0, 0, 0])),
+        (14, payload),
+        (25, vec![]),
+        (26, vec![]),
+    ]
+}
+
+/// A frame that acquires canvas texture `handle` and draws nothing over what it holds.
+fn load_canvas(handle: u32) -> Vec<(u16, Vec<u8>)> {
+    let mut frame = clear_canvas(handle, (4, 4), [0.0; 3]);
+    let pass = &mut frame[2].1;
+    pass[16..20].copy_from_slice(&0u32.to_le_bytes());
+    frame
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn configure_and_unconfigure_leave_the_canvas_transparent_as_in_edge() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let (configure, unconfigure) = ((33, vec![]), (34, vec![]));
+    let transparent = |surface: &wgpu::Texture| {
+        read_surface(device, queue, surface)
+            .iter()
+            .all(|byte| *byte == 0)
+    };
+    let mut surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let replay =
+        |executor: &mut Executor, surface: &mut wgpu::Texture, records: &[(u16, Vec<u8>)]| {
+            assert_eq!(
+                executor.replay(&stream(records), Some(surface)).unwrap(),
+                vec![]
+            );
+        };
+    replay(
+        &mut executor,
+        &mut surface,
+        &clear_canvas(1, (4, 4), [1.0, 0.0, 0.0]),
+    );
+    let mut drawn = clear_canvas(3, (4, 4), [1.0, 1.0, 0.0]);
+    drawn.push(configure.clone());
+    replay(&mut executor, &mut surface, &drawn);
+    assert!(
+        transparent(&surface),
+        "a configure after a draw discards the frame, as in Edge's configure-after-draw"
+    );
+    replay(&mut executor, &mut surface, &[]);
+    assert!(
+        transparent(&surface),
+        "the canvas stays transparent while nothing draws"
+    );
+    let mut redrawn = clear_canvas(5, (4, 4), [1.0, 1.0, 0.0]);
+    redrawn.push(configure.clone());
+    redrawn.extend(load_canvas(7));
+    replay(&mut executor, &mut surface, &redrawn);
+    assert_eq!(
+        read_surface(device, queue, &surface),
+        [0, 255, 255, 255].repeat(16),
+        "an acquire after a configure in the frame keeps what the frame drew, as in Edge's configure-redraw"
+    );
+    replay(
+        &mut executor,
+        &mut surface,
+        std::slice::from_ref(&configure),
+    );
+    assert!(
+        transparent(&surface),
+        "a configure alone leaves the canvas transparent, as in Edge's configure-idle"
+    );
+    replay(
+        &mut executor,
+        &mut surface,
+        &clear_canvas(9, (4, 4), [0.0, 0.0, 1.0]),
+    );
+    let mut unconfigured = clear_canvas(11, (4, 4), [1.0, 1.0, 0.0]);
+    unconfigured.push(unconfigure.clone());
+    replay(&mut executor, &mut surface, &unconfigured);
+    assert!(
+        transparent(&surface),
+        "an unconfigure after a draw leaves the canvas transparent"
+    );
+    replay(
+        &mut executor,
+        &mut surface,
+        &clear_canvas(13, (4, 4), [0.0, 0.0, 1.0]),
+    );
+    replay(&mut executor, &mut surface, &[unconfigure]);
+    assert!(
+        transparent(&surface),
+        "an unconfigure alone leaves the canvas transparent"
+    );
+    let mut reconfigured = vec![configure];
+    reconfigured.extend(clear_canvas(15, (4, 4), [0.0, 0.0, 1.0]));
+    replay(&mut executor, &mut surface, &reconfigured);
+    assert_eq!(
+        read_surface(device, queue, &surface),
+        [255, 0, 0, 255].repeat(16),
+        "a configure after an unconfigure draws again"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_acquire_past_the_texture_limit_leaves_an_invalid_texture_and_a_transparent_canvas() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let mut surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    assert_eq!(
+        executor
+            .replay(
+                &stream(&clear_canvas(1, (4, 4), [1.0, 0.0, 0.0])),
+                Some(&mut surface)
+            )
+            .unwrap(),
+        vec![]
+    );
+    // 9000 is over WebGPU's default maxTextureDimension2D, which the device has.
+    for frame in 0..2 {
+        let handle = 3 + 2 * frame;
+        let responses = executor
+            .replay(
+                &stream(&clear_canvas(handle, (9000, 4), [0.0, 1.0, 0.0])),
+                Some(&mut surface),
+            )
+            .unwrap();
+        let messages: Vec<_> = responses
+            .iter()
+            .map(|response| match response {
+                Response::Error {
+                    command, message, ..
+                } => (*command, message.as_str()),
+                response => panic!("expected an error, got {response:?}"),
+            })
+            .collect();
+        assert_eq!(messages.len(), 5, "frame {frame}: {messages:?}");
+        assert_eq!(
+            messages[1],
+            (0, "could not create a canvas texture of size 9000x4")
+        );
+        assert_eq!(
+            messages[2],
+            (1, "the texture is invalid due to a previous error")
+        );
+        assert_eq!(
+            messages[3],
+            (
+                3,
+                "a render pass attachment is invalid due to a previous error"
+            )
+        );
+        assert_eq!(
+            messages[4],
+            (4, "the command buffer is invalid due to a previous error")
+        );
+        assert!(
+            read_surface(device, queue, &surface)
+                .iter()
+                .all(|byte| *byte == 0),
+            "frame {frame}: Edge shows a transparent canvas"
+        );
+    }
+    // Edge's first acquire after a configure raises the size error twice.
+    let mut configured = vec![(33, vec![])];
+    configured.extend(clear_canvas(7, (9000, 4), [0.0, 1.0, 0.0]));
+    let responses = executor
+        .replay(&stream(&configured), Some(&mut surface))
+        .unwrap();
+    assert_eq!(responses.len(), 6, "{responses:?}");
+    assert_eq!(responses[0], responses[1], "{responses:?}");
+    assert_eq!(
+        executor
+            .replay(
+                &stream(&clear_canvas(9, (4, 4), [0.0, 0.0, 1.0])),
+                Some(&mut surface)
+            )
+            .unwrap(),
+        vec![]
+    );
+    assert_eq!(
+        read_surface(device, queue, &surface),
+        [255, 0, 0, 255].repeat(16)
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_device_request_for_other_limits_needs_an_adapter_and_one_for_the_defaults_keeps_the_device() {
+    let mut executor = executor();
+    let request = |json: &str| (35, json.as_bytes().to_vec());
+    assert_eq!(
+        executor
+            .replay(&stream(&[request(r#"{"features":["core-features-and-limits"],"limits":{"maxUniformBufferBindingSize":65536}}"#)]), None)
+            .unwrap(),
+        vec![],
+        "a request for WebGPU's defaults keeps the device"
+    );
+    assert_eq!(
+        executor
+            .replay(
+                &stream(&[request(
+                    r#"{"features":[],"limits":{"maxTextureDimension2D":16384}}"#
+                )]),
+                None
+            )
+            .unwrap(),
+        vec![error(
+            0,
+            None,
+            "this device cannot change its limits or features"
+        )]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_device_request_for_more_than_the_defaults_takes_a_device_with_those_limits() {
+    let Exclusive {
+        value: (device, queue),
+        _turn,
+    } = device();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
+        flags: wgpu::InstanceFlags::default(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::default(),
+        display: None,
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .unwrap();
+    let mut surface = surface_texture(&device, 4, 4);
+    let mut executor = Executor::with_adapter(adapter, device.clone(), queue.clone());
+    let mut frame = vec![(
+        35,
+        br#"{"features":[],"limits":{"maxTextureDimension2D":9000}}"#.to_vec(),
+    )];
+    frame.extend(clear_canvas(1, (9000, 4), [0.0, 0.0, 1.0]));
+    frame.push((28, words(&[7, 1, 0, 8990, 0, 0, 4, 4])));
+    let responses = executor
+        .replay(&stream(&frame), Some(&mut surface))
+        .unwrap();
+    assert_eq!(
+        responses,
+        vec![Response::Readback {
+            request: 7,
+            bytes: [255, 0, 0, 255].repeat(16)
+        }]
+    );
+    assert_eq!(executor.device().limits().max_texture_dimension_2d, 9000);
+    assert!(executor.took_device(), "the request took a new device");
+    assert_eq!(
+        (surface.width(), surface.height()),
+        (9000, 4),
+        "the canvas moved to the new device"
+    );
 }

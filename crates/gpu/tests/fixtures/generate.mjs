@@ -246,3 +246,93 @@ formats.readTexture(12, 3, { mip: 0, x: 0, y: 0, layer: 0, width: 2, height: 2 }
 formats.createTexture(5, { width: 1, height: 1, layers: 1, mips: 1, samples: 1, usage: 17, format: 'depth24plus' });
 formats.readTexture(13, 5, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
 writeFileSync(new URL('./readback-formats.bin', import.meta.url), formats.finish());
+
+// One invalid object of each type, made as C:\3jsc\swarm\e3-r11\kit\apps\objects.js makes it for Edge. Frame 0
+// creates a valid set and the mode's set, and frames 0 and 1 clear the canvas yellow and then, in another submit as
+// three's render and the page's pass are, draw blue with the mode's set. Frame 2 releases the mode's set and draws with the valid one. Each frame reads the canvas back.
+// `empty` draws nothing from a zero-size vertex buffer before its draw, and `copy` copies an invalid texture.
+const objectsCode = `
+struct U { color: vec4f }
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var t: texture_2d<f32>;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  let p = array(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+  return vec4f(p[i], 0, 1);
+}
+@fragment fn fs() -> @location(0) vec4f { return u.color + 0 * textureSample(t, s, vec2f(0.5)); }`;
+const objectsEntries = [
+  { binding: 0, visibility: 2, buffer: {} },
+  { binding: 1, visibility: 2, sampler: {} },
+  { binding: 2, visibility: 2, texture: {} },
+];
+function objectSet(device, bad) {
+  const set = {};
+  set.buffer = device.createBuffer({ label: `${bad}-buffer`, size: bad === 'buffer' ? 512 * 1024 * 1024 : 16, usage: 72 });
+  set.sampler = device.createSampler({ lodMinClamp: bad === 'sampler' ? -1 : 0 });
+  set.texture = device.createTexture({ label: `${bad}-texture`, size: [4, 4], mipLevelCount: bad === 'group' || bad === 'copy' ? 4 : 1, format: 'rgba8unorm', usage: 5 });
+  set.layout = device.createBindGroupLayout({ entries: bad === 'layout' ? [...objectsEntries, { ...objectsEntries[0] }] : objectsEntries });
+  set.group = device.createBindGroup({ layout: set.layout, entries: [
+    { binding: 0, resource: { buffer: set.buffer } },
+    { binding: 1, resource: set.sampler },
+    { binding: 2, resource: set.texture.createView() },
+  ] });
+  set.pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: bad === 'pipeline-layout' ? Array(5).fill(set.layout) : [set.layout] });
+  set.module = device.createShaderModule({ label: `${bad}-shader`, code: bad === 'pipeline' || bad === 'bundle' ? objectsCode.replace('return u.color', 'return u.colour') : objectsCode });
+  set.pipeline = device.createRenderPipeline({ label: `${bad}-pipeline`, layout: set.pipelineLayout,
+    vertex: { module: set.module, entryPoint: 'vs' }, fragment: { module: set.module, entryPoint: 'fs', targets: [{ format: 'bgra8unorm' }] } });
+  if (bad === 'bundle') {
+    const encoder = device.createRenderBundleEncoder({ colorFormats: ['bgra8unorm'] });
+    encoder.setPipeline(set.pipeline);
+    encoder.setBindGroup(0, set.group);
+    encoder.draw(3);
+    set.bundle = encoder.finish();
+  }
+  if (bad === 'empty') set.empty = device.createBuffer({ size: 0, usage: 40 });
+  if (bad === 'copy') set.target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 2 });
+  return set;
+}
+function objectsFrame(device, set, bad) {
+  device.queue.writeBuffer(set.buffer, 0, new Float32Array([0, 0, 1, 1]));
+  const view = device.surfaceTexture(4, 4, { format: 'bgra8unorm', usage: 17 }).createView();
+  const clearing = device.createCommandEncoder();
+  clearing.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: [1, 1, 0, 1] }] }).end();
+  device.queue.submit([clearing.finish()]);
+  const encoder = device.createCommandEncoder();
+  if (bad === 'copy') {
+    encoder.copyTextureToTexture({ texture: set.texture }, { texture: set.target }, [4, 4]);
+  }
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }] });
+  if (set.bundle) pass.executeBundles([set.bundle]);
+  else {
+    pass.setPipeline(set.pipeline);
+    pass.setBindGroup(0, set.group);
+    if (set.empty) {
+      pass.setVertexBuffer(0, set.empty);
+      pass.draw(0);
+    }
+    pass.draw(3);
+  }
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+  device.commands.readTexture(100, device.surface.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 4, height: 4 });
+  return device.takeFrame();
+}
+for (const bad of ['valid', 'buffer', 'sampler', 'layout', 'group', 'pipeline-layout', 'pipeline', 'bundle', 'empty', 'copy']) {
+  const device = new RecordingDevice();
+  const valid = objectSet(device, 'valid');
+  const set = objectSet(device, bad);
+  const frames = [objectsFrame(device, set, bad), objectsFrame(device, set, bad)];
+  set.buffer.destroy();
+  set.empty?.destroy();
+  set.target?.destroy();
+  set.texture.destroy();
+  device.releaseBindGroup(set.group);
+  device.releaseSampler(set.sampler);
+  device.releaseRenderPipeline(set.pipeline);
+  device.releasePipelineLayout(set.pipelineLayout);
+  device.releaseBindGroupLayout(set.layout);
+  device.releaseShader(set.module);
+  frames.push(objectsFrame(device, valid, 'valid'));
+  frames.forEach((frame, index) => writeFileSync(new URL(`./objects-${bad}-${index}.bin`, import.meta.url), frame));
+}

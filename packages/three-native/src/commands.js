@@ -32,11 +32,23 @@ export const Opcode = Object.freeze({
   GET_BIND_GROUP_LAYOUT: 31,
   RESIZE_SURFACE: 32,
   CONFIGURE_SURFACE: 33,
+  UNCONFIGURE_SURFACE: 34,
+  REQUEST_DEVICE: 35,
+  CREATE_RENDER_BUNDLE: 36,
+  EXECUTE_BUNDLES: 37,
+  COPY_BUFFER_TO_BUFFER: 38,
+  CLEAR_BUFFER: 39,
+  COPY_BUFFER_TO_TEXTURE: 40,
+  COPY_TEXTURE_TO_BUFFER: 41,
+  COPY_TEXTURE_TO_TEXTURE: 42,
+  PUSH_DEBUG_GROUP: 43,
+  POP_DEBUG_GROUP: 44,
+  INSERT_DEBUG_MARKER: 45,
 });
 
 const MAGIC = 0x43534a33;
 // threejsc_gpu::VERSION. docs/native-gpu-commands.md says when it changes.
-const VERSION = 6;
+const VERSION = 7;
 const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
@@ -170,6 +182,50 @@ export class CommandEncoder {
     view.setUint32(4, u32(layouts.length, 'layout count'), true);
     layouts.forEach((layout, index) => view.setUint32(8 + index * 4, u32(layout, 'layout handle', true), true));
     this.append(Opcode.CREATE_PIPELINE_LAYOUT, payload);
+  }
+
+  copyBufferToBuffer(source, sourceOffset, destination, destinationOffset, size) {
+    const payload = new Uint8Array(32);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(source, 'buffer handle', true), true);
+    view.setBigUint64(4, u64(sourceOffset, 'buffer offset'), true);
+    view.setUint32(12, u32(destination, 'buffer handle', true), true);
+    view.setBigUint64(16, u64(destinationOffset, 'buffer offset'), true);
+    view.setBigUint64(24, u64(size, 'copy size'), true);
+    this.append(Opcode.COPY_BUFFER_TO_BUFFER, payload);
+  }
+
+  clearBuffer(handle, offset, size) {
+    const payload = new Uint8Array(20);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'buffer handle', true), true);
+    view.setBigUint64(4, u64(offset, 'buffer offset'), true);
+    view.setBigUint64(12, u64(size, 'clear size'), true);
+    this.append(Opcode.CLEAR_BUFFER, payload);
+  }
+
+  // A copy between a buffer and a texture, as COPY_BUFFER_TO_TEXTURE or COPY_TEXTURE_TO_BUFFER.
+  bufferTextureCopy(opcode, buffer, texture, extent) {
+    const payload = new Uint8Array(56);
+    const view = new DataView(payload.buffer);
+    [buffer.handle, buffer.bytesPerRow, buffer.rowsPerImage, texture.handle, texture.mip, texture.x, texture.y, texture.layer,
+      texture.aspect, extent.width, extent.height, extent.layers]
+      .forEach((value, index) => view.setUint32(index * 4, u32(value, 'copy field'), true));
+    view.setBigUint64(48, u64(buffer.offset, 'buffer offset'), true);
+    this.append(opcode, payload);
+  }
+
+  copyTextureToTexture(source, destination, extent) {
+    const fields = texture => [texture.handle, texture.mip, texture.x, texture.y, texture.layer, texture.aspect];
+    this.words(Opcode.COPY_TEXTURE_TO_TEXTURE, [...fields(source), ...fields(destination), extent.width, extent.height, extent.layers]);
+  }
+
+  debug(opcode, label = '') {
+    this.append(opcode, encodeUtf8(label));
+  }
+
+  requestDevice(descriptor) {
+    this.append(Opcode.REQUEST_DEVICE, encodeUtf8(JSON.stringify(descriptor)));
   }
 
   createRenderPipeline(handle, request, descriptor) {

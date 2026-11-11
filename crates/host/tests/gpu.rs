@@ -681,10 +681,10 @@ fn a_zero_size_resize_otherwise_keeps_the_last_image() {
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn drawing_at_a_zero_size_shows_a_cleared_canvas_with_edges_errors() {
     // Edge raises 8 errors in the first frame that draws at the zero size and 5 in each later one.
-    // Its extra one is an empty texture size error with no label, from a call that was not found.
+    // The first acquire after three's configure raises the empty size error twice.
     for (mode, frames) in [("sized", 20), ("drawn", 19)] {
         let mut errors = vec![5; frames];
-        errors[0] = 7;
+        errors[0] = 8;
         for size in ["0x0", "0x720", "1280x0"] {
             let (zero, back) = canvas_zero(&format!("{mode}-zero-{size}-draw"), &errors);
             assert_eq!(
@@ -698,5 +698,134 @@ fn drawing_at_a_zero_size_shows_a_cleared_canvas_with_edges_errors() {
                 "{mode} {size}: the canvas draws again"
             );
         }
+    }
+}
+
+/// Runs the test page `page` in `mode`, captures the window at frames 40 and 70, and returns both
+/// captures and the number of GPU errors in each frame that raises any, by frame.
+fn edge_case(page: &str, mode: &str) -> (image::RgbaImage, image::RgbaImage, Vec<(u32, usize)>) {
+    let dir = workdir(mode);
+    let (f40, f70) = (dir.join("f40.png"), dir.join("f70.png"));
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 40},
+        {"type": "capture", "path": f40},
+        {"type": "wait", "frames": 30},
+        {"type": "capture", "path": f70},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle(page), &steps, &["--scene", mode]);
+    assert!(status.success(), "{mode}: host exited with {status}\n{log}");
+    let mut frames = std::collections::BTreeMap::new();
+    for line in log.lines() {
+        if let Some(rest) = line.strip_prefix("GPU error: frame ") {
+            let frame: u32 = rest.split(',').next().unwrap().parse().unwrap();
+            *frames.entry(frame).or_insert(0) += 1;
+        }
+    }
+    let open = |path: &Path| image::open(path).unwrap().to_rgba8();
+    (open(&f40), open(&f70), frames.into_iter().collect())
+}
+
+/// The errors of a mode that raises `first` in frame 20 and `each` in frames 21 to 59.
+fn edge_errors(first: usize, each: usize) -> Vec<(u32, usize)> {
+    std::iter::once((20, first))
+        .chain((21..60).map(|frame| (frame, each)))
+        .filter(|&(_, count)| count > 0)
+        .collect()
+}
+
+const TRANSPARENT: [u8; 4] = [0, 0, 0, 0];
+const YELLOW: [u8; 4] = [255, 255, 0, 255];
+const GREEN: [u8; 4] = [0, 255, 0, 255];
+const BLUE: [u8; 4] = [0, 0, 255, 255];
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn configure_and_unconfigure_leave_the_canvas_transparent_as_in_edge() {
+    // canvas-cases.js against Edge: each mode shows a transparent canvas at frame 40, except
+    // configure-redraw, which draws again after its configure, and draws blue again by frame 70.
+    for (mode, corner, center) in [
+        ("configure-after-draw", TRANSPARENT, TRANSPARENT),
+        ("configure-idle", TRANSPARENT, TRANSPARENT),
+        ("configure-redraw", YELLOW, GREEN),
+        ("unconfigure", TRANSPARENT, TRANSPARENT),
+        ("unconfigure-idle", TRANSPARENT, TRANSPARENT),
+    ] {
+        let (f40, f70, errors) = edge_case("canvas-cases", mode);
+        assert_eq!(errors, [], "{mode} raises no error, as in Edge");
+        assert_eq!(f40.get_pixel(8, 8).0, corner, "{mode} at frame 40");
+        assert_eq!(f40.get_pixel(640, 360).0, center, "{mode} at frame 40");
+        assert_eq!(f70.get_pixel(8, 8).0, BLUE, "{mode} draws again");
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_canvas_over_the_default_texture_limit_fails_as_in_edge_unless_three_asks_for_more() {
+    // Edge raises 16 errors in the first frame at 16400x64 or 9000x64, over WebGPU's default
+    // maxTextureDimension2D of 8192, and 7 in each later one, and shows a transparent canvas.
+    for mode in ["oversize-16400", "oversize-9000"] {
+        let (f40, f70, errors) = edge_case("canvas-cases", mode);
+        assert_eq!(errors, edge_errors(16, 7), "{mode} raises Edge's errors");
+        assert_eq!(f40.get_pixel(8, 8).0, TRANSPARENT, "{mode} at frame 40");
+        assert_eq!(
+            f70.get_pixel(8, 8).0,
+            BLUE,
+            "{mode} draws again at 1280x720"
+        );
+    }
+    let (f40, _, errors) = edge_case("canvas-cases", "oversize-9000-limits");
+    assert_eq!(
+        errors,
+        [],
+        "a device that requires maxTextureDimension2D 16384 draws 9000x64"
+    );
+    assert_eq!(f40.get_pixel(8, 8).0, YELLOW);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn an_empty_vertex_buffer_draws_with_no_error_as_in_edge() {
+    let (f40, f70, errors) = edge_case("canvas-cases", "empty-geometry");
+    assert_eq!(errors, []);
+    assert_eq!(
+        [f40.get_pixel(8, 8).0, f40.get_pixel(640, 360).0],
+        [YELLOW, GREEN]
+    );
+    assert_eq!(f70.get_pixel(8, 8).0, BLUE);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn invalid_objects_of_every_type_raise_edges_errors() {
+    // invalid-objects.js against Edge: the errors each mode's creates raise in frame 20, and those
+    // each frame's use raises until frame 60 releases the objects, which raises nothing.
+    for (mode, creates, uses) in [
+        ("valid", 0, 0),
+        ("buffer", 2, 3),
+        ("sampler", 2, 2),
+        ("layout", 4, 2),
+        ("group", 3, 2),
+        ("pipeline-layout", 2, 2),
+        ("pipeline", 2, 2),
+        ("bundle", 3, 2),
+    ] {
+        let (f40, f70, errors) = edge_case("invalid-objects", mode);
+        assert_eq!(
+            errors,
+            edge_errors(creates + uses, uses),
+            "{mode} raises Edge's errors"
+        );
+        let invalid = if uses == 0 { BLUE } else { YELLOW };
+        assert_eq!(
+            f40.get_pixel(8, 8).0,
+            invalid,
+            "{mode} draws nothing with an invalid object"
+        );
+        assert_eq!(
+            f70.get_pixel(8, 8).0,
+            BLUE,
+            "{mode} draws with the valid objects"
+        );
     }
 }
