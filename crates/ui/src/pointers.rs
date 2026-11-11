@@ -681,6 +681,44 @@ mod tests {
         );
     }
 
+    /// kit9's relabel page during a resize: the rect names the label span the page rebuilds
+    /// every tick, and lists the button `c` among its more ids. At 1680 the label is a new
+    /// element, so only `c`'s id is in both replies.
+    #[test]
+    fn a_click_on_the_kept_frame_lands_on_its_button_when_the_page_rebuilt_its_label() {
+        let labelled = |label: u32, w: u32| Rect {
+            ids: [label, BUTTON, 0, 0],
+            bounds: [w as f64 - 220.0, 20.0, 200.0, 80.0],
+        };
+        let mut host = Host::new(OLD, vec![labelled(10, 1280)]);
+        host.resize(NEW);
+        host.reply(NEW, Some(vec![labelled(11, 1680)]));
+        host.click(1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
+    }
+
+    /// The adversary's equip page: buttons `a` and `c` filled one slot in turn. The frame at 1280
+    /// drew `c` in the slot, and the slot is among the more ids of whichever button fills it. At
+    /// 1680 `c` is still in the slot, now listed after `a`, which lists the slot no more.
+    #[test]
+    fn a_click_on_the_kept_frame_goes_to_the_rect_naming_its_element_before_one_listing_it() {
+        const A: u32 = 4;
+        const SLOT: u32 = 5;
+        let bag = |ids| Rect {
+            ids,
+            bounds: [40.0, 20.0, 200.0, 80.0],
+        };
+        let slot = |w: u32| Rect {
+            ids: [BUTTON, SLOT, 0, 0],
+            bounds: [w as f64 - 220.0, 20.0, 200.0, 80.0],
+        };
+        let mut host = Host::new(OLD, vec![bag([A, 0, 0, 0]), slot(1280)]);
+        host.resize(NEW);
+        host.reply(NEW, Some(vec![bag([A, BUTTON, 0, 0]), slot(1680)]));
+        host.click(1160.0);
+        assert_eq!(host.take(), [Page(at(1, 1560.0)), Page(at(2, 1560.0))]);
+    }
+
     #[test]
     fn keeps_a_bounded_number_of_layouts() {
         let mut host = Host::new(OLD, right_button(1280));

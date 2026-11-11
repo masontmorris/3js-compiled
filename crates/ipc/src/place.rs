@@ -139,6 +139,36 @@ impl Placer {
 mod tests {
     use super::*;
 
+    /// An event over a rect whose named element is gone goes to the first rect in the latest
+    /// layout that has one of the event's more ids, taken in the event's order.
+    #[test]
+    fn an_event_whose_element_is_gone_goes_to_a_rect_with_one_of_its_more_ids() {
+        let mut placer = Placer::new((1680, 720));
+        let rect = |ids, x| Rect {
+            ids,
+            bounds: [x, 20.0, 200.0, 80.0],
+        };
+        placer.replied(Some(vec![
+            rect([8, 4, 0, 0], 40.0),
+            rect([9, 3, 0, 0], 440.0),
+            rect([3, 0, 0, 0], 840.0),
+        ]));
+        let on = |ids| Pointer {
+            action: 1,
+            x: 10.0,
+            y: 30.0,
+            button: 0,
+            size: (1280, 720),
+            at: At::Rect {
+                ids,
+                offset: (10.0, 10.0),
+            },
+        };
+        let placed = [[5, 4, 3, 0], [5, 3, 4, 0], [3, 4, 0, 0], [5, 6, 0, 0]]
+            .map(|ids| placer.pointer(on(ids)).map(|p| p.x));
+        assert_eq!(placed, [Some(50.0), Some(850.0), Some(850.0), Some(10.0)]);
+    }
+
     #[test]
     fn every_point_is_inside_the_viewport() {
         let mut placer = Placer::new((1280, 720));
