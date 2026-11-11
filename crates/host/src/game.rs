@@ -285,6 +285,16 @@ impl<'a> Game<'a> {
 mod tests {
     use super::*;
 
+    /// Held by each test that measures frame and timer timing, so those tests busy-wait one at a
+    /// time rather than starving each other of the CPU.
+    static TIMING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn timing() -> std::sync::MutexGuard<'static, ()> {
+        TIMING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn promise_jobs_run_after_frames_and_events() -> Result<()> {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -345,6 +355,7 @@ mod tests {
         periods: &[std::time::Duration],
         display: Option<f64>,
     ) -> Result<String> {
+        let _timing = timing();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -380,6 +391,7 @@ mod tests {
         scene: Option<&str>,
         period: std::time::Duration,
     ) -> Result<String> {
+        let _timing = timing();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -529,6 +541,7 @@ mod tests {
     fn a_forced_frame_rate_paces_frames_and_keeps_intervals_on_schedule() -> Result<()> {
         // THREEJSC_DISPLAY_HZ=60 on a faster display: the host paces frames to 60 Hz, and a 10 ms
         // interval still keeps its schedule of 300 ticks in 3 s.
+        let _timing = timing();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
