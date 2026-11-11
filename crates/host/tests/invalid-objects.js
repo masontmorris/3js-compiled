@@ -111,7 +111,7 @@ function release(set) {
   if (!native) return;
   device.releaseBindGroup(set.group);
   device.releaseSampler(set.sampler);
-  device.releaseRenderPipeline(set.pipeline);
+  device.releasePipeline(set.pipeline);
   device.releasePipelineLayout(set.pipelineLayout);
   device.releaseBindGroupLayout(set.layout);
   device.releaseShader(set.module);

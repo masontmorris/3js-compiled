@@ -11,6 +11,12 @@ globalThis.GPUError ??= { GPUError: class { constructor(message) { this.message 
 for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalError']) {
   globalThis[name] ??= { [name]: class extends globalThis.GPUError {} }[name];
 }
+globalThis.GPUPipelineError ??= class GPUPipelineError extends DOMException {
+  constructor(message = '', options = {}) {
+    super(message, 'GPUPipelineError');
+    this.reason = options.reason;
+  }
+};
 
 // Each GPUErrorFilter, as the stream's PUSH_ERROR_SCOPE numbers it, and the error a scope of it captures.
 const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
@@ -23,9 +29,19 @@ const operationError = message => {
   return error;
 };
 
+// The AbortError DOMException that rejects a map that an unmap() or a destroy() cancels.
+const abortError = message => {
+  const error = new DOMException(message, 'AbortError');
+  Error.captureStackTrace?.(error, abortError);
+  return error;
+};
+
 // The CREATE_BUFFER usage bit of threejsc_gpu's MAPPED_AT_CREATION.
 const MAPPED_AT_CREATION = 2 ** 31;
 
+// A buffer is unmapped, pending, or mapped, as its mapState says. A pending buffer has the map its mapAsync() requested,
+// which the executor answers with the range's bytes or rejects. A mapped buffer has a mapping: its mode, its range,
+// the range's bytes, and the ranges getMappedRange() returned, which unmap() detaches and, for writing, records.
 class RecordingBuffer {
   constructor(device, descriptor) {
     this.device = device;
@@ -33,45 +49,94 @@ class RecordingBuffer {
     this.size = descriptor.size;
     this.usage = descriptor.usage;
     this.destroyed = false;
-    this.mapped = descriptor.mappedAtCreation ? new ArrayBuffer(descriptor.size) : null;
+    this.pending = null;
+    this.mapping = descriptor.mappedAtCreation
+      ? { mode: GPUMapMode.WRITE, offset: 0, size: descriptor.size, data: new ArrayBuffer(descriptor.size), ranges: [] }
+      : null;
     // The executor creates a buffer mapped at creation mapped, and unmap() records its data.
     const usage = descriptor.mappedAtCreation ? (descriptor.usage | MAPPED_AT_CREATION) >>> 0 : descriptor.usage;
     device.commands.createBuffer(this.handle, descriptor.size, usage, descriptor.label ?? '');
   }
 
-  mapAsync() {
-    throw new Error('GPUBuffer.mapAsync is not implemented; the native device reads buffers back through three\'s getArrayBufferAsync()');
-  }
-
-  // Only mappedAtCreation maps a buffer here, so a buffer is never pending.
   get mapState() {
-    return this.mapped ? 'mapped' : 'unmapped';
+    return this.mapping ? 'mapped' : this.pending ? 'pending' : 'unmapped';
   }
 
-  getMappedRange(offset = 0, size = this.size - offset) {
-    if (!this.mapped) {
-      throw operationError('getMappedRange failed: the buffer is not mapped');
+  // The executor validates the map as WebGPU's device timeline does, and a map it rejects raises a validation error
+  // too.
+  mapAsync(mode, offset = 0, size) {
+    const device = this.device;
+    if (device.destroyed) return Promise.reject(abortError('mapAsync failed: the device was lost before the map resolved'));
+    if (this.pending) return Promise.reject(operationError('mapAsync failed: the buffer already has a map pending'));
+    const range = size ?? Math.max(0, this.size - offset);
+    const request = device.handles.allocate();
+    device.commands.mapBuffer(request, this.handle, mode, offset, range);
+    const answer = device.expect(request, true, resolve => resolve);
+    return new Promise((resolve, reject) => {
+      const pending = this.pending = { request, reject };
+      answer.then(bytes => {
+        if (this.pending !== pending) return;
+        this.pending = null;
+        this.mapping = { mode, offset, size: range, data: bytes, ranges: [] };
+        resolve();
+      }, error => {
+        if (this.pending !== pending) return;
+        this.pending = null;
+        reject(operationError(error.message));
+      });
+    });
+  }
+
+  // Cancels the pending map, whose answer the device then ignores.
+  abortMap(message) {
+    const { request, reject } = this.pending;
+    this.pending = null;
+    this.device.pending.delete(request);
+    this.device.awaited.delete(request);
+    reject(abortError(message));
+  }
+
+  getMappedRange(offset = 0, size) {
+    const mapping = this.mapping;
+    if (!mapping) throw operationError('getMappedRange failed: the buffer is not mapped');
+    const length = size ?? Math.max(0, this.size - offset);
+    const start = offset - mapping.offset;
+    const overlaps = mapping.ranges.some(range => offset < range.offset + range.length && range.offset < offset + length);
+    if (offset % 8 !== 0 || length % 4 !== 0 || start < 0 || start + length > mapping.size || overlaps) {
+      throw operationError(`getMappedRange failed: the range from ${offset} of ${length} bytes is not mapped or overlaps a returned range`);
     }
-    if (offset !== 0 || size !== this.size) throw new Error('Only a whole mapped-at-creation buffer is supported');
-    return this.mapped;
+    const bytes = mapping.data.slice(start, start + length);
+    mapping.ranges.push({ offset, length, bytes });
+    return bytes;
   }
 
-  // As in WebGPU, unmap() detaches the mapped range and does nothing on a buffer that is not mapped, such as one
-  // already unmapped or destroyed. A buffer over maxBufferSize is invalid, and the unmap of an invalid buffer does
-  // nothing, so its data stays here.
+  // As in WebGPU, unmap() rejects a pending map, detaches the mapped ranges, and does nothing on a buffer that is
+  // not mapped, such as one already unmapped or destroyed. It records the data of a range mapped for writing. A
+  // buffer over maxBufferSize is invalid, and the unmap of an invalid buffer does nothing, so its data stays here.
   unmap() {
-    if (!this.mapped) return;
-    const contents = this.mapped.transfer();
-    this.mapped = null;
-    const data = this.size > this.device.limits.maxBufferSize ? new Uint8Array() : new Uint8Array(contents);
-    this.device.commands.unmapBuffer(this.handle, data);
+    if (this.pending) {
+      this.abortMap('unmap() was called before the map resolved');
+      this.device.commands.unmapBuffer(this.handle, 0, new Uint8Array());
+      return;
+    }
+    const mapping = this.mapping;
+    if (!mapping) return;
+    this.mapping = null;
+    const written = mapping.mode === GPUMapMode.WRITE && this.size <= this.device.limits.maxBufferSize;
+    const data = written ? new Uint8Array(mapping.data) : new Uint8Array();
+    for (const range of mapping.ranges) {
+      if (written) data.set(new Uint8Array(range.bytes), range.offset - mapping.offset);
+      range.bytes.transfer();
+    }
+    this.device.commands.unmapBuffer(this.handle, mapping.offset, data);
   }
 
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.mapped?.transfer();
-    this.mapped = null;
+    if (this.pending) this.abortMap('the buffer was destroyed before the map resolved');
+    for (const range of this.mapping?.ranges ?? []) range.bytes.transfer();
+    this.mapping = null;
     this.device.commands.destroyBuffer(this.handle);
     this.device.buffers.delete(this);
   }
@@ -80,7 +145,7 @@ class RecordingBuffer {
 class RecordingTexture {
   constructor(device, descriptor, surface = false) {
     if ((descriptor.dimension ?? '2d') !== '2d') throw new Error('Only 2D textures are implemented');
-    if (descriptor.viewFormats?.length || descriptor.textureBindingViewDimension) throw new Error('Texture view formats and binding dimensions are not implemented');
+    if (descriptor.viewFormats?.length) throw new Error('Texture view formats are not implemented');
     const size = descriptor.size;
     this.width = Array.isArray(size) ? size[0] : size.width;
     this.height = (Array.isArray(size) ? size[1] : size.height) ?? 1;
@@ -89,6 +154,7 @@ class RecordingTexture {
     this.sampleCount = descriptor.sampleCount ?? 1;
     this.format = descriptor.format;
     this.usage = descriptor.usage;
+    this.textureBindingViewDimension = descriptor.textureBindingViewDimension;
     this.device = device;
     this.handle = device.handles.allocate();
     this.destroyed = false;
@@ -235,13 +301,52 @@ class RecordingCommandEncoder {
     this.finished = false;
   }
 
-  beginComputePass = notImplemented('GPUCommandEncoder.beginComputePass');
-  resolveQuerySet = notImplemented('GPUCommandEncoder.resolveQuerySet');
   writeTimestamp = notImplemented('GPUCommandEncoder.writeTimestamp');
+
+  // A pass's timestampWrites, as the stream records them.
+  timestampWrites(writes) {
+    if (!writes) return null;
+    if (writes.querySet?.device !== this.device) throw new TypeError('Invalid timestampWrites query set');
+    return { querySet: writes.querySet.handle, begin: writes.beginningOfPassWriteIndex, end: writes.endOfPassWriteIndex };
+  }
+
+  beginComputePass(descriptor = {}) {
+    if (this.finished || this.activePass) throw new Error('Command encoder is not available');
+    this.commands.beginComputePass(this.timestampWrites(descriptor.timestampWrites));
+    const record = write => {
+      if (this.activePass !== pass) throw new Error('Compute pass has ended');
+      write();
+    };
+    const pass = {
+      ...debugCommands(this.commands, record),
+      setPipeline: pipeline => {
+        if (!this.device.computePipelines.has(pipeline)) throw new TypeError('Invalid compute pipeline');
+        record(() => this.commands.words(Opcode.SET_PIPELINE, [pipeline.handle]));
+      },
+      setBindGroup: (index, group, offsets = []) => {
+        if (!this.device.bindGroups.has(group)) throw new Error('Invalid bind group');
+        record(() => this.commands.words(Opcode.SET_BIND_GROUP, [index, group.handle, offsets.length, ...offsets]));
+      },
+      dispatchWorkgroups: (x, y = 1, z = 1) => record(() => this.commands.words(Opcode.DISPATCH, [x, y, z])),
+      dispatchWorkgroupsIndirect: (buffer, offset) => record(() => this.commands.dispatchIndirect(copyBuffer(this.device, buffer), offset)),
+      end: () => {
+        if (this.activePass !== pass) throw new Error('Compute pass has ended');
+        this.commands.append(Opcode.END_COMPUTE_PASS);
+        this.activePass = null;
+      },
+    };
+    this.activePass = pass;
+    return pass;
+  }
+
+  resolveQuerySet(querySet, first, count, destination, destinationOffset) {
+    if (querySet?.device !== this.device) throw new TypeError('Invalid query set');
+    this.encode(() => this.commands.resolveQuerySet(querySet.handle, first, count, copyBuffer(this.device, destination), destinationOffset));
+  }
 
   beginRenderPass(descriptor) {
     if (this.finished || this.activePass) throw new Error('Command encoder is not available');
-    if (descriptor.occlusionQuerySet || descriptor.timestampWrites) throw new Error('Render pass option is not implemented');
+    if (descriptor.occlusionQuerySet) throw new Error('Occlusion queries are not implemented on the native device');
     const viewHandle = view => {
       if (!(view?.texture instanceof RecordingTexture) || view.texture.device !== this.device) throw new Error('Invalid render attachment');
       return view.handle;
@@ -281,7 +386,7 @@ class RecordingCommandEncoder {
         stencilClear: attachment.stencilClearValue ?? 0,
       };
     }
-    this.commands.beginRenderPass(colors, depth);
+    this.commands.beginRenderPass(colors, depth, this.timestampWrites(descriptor.timestampWrites));
     const record = write => {
       if (this.activePass !== pass) throw new Error('Render pass has ended');
       write();
@@ -524,6 +629,8 @@ export class RecordingDevice {
     this.bindGroups = new Set();
     this.pipelineLayouts = new Set();
     this.renderPipelines = new Set();
+    this.computePipelines = new Set();
+    this.querySets = new Set();
     this.surface = null;
     // How many error scopes are open. The executor holds the scopes, because it raises the errors.
     this.errorScopes = 0;
@@ -616,10 +723,7 @@ export class RecordingDevice {
     return new RecordingRenderBundleEncoder(this);
   }
 
-  createQuerySet = notImplemented('GPUDevice.createQuerySet');
   importExternalTexture = notImplemented('GPUDevice.importExternalTexture');
-  createComputePipeline = notImplemented('GPUDevice.createComputePipeline');
-  createComputePipelineAsync = notImplemented('GPUDevice.createComputePipelineAsync');
 
   pushErrorScope(filter) {
     if (!(filter in errorFilters)) throw new TypeError(`'${filter}' is not a valid GPUErrorFilter`);
@@ -723,6 +827,7 @@ export class RecordingDevice {
     };
     const entries = descriptor.entries.map(entry => {
       if (entry.count !== undefined) throw new Error('Binding arrays are not implemented');
+      if (entry.storageTexture || entry.externalTexture) throw new Error('Storage and external texture bindings are not implemented on the native device');
       const kinds = ['buffer', 'sampler', 'texture'].filter(kind => entry[kind] !== undefined);
       if (kinds.length !== 1) throw new Error('Unsupported bind group layout entry');
       const kind = kinds[0];
@@ -834,11 +939,18 @@ export class RecordingDevice {
       } : null,
       samples: { count: samples.count ?? 1, mask: samples.mask ?? 0xffffffff, alphaToCoverageEnabled: samples.alphaToCoverageEnabled ?? false },
     };
+    const pipeline = this.pipeline(descriptor.layout, this.renderPipelines);
+    this.commands.createRenderPipeline(pipeline.handle, spec);
+    return pipeline;
+  }
+
+  // A render or compute pipeline in `pipelines`, whose getBindGroupLayout() names the layouts wgpu derives for it.
+  pipeline(layout, pipelines) {
     const autoLayouts = new Map();
     const pipeline = {
-      handle: this.handles.allocate(), layout: descriptor.layout, autoLayouts,
+      handle: this.handles.allocate(), layout, autoLayouts,
       getBindGroupLayout: index => {
-        if (!this.renderPipelines.has(pipeline)) throw new Error('Invalid render pipeline');
+        if (!pipelines.has(pipeline)) throw new Error('Invalid pipeline');
         if (!autoLayouts.has(index)) {
           const layout = { handle: this.handles.allocate() };
           this.commands.words(Opcode.GET_BIND_GROUP_LAYOUT, [layout.handle, pipeline.handle, index]);
@@ -848,9 +960,65 @@ export class RecordingDevice {
         return autoLayouts.get(index);
       },
     };
-    this.commands.createRenderPipeline(pipeline.handle, spec);
-    this.renderPipelines.add(pipeline);
+    pipelines.add(pipeline);
     return pipeline;
+  }
+
+  createComputePipeline(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    const autoLayout = descriptor.layout === 'auto';
+    if (!autoLayout && !this.pipelineLayouts.has(descriptor.layout)) throw new Error('Invalid pipeline layout');
+    const { module, entryPoint, constants } = descriptor.compute ?? {};
+    if (!this.shaders.has(module)) throw new Error('Invalid shader module');
+    if (constants && Object.keys(constants).length) throw new Error('Shader constants are not implemented');
+    const pipeline = this.pipeline(descriptor.layout, this.computePipelines);
+    this.commands.createComputePipeline(pipeline.handle, {
+      label: descriptor.label ?? '', layout: autoLayout ? 0 : descriptor.layout.handle, module: module.handle, entryPoint,
+    });
+    return pipeline;
+  }
+
+  // As in Edge, a pipeline that fails validation rejects with a GPUPipelineError, and an error scope that the device
+  // pushes around its create keeps the error from the page's scopes. A lost device resolves with a pipeline that
+  // dispatches nothing.
+  createComputePipelineAsync(descriptor) {
+    if (this.destroyed) return Promise.resolve({ handle: 0, getBindGroupLayout: () => ({ handle: 0 }) });
+    this.commands.words(Opcode.PUSH_ERROR_SCOPE, [errorFilters.validation]);
+    const request = this.handles.allocate();
+    let pipeline;
+    try {
+      pipeline = this.createComputePipeline(descriptor);
+    } catch (error) {
+      this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
+      return Promise.reject(error);
+    }
+    this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
+    return this.expect(request, true, resolve => resolve, null).then(error => {
+      if (error) throw new GPUPipelineError(error.message, { reason: 'validation' });
+      return pipeline;
+    });
+  }
+
+  // Timestamp query sets need the timestamp-query feature, as WebGPU's createQuerySet() requires. A destroyed query set
+  // stays usable in an encoder whose submit then fails, as a destroyed buffer does.
+  createQuerySet(descriptor) {
+    if (this.destroyed) throw new Error('Device is destroyed');
+    if (descriptor.type === 'occlusion') throw new Error('Occlusion query sets are not implemented on the native device');
+    if (descriptor.type !== 'timestamp') throw new TypeError(`'${descriptor.type}' is not a valid GPUQueryType`);
+    if (!this.features.has('timestamp-query')) throw new TypeError('Timestamp query sets need the timestamp-query feature');
+    const querySet = {
+      device: this, handle: this.handles.allocate(), type: descriptor.type, count: descriptor.count, label: descriptor.label ?? '',
+      destroy: () => this.releaseQuerySet(querySet),
+    };
+    this.commands.createQuerySet(querySet.handle, 1, descriptor.count, querySet.label);
+    this.querySets.add(querySet);
+    return querySet;
+  }
+
+  // The device keeps the query sets it has not destroyed. A destroyed one still names its handle in later commands.
+  releaseQuerySet(querySet) {
+    if (!this.querySets.delete(querySet)) return;
+    this.commands.destroyResource(querySet.handle);
   }
 
   // Validation errors reach the error scope around the call, as three's async path expects. A lost
@@ -864,8 +1032,8 @@ export class RecordingDevice {
     }
   }
 
-  releaseRenderPipeline(pipeline) {
-    if (!this.renderPipelines.delete(pipeline)) return;
+  releasePipeline(pipeline) {
+    if (!this.renderPipelines.delete(pipeline) && !this.computePipelines.delete(pipeline)) return;
     for (const layout of pipeline.autoLayouts.values()) this.releaseBindGroupLayout(layout);
     this.commands.destroyResource(pipeline.handle);
   }
@@ -937,7 +1105,8 @@ export class RecordingDevice {
     for (const texture of this.textures) texture.destroy();
     for (const sampler of this.samplers) this.releaseSampler(sampler);
     for (const group of this.bindGroups) this.releaseBindGroup(group);
-    for (const pipeline of this.renderPipelines) this.releaseRenderPipeline(pipeline);
+    for (const pipeline of [...this.renderPipelines, ...this.computePipelines]) this.releasePipeline(pipeline);
+    for (const querySet of this.querySets) this.releaseQuerySet(querySet);
     for (const layout of this.pipelineLayouts) this.releasePipelineLayout(layout);
     for (const layout of this.bindGroupLayouts) this.releaseBindGroupLayout(layout);
     for (const shader of this.shaders) this.releaseShader(shader);
@@ -1063,7 +1232,7 @@ export class NativeBackend extends WebGPUBackend {
   destroyPipeline(pipeline) {
     const gpu = this.get(pipeline).pipeline;
     if (gpu) {
-      this.recordingDevice.releaseRenderPipeline(gpu);
+      this.recordingDevice.releasePipeline(gpu);
       this.recordingDevice.releasePipelineLayout(gpu.layout);
     }
     super.destroyPipeline(pipeline);
