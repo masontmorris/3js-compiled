@@ -20,11 +20,16 @@ for step in json.loads((run / 'soak.json').read_text()):
         start = max(start, seconds_at(frame))
 ui_log = (run / 'ui-host.log').read_text()
 published, skipped = map(int, re.findall(r'frames published: (\d+), skipped \(no free ring slot\): (\d+)', ui_log)[-1])
+# The sampler writes a row with no pid when it finds no process, before ui-host starts or after
+# it exits. Such a row has no readings.
+missing = sum(not r['pid'] for r in rows)
+rows = [r for r in rows if r['pid']]
 assert len(set(r['pid'] for r in rows if r['proc'] == 'ui-host')) == 1, 'ui-host relaunched during the soak'
 intervals = sorted(float(f['interval_ms']) for f in frames[shown:])
 median = intervals[len(intervals) // 2]
 at_vsync = abs(median - 1000.0 / hz) < 0.1 * 1000.0 / hz
-print(f'{len(intervals)} frames after the HUD, {resizes} resizes, measured from {start:.1f} s, median interval {median:.3f} ms'
+print(f'{len(intervals)} frames after the HUD, {resizes} resizes, measured from {start:.1f} s, median interval {median:.3f} ms,'
+      f' {missing} samples without a process'
       f'{"" if at_vsync else f"  FAIL: not vsync at {hz} Hz"}')
 
 failed = not at_vsync
