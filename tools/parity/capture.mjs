@@ -11,11 +11,14 @@ let scene = 'basic-cube';
 let output = 'target/parity';
 let host = process.env.THREEJSC_HOST ?? 'C:/3jsc/target/debug/host.exe';
 let browserOnly = false;
+// The host frames to draw before its capture, past the frame where the scene is ready, as in Edge.
+let wait = 5;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--scene') scene = args[++i];
   else if (args[i] === '--out') output = args[++i];
   else if (args[i] === '--host') host = args[++i];
   else if (args[i] === '--browser-only') browserOnly = true;
+  else if (args[i] === '--wait') wait = Number(args[++i]);
   else throw new Error(`Unknown argument: ${args[i]}`);
 }
 if (!/^[a-z0-9-]+$/.test(scene)) throw new Error('Invalid scene name');
@@ -46,8 +49,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
+  page.on('console', message => {
+    if (/^(before )?frame d/.test(message.text())) console.log(`Edge console: ${message.text()}`);
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}/examples/scenes/index.html?scene=${scene}`);
-  await page.waitForFunction(() => globalThis.__sceneReady || globalThis.__sceneError, null, { timeout: 30000 });
+  await page.waitForFunction(() => globalThis.__sceneReady || globalThis.__sceneError, null, { timeout: 60000 });
   const error = await page.evaluate(() => globalThis.__sceneError ?? null);
   if (error || errors.length) throw new Error(`Browser scene failed: ${error ?? errors.join('; ')}`);
   await page.screenshot({ path: webPath });
@@ -60,7 +66,7 @@ try {
 if (!browserOnly) {
   const temp = await mkdtemp(resolve(tmpdir(), 'threejsc-parity-'));
   const script = resolve(temp, 'steps.json');
-  await writeFile(script, JSON.stringify([{ type: 'wait', frames: 5 }, { type: 'capture', path: nativePath }, { type: 'close' }]));
+  await writeFile(script, JSON.stringify([{ type: 'wait', frames: wait }, { type: 'capture', path: nativePath }, { type: 'close' }]));
   const code = await new Promise((resolveExit, reject) => {
     const child = spawn(host, ['--entry', resolve(root, 'examples/scenes/index.js'), '--scene', scene, '--script', script], { cwd: out, stdio: 'inherit' });
     child.on('error', reject);
