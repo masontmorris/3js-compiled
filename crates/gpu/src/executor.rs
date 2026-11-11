@@ -825,7 +825,6 @@ impl Executor {
             && self.queue.get_timestamp_period() != 1.0
     }
 
-    /// The device's timestamp conversion, which it makes the first time it needs it.
     fn conversion(&mut self) -> &TimestampConversion {
         let period = self.queue.get_timestamp_period();
         let device = &self.device;
