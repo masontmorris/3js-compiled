@@ -68,7 +68,15 @@ fn op_wait(state: &mut OpState, until: f64, render: bool) -> bool {
         if left <= 0.0 {
             return true;
         }
-        std::thread::sleep(std::time::Duration::from_secs_f64(left.min(0.25) / 1000.0));
+        // A sleep can overrun by a millisecond or more, which would make a 5 ms interval miss
+        // its point, so the last millisecond yields instead.
+        if left > 1.0 {
+            std::thread::sleep(std::time::Duration::from_secs_f64(
+                (left - 1.0).min(0.25) / 1000.0,
+            ));
+        } else {
+            std::thread::yield_now();
+        }
     }
 }
 
