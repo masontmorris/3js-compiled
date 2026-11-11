@@ -60,8 +60,10 @@ let running = null;
 globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(id); };
 // HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks until a rendering
 // opportunity: each due timer in order of deadline and then of setting, each with its promise jobs after it, until
-// the next frame is due. The turn checks that between timers, so it runs at least one due timer and holds the frame
-// back by at most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
+// the next frame is due. The game thread starts a frame while the render thread still renders the one before, so the
+// frame is due once the render thread has caught up, or a display refresh after the turn began when nothing renders.
+// The turn checks that between timers, so it runs at least one due timer and holds the frame callbacks back by at
+// most the callback running when the frame falls due. A timer set from a timer task or its promise jobs is
 // nested one deeper, and one nested more than 5 deep waits at least 4 ms, as in HTML. Delays and ids convert as
 // WebIDL's long does. The pending timers are a binary heap, so a turn takes O(log n) to find each next timer.
 const timers = new Map();
@@ -204,7 +206,7 @@ globalThis.__displayInterval = 1000 / 60;
 // page awaits a response to.
 globalThis.__hostFrame = () => {
   const due = performance.now() + globalThis.__displayInterval;
-  runTimers(() => performance.now() >= due);
+  runTimers(() => ops.op_frame_due() || performance.now() >= due);
   running = new Map(callbacks);
   callbacks.clear();
   const now = performance.now();
