@@ -323,8 +323,10 @@ mod tests {
     }
 
     /// Runs `entry` as the host's loop does, until it turns the clear colour green, and returns
-    /// its log. Each frame is handed to a render thread once the one before it is rendered, and
-    /// a frame finishes rendering at the first tick of a display that refreshes every `period`.
+    /// its log. Each frame is handed to a render thread once the one before it is rendered. The
+    /// render thread presents to a FIFO swapchain of a display that refreshes every `period`, with
+    /// two images queued: a frame takes 0.5 ms to render, its present waits until the frame two
+    /// before it is on screen, and each frame shows at the first refresh after the one before it.
     fn run_rendered(
         name: &str,
         entry: &str,
@@ -343,6 +345,11 @@ mod tests {
         let progress = Arc::new(RenderProgress::default());
         game.set_render_progress(progress.clone());
         let started = Instant::now();
+        let refresh_at = |at: Instant| {
+            let ticks = (at - started).as_nanos().div_ceil(period.as_nanos());
+            started + period * u32::try_from(ticks).expect("a short run")
+        };
+        let mut shown: Vec<Instant> = Vec::new();
         let mut rendering: Option<std::thread::JoinHandle<()>> = None;
         while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
             assert!(
@@ -352,12 +359,18 @@ mod tests {
             if let Some(previous) = rendering.take() {
                 previous.join().expect("the render thread finishes");
             }
-            let ticks = started.elapsed().as_nanos() / period.as_nanos() + 1;
-            let vsync = started + period * u32::try_from(ticks)?;
+            let mut finish = Instant::now() + std::time::Duration::from_micros(500);
+            if let Some(&two_before) = shown.len().checked_sub(2).and_then(|i| shown.get(i)) {
+                finish = finish.max(two_before);
+            }
+            let earliest = shown
+                .last()
+                .map_or(finish, |&last| finish.max(last + period));
+            shown.push(refresh_at(earliest));
             progress.submitted.fetch_add(1, Ordering::Release);
             let render = progress.clone();
             rendering = Some(std::thread::spawn(move || {
-                std::thread::sleep(vsync.saturating_duration_since(Instant::now()));
+                std::thread::sleep(finish.saturating_duration_since(Instant::now()));
                 render.finished.fetch_add(1, Ordering::Release);
             }));
         }
@@ -382,6 +395,32 @@ mod tests {
             "{frames} frames, {} ms apart",
             result(&log, "loaders mean frame interval ms")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn heavy_frames_leave_loaders_their_share_of_each_frame() -> Result<()> {
+        // Eight loops that yield through zero-delay timers and work 1 ms, while each frame
+        // callback works 10 or 16 ms, so the render thread has caught up before each turn starts.
+        // Edge runs about 4 loader ticks a frame: 856 ticks in 214 frames with 10 ms of frame
+        // work, and 584 in 150 with 16 ms (C:\3jsc\swarm\e3-r17v\lane-v\kit\out\edge\game-slowload*).
+        for (scene, edge_frames, edge_ticks) in
+            [("slowload10", 214.0, 856.0), ("slowload16", 150.0, 584.0)]
+        {
+            let log = run_rendered(
+                &format!("timer-game-rendered-{scene}"),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-game.js"),
+                Some(scene),
+                std::time::Duration::from_millis(6),
+            )?;
+            let frames: f64 = result(&log, &format!("{scene} frames inside the window")).parse()?;
+            let ticks: f64 = result(&log, &format!("{scene} loader ticks")).parse()?;
+            assert!(frames >= 0.95 * edge_frames, "{scene}: {frames} frames");
+            assert!(
+                ticks >= 0.8 * edge_ticks,
+                "{scene}: {ticks} loader ticks in {frames} frames"
+            );
+        }
         Ok(())
     }
 
