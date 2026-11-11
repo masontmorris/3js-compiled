@@ -555,3 +555,191 @@ copyCases.forEach(([name, run], index) => {
     writeFileSync(new URL(`./mapped-${index}-${name}.bin`, import.meta.url), device.takeFrame());
   });
 }
+
+// Compute passes, as crates/host/tests/compute-rules.js `compute` makes them for Edge: a dispatch that fills a storage
+// buffer, an indirect dispatch, pipelines and dispatches that fail validation, and a destroyed storage buffer. Each
+// frame maps a readback buffer, whose map the next frame cancels, as nothing answers it here.
+{
+  const device = new RecordingDevice();
+  const module = device.createShaderModule({ label: 'storage', code: `
+@group(0) @binding(0) var<storage, read_write> data: array<u32>;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x < arrayLength(&data)) { data[id.x] = id.x * 3u + 1u; }
+}
+@compute @workgroup_size(64) fn other(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x < arrayLength(&data)) { data[id.x] = 7u; }
+}` });
+  const fill = device.createComputePipeline({ label: 'fill', layout: 'auto', compute: { module, entryPoint: 'main' } });
+  const other = device.createComputePipeline({ label: 'other', layout: 'auto', compute: { module, entryPoint: 'other' } });
+  const storage = device.createBuffer({ size: 1024, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const group = pipeline => device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: storage } }] });
+  let readback = null;
+  const dispatch = ({ pipeline, bindGroup, x = 4, indirect = null }) => {
+    readback?.unmap();
+    readback = device.createBuffer({ size: 1024, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    if (pipeline) pass.setPipeline(pipeline);
+    if (bindGroup) pass.setBindGroup(0, bindGroup);
+    if (indirect) pass.dispatchWorkgroupsIndirect(indirect, 0);
+    else pass.dispatchWorkgroups(x);
+    pass.end();
+    encoder.copyBufferToBuffer(storage, 0, readback, 0, 1024);
+    device.queue.submit([encoder.finish()]);
+    readback.mapAsync(GPUMapMode.READ).catch(() => {});
+  };
+  const cases = [
+    ['dispatch', () => dispatch({ pipeline: fill, bindGroup: group(fill) })],
+    ['indirect', () => {
+      const args = device.createBuffer({ size: 12, usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(args, 0, Uint32Array.from([2, 1, 1]));
+      dispatch({ pipeline: other, bindGroup: group(other), indirect: args });
+    }],
+    ['bad-shader', () => {
+      const bad = device.createShaderModule({ label: 'bad-compute', code: '@compute @workgroup_size(1) fn main( {' });
+      dispatch({ pipeline: device.createComputePipeline({ label: 'bad', layout: 'auto', compute: { module: bad, entryPoint: 'main' } }) });
+    }],
+    ['bad-entry', () => dispatch({ pipeline: device.createComputePipeline({ label: 'missing', layout: 'auto', compute: { module, entryPoint: 'missing' } }) })],
+    ['no-pipeline', () => dispatch({})],
+    ['too-many-groups', () => dispatch({ pipeline: fill, bindGroup: group(fill), x: 70000 })],
+    ['destroyed-storage', () => {
+      const lost = device.createBuffer({ size: 256, usage: GPUBufferUsage.STORAGE });
+      const bindGroup = device.createBindGroup({ layout: fill.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: lost } }] });
+      lost.destroy();
+      dispatch({ pipeline: fill, bindGroup });
+    }],
+  ];
+  cases.forEach(([name, run], index) => {
+    run();
+    writeFileSync(new URL(`./compute-${index}-${name}.bin`, import.meta.url), device.takeFrame());
+  });
+}
+
+// Maps, as crates/host/tests/compute-rules.js `map` makes them for Edge, one frame per case. A map that nothing
+// answers here stays pending, so each case maps a buffer of its own.
+{
+  const device = new RecordingDevice();
+  const readable = () => device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const map = (buffer, mode, offset, size) => buffer.mapAsync(mode, offset, size).catch(() => {});
+  const cases = [
+    ['read', () => {
+      const buffer = readable();
+      device.queue.writeBuffer(buffer, 0, Uint32Array.from([11, 22, 33, 44, 55, 66]));
+      map(buffer, GPUMapMode.READ, 8, 16);
+    }],
+    ['write', () => map(device.createBuffer({ size: 64, usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC }), GPUMapMode.WRITE, 16, 16)],
+    ['no-usage', () => map(device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST }), GPUMapMode.READ)],
+    ['wrong-mode', () => map(readable(), GPUMapMode.WRITE)],
+    ['both-modes', () => map(readable(), GPUMapMode.READ | GPUMapMode.WRITE)],
+    ['unaligned-offset', () => map(readable(), GPUMapMode.READ, 4)],
+    ['unaligned-size', () => map(readable(), GPUMapMode.READ, 0, 6)],
+    ['out-of-range', () => map(readable(), GPUMapMode.READ, 0, 512)],
+    ['destroyed', () => {
+      const buffer = readable();
+      buffer.destroy();
+      map(buffer, GPUMapMode.READ);
+    }],
+    ['mapped-submit', () => {
+      const buffer = readable();
+      map(buffer, GPUMapMode.READ);
+      const source = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC });
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(source, 0, buffer, 0, 64);
+      device.queue.submit([encoder.finish()]);
+      buffer.unmap();
+    }],
+    ['remap', () => {
+      const buffer = readable();
+      map(buffer, GPUMapMode.READ);
+      buffer.unmap();
+      map(buffer, GPUMapMode.READ, 0, 8);
+    }],
+    ['written-ranges', () => {
+      // A buffer mapped at creation writes two ranges, which a copy then reads back.
+      const buffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true });
+      new Uint32Array(buffer.getMappedRange(8, 8)).set([3, 4]);
+      new Uint32Array(buffer.getMappedRange(0, 8)).set([1, 2]);
+      buffer.unmap();
+      const copy = device.createBuffer({ size: 32, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(buffer, 0, copy, 0, 32);
+      device.queue.submit([encoder.finish()]);
+      device.commands.readBuffer(900, copy.handle, 0, 32);
+    }],
+  ];
+  cases.forEach(([name, run], index) => {
+    run();
+    writeFileSync(new URL(`./mapasync-${String(index).padStart(2, '0')}-${name}.bin`, import.meta.url), device.takeFrame());
+  });
+}
+
+// Timestamp queries, as crates/host/tests/compute-rules.js `queries` makes them for Edge: a render pass and a compute
+// pass that write timestamps, a resolve, and resolves and passes that fail validation.
+{
+  const device = new RecordingDevice({ features: ['timestamp-query'] });
+  const set = device.createQuerySet({ type: 'timestamp', count: 8, label: 'times' });
+  const module = device.createShaderModule({ code: `
+@group(0) @binding(0) var<storage, read_write> data: array<u32>;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) { if (id.x < arrayLength(&data)) { data[id.x] = id.x; } }` });
+  const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+  const storage = device.createBuffer({ size: 1024, usage: GPUBufferUsage.STORAGE });
+  const bindGroup = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: storage } }] });
+  const target = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT }).createView();
+  const submit = encode => {
+    const encoder = device.createCommandEncoder();
+    encode(encoder);
+    device.queue.submit([encoder.finish()]);
+  };
+  const timed = (encoder, writes) => encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }], timestampWrites: writes }).end();
+  const resolveBuffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+  const cases = [
+    ['passes', () => {
+      submit(encoder => {
+        timed(encoder, { querySet: set, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 });
+        const pass = encoder.beginComputePass({ timestampWrites: { querySet: set, beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 } });
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(16);
+        pass.end();
+        encoder.resolveQuerySet(set, 0, 4, resolveBuffer, 0);
+      });
+      device.commands.readBuffer(800, resolveBuffer.handle, 0, 32);
+    }],
+    ['same-index', () => submit(encoder => timed(encoder, { querySet: set, beginningOfPassWriteIndex: 5, endOfPassWriteIndex: 5 }))],
+    ['index-past-count', () => submit(encoder => timed(encoder, { querySet: set, beginningOfPassWriteIndex: 8, endOfPassWriteIndex: 9 }))],
+    ['resolve-unaligned', () => submit(encoder => encoder.resolveQuerySet(set, 0, 2, device.createBuffer({ size: 512, usage: GPUBufferUsage.QUERY_RESOLVE }), 128))],
+    ['resolve-usage', () => submit(encoder => encoder.resolveQuerySet(set, 0, 2, device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC }), 0))],
+    ['resolve-past-count', () => submit(encoder => encoder.resolveQuerySet(set, 6, 4, resolveBuffer, 0))],
+    ['too-many', () => submit(encoder => timed(encoder, { querySet: device.createQuerySet({ type: 'timestamp', count: 5000 }), beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }))],
+    ['destroyed', () => {
+      const lost = device.createQuerySet({ type: 'timestamp', count: 2 });
+      const encoder = device.createCommandEncoder();
+      timed(encoder, { querySet: lost, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 });
+      const commands = encoder.finish();
+      lost.destroy();
+      device.queue.submit([commands]);
+    }],
+  ];
+  cases.forEach(([name, run], index) => {
+    run();
+    writeFileSync(new URL(`./timestamps-${index}-${name}.bin`, import.meta.url), device.takeFrame());
+  });
+}
+
+// A copy of the canvas mid-frame, as three's copyFramebufferToTexture() makes it: a pass clears the canvas, the
+// encoder copies it to a texture and from that texture's first mip to its second, and a later pass loads the canvas.
+{
+  const device = new RecordingDevice();
+  const surface = device.surfaceTexture(4, 4, { format: 'bgra8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+  const copy = device.createTexture({ size: [4, 4], mipLevelCount: 2, format: 'bgra8unorm', usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
+  const encoder = device.createCommandEncoder();
+  const view = surface.createView();
+  encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: [1, 0.5, 0, 1] }] }).end();
+  encoder.copyTextureToTexture({ texture: surface }, { texture: copy }, [4, 4]);
+  encoder.copyTextureToTexture({ texture: copy, origin: [2, 2] }, { texture: copy, mipLevel: 1 }, [2, 2]);
+  encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }] }).end();
+  device.queue.submit([encoder.finish()]);
+  device.commands.readTexture(700, copy.handle, { mip: 1, x: 0, y: 0, layer: 0, width: 2, height: 2 });
+  device.commands.readTexture(701, surface.handle, { mip: 0, x: 0, y: 0, layer: 0, width: 1, height: 1 });
+  writeFileSync(new URL('./copy-surface.bin', import.meta.url), device.takeFrame());
+}
