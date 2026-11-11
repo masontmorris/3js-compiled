@@ -314,6 +314,69 @@ mod tests {
         Ok(std::fs::read_to_string(log_path)?)
     }
 
+    /// Runs `entry` as the host's loop does, until it turns the clear colour green, and returns
+    /// its log. Each frame is handed to a render thread once the one before it is rendered, and
+    /// a frame finishes rendering at the first tick of a display that refreshes every `period`.
+    fn run_rendered(
+        name: &str,
+        entry: &str,
+        scene: Option<&str>,
+        period: std::time::Duration,
+    ) -> Result<String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-{name}-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
+        game.set_display_interval(period.as_secs_f64() * 1000.0)?;
+        let progress = Arc::new(RenderProgress::default());
+        game.set_render_progress(progress.clone());
+        let started = Instant::now();
+        let mut rendering: Option<std::thread::JoinHandle<()>> = None;
+        while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "{name} never turned green"
+            );
+            if let Some(previous) = rendering.take() {
+                previous.join().expect("the render thread finishes");
+            }
+            let ticks = started.elapsed().as_nanos() / period.as_nanos() + 1;
+            let vsync = started + period * u32::try_from(ticks)?;
+            progress.submitted.fetch_add(1, Ordering::Release);
+            let render = progress.clone();
+            rendering = Some(std::thread::spawn(move || {
+                std::thread::sleep(vsync.saturating_duration_since(Instant::now()));
+                render.finished.fetch_add(1, Ordering::Release);
+            }));
+        }
+        Ok(std::fs::read_to_string(log_path)?)
+    }
+
+    #[test]
+    fn a_timer_backlog_runs_while_the_frame_before_renders() -> Result<()> {
+        // Eight loops that yield through zero-delay timers and work 1 ms, while each frame
+        // callback works 3 ms. Edge draws 211 frames in the window at 169 Hz, 7.08 ms apart
+        // (C:\3jsc\swarm\e3-r16v\lane-v\kit\out\edge\deadline-loaders), where a turn that
+        // takes a whole refresh before the frame callbacks draws 165.
+        let log = run_rendered(
+            "timer-deadline-rendered-loaders",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-deadline.js"),
+            Some("loaders"),
+            std::time::Duration::from_millis(6),
+        )?;
+        let frames: f64 = result(&log, "loaders frames inside the 1500 ms window").parse()?;
+        assert!(
+            frames >= 0.95 * 211.0 * 5.92 / 6.0,
+            "{frames} frames, {} ms apart",
+            result(&log, "loaders mean frame interval ms")
+        );
+        Ok(())
+    }
+
     #[test]
     fn timers_run_between_frames_in_edges_order() -> Result<()> {
         // Edge's results for the same page, from C:\3jsc\swarm\e3-r13\kit\out\edge\timers-default.
