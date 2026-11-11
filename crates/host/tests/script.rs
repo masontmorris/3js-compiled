@@ -17,7 +17,7 @@ fn parses_each_step_and_rejects_unknown_types() {
     .unwrap();
     assert_eq!(steps.len(), 8);
     assert!(matches!(steps[0], Step::Wait { frames: 2 }));
-    assert!(matches!(&steps[1], Step::Key { code, down: true } if code == "KeyW"));
+    assert!(matches!(&steps[1], Step::Key { code, down: true, repeat: false } if code == "KeyW"));
     assert!(matches!(
         steps[2],
         Step::Pointer {

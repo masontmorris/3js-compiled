@@ -10,6 +10,8 @@ pub enum Step {
     Key {
         code: String,
         down: bool,
+        #[serde(default)]
+        repeat: bool,
     },
     Pointer {
         action: PointerAction,
@@ -27,6 +29,15 @@ pub enum Step {
         down: bool,
         #[serde(default)]
         index: u8,
+    },
+    GamepadAxis {
+        axis: u8,
+        value: f64,
+        #[serde(default)]
+        index: u8,
+    },
+    Focus {
+        focused: bool,
     },
     Resize {
         width: u32,

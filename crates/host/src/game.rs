@@ -1,19 +1,21 @@
 use anyhow::{Context, Result};
-use deno_core::{FsModuleLoader, JsRuntime, OpState, RuntimeOptions, extension, op2};
+use deno_core::{JsRuntime, ModuleSpecifier, OpState, RuntimeOptions, extension, op2};
 use std::{
     cell::RefCell,
     collections::HashMap,
     fs::File,
     future::Future,
     io::Write,
+    path::PathBuf,
     pin::Pin,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     time::Instant,
 };
+use threejsc_host::platform;
 
 pub type Log = Rc<RefCell<File>>;
 struct State {
@@ -275,20 +277,61 @@ pub struct Game<'a> {
     runtime: &'a tokio::runtime::Runtime,
     evaluation: Option<Evaluation>,
 }
+/// What the page's platform shims start from: `location.hash`, the `localStorage` file, the window's device
+/// pixel ratio and the screen size in CSS pixels. A page with no storage file keeps `localStorage` in memory.
+pub struct Page {
+    pub hash: String,
+    pub storage: Option<PathBuf>,
+    pub ratio: f64,
+    pub screen: (u32, u32),
+}
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            hash: String::new(),
+            storage: None,
+            ratio: 1.0,
+            screen: (1920, 1080),
+        }
+    }
+}
 impl<'a> Game<'a> {
+    #[cfg(test)]
     pub fn new(
+        entry: &str,
+        log: Log,
+        runtime: &'a tokio::runtime::Runtime,
+        scene: Option<&str>,
+        size: (u32, u32),
+        adapter: Option<(&wgpu::Limits, wgpu::Features)>,
+    ) -> Result<Self> {
+        Self::open(entry, log, runtime, scene, size, adapter, &Page::default())
+    }
+    /// Starts `entry` in a window of `width` by `height` CSS pixels.
+    pub fn open(
         entry: &str,
         log: Log,
         runtime: &'a tokio::runtime::Runtime,
         scene: Option<&str>,
         (width, height): (u32, u32),
         adapter: Option<(&wgpu::Limits, wgpu::Features)>,
+        page: &Page,
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
-            module_loader: Some(Rc::new(FsModuleLoader)),
-            extensions: vec![host_ext::init()],
+            module_loader: Some(Rc::new(platform::Loader::new())),
+            extensions: vec![host_ext::init(), platform::extension::init()],
             ..Default::default()
         });
+        let mut storage = Vec::new();
+        if let Some(path) = &page.storage {
+            let file = Mutex::new(log.borrow().try_clone()?);
+            let (store, entries) = platform::storage::Store::open(path.clone(), move |message| {
+                let _ = writeln!(file.lock().expect("the log is not poisoned"), "{message}");
+                eprintln!("{message}");
+            })?;
+            js.op_state().borrow_mut().put(store);
+            storage = entries.into_iter().collect();
+        }
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,
@@ -298,6 +341,7 @@ impl<'a> Game<'a> {
             render: None,
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
+        let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
         let scene = serde_json::to_string(&scene)?;
         // NativeBackend checks a device's requested limits and features against the adapter's, as requestDevice()
         // does.
@@ -305,13 +349,32 @@ impl<'a> Game<'a> {
         let features = serde_json::to_string(
             &adapter.map(|(_, features)| threejsc_gpu::webgpu_features(features)),
         )?;
+        let mut href = specifier.clone();
+        href.set_fragment((!page.hash.is_empty()).then_some(page.hash.trim_start_matches('#')));
+        let config = serde_json::json!({
+            "href": href.as_str(),
+            "storage": storage,
+            "ratio": page.ratio,
+            "screen": [page.screen.0, page.screen.1],
+            "cores": std::thread::available_parallelism().map_or(4, std::num::NonZero::get),
+        });
         js.execute_script(
             "host:scene",
             format!(
-                "globalThis.__sceneName = {scene}; globalThis.__gpuAdapterLimits = {limits}; globalThis.__gpuAdapterFeatures = {features}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height};"
+                "globalThis.__sceneName = {scene}; globalThis.__gpuAdapterLimits = {limits}; globalThis.__gpuAdapterFeatures = {features}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height}; globalThis.__hostConfig = {config};"
             ),
         )?;
-        let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
+        runtime
+            .block_on(async {
+                let id = js
+                    .load_side_es_module(&ModuleSpecifier::parse(platform::ENTRY)?)
+                    .await?;
+                let evaluation = js.mod_evaluate(id);
+                js.with_event_loop_future(Box::pin(evaluation), Default::default())
+                    .await?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .context("install the platform shims")?;
         // As in a browser, frames and timers run while the module's top level awaits.
         let evaluation = runtime
             .block_on(async {
@@ -1401,6 +1464,97 @@ mod tests {
             color = game.frame()?;
         }
         assert_eq!(color, [1.0, 0.0, 1.0, 1.0]);
+        Ok(())
+    }
+
+    /// Runs `tests/platform.js` until its checks finish, injects input, and returns its log.
+    fn run_platform(
+        runtime: &tokio::runtime::Runtime,
+        storage: &std::path::Path,
+        run: u32,
+    ) -> Result<String> {
+        let log_path = std::env::temp_dir().join(format!(
+            "threejsc-platform-{}-{run}.log",
+            std::process::id()
+        ));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/platform.js");
+        let page = Page {
+            hash: "debug".into(),
+            storage: Some(storage.to_owned()),
+            ..Page::default()
+        };
+        let mut game = Game::open(entry, log, runtime, None, (1280, 720), None, &page)?;
+        let started = Instant::now();
+        while game
+            .js
+            .execute_script("host:poll", "typeof globalThis.__report === 'function'")?
+            .open(game.js.v8_isolate())
+            .is_false()
+        {
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "the platform checks never finished"
+            );
+            game.frame()?;
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for fact in [
+            serde_json::json!({"type": "keydown", "code": "KeyW", "key": "w", "repeat": false}),
+            serde_json::json!({"type": "pointermove", "clientX": 12.5, "clientY": 30, "button": 0}),
+            serde_json::json!({"type": "pointerdown", "clientX": 12.5, "clientY": 30, "button": 0}),
+            serde_json::json!({"type": "pointerup", "clientX": 12.5, "clientY": 30, "button": 0}),
+            serde_json::json!({"type": "resize", "width": 1000, "height": 600, "ratio": 1}),
+            serde_json::json!({"type": "gamepads", "pads": [{"index": 0, "id": "pad", "buttons": vec![1.0; 17], "axes": vec![0.0; 4]}]}),
+        ] {
+            game.event(&fact)?;
+        }
+        game.js
+            .execute_script("host:report", "globalThis.__report()")?;
+        assert_eq!(game.frame()?, [0.0, 1.0, 0.0, 1.0]);
+        drop(game);
+        Ok(std::fs::read_to_string(log_path)?)
+    }
+
+    #[test]
+    fn platform_shims_fetch_decode_dispatch_and_keep_storage_across_a_restart() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let dir =
+            std::env::temp_dir().join(format!("threejsc-platform-storage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let storage = dir.join("localStorage.json");
+        let first = run_platform(&runtime, &storage, 1)?;
+        for (name, value) in [
+            ("canvas fills the window", "true"),
+            ("location", "file: #debug true"),
+            ("matchMedia", "true false false"),
+            ("navigator", "Win32 true 8"),
+            ("localStorage runs", "1"),
+            ("fetch", "image/png 124"),
+            ("createImageBitmap", "7x5"),
+            ("image", "7x5 true"),
+            ("missing file", "404 false"),
+            ("broken image", "InvalidStateError"),
+            (
+                "events",
+                "body:KeyW:87 window:w:true pointerdown:canvas:12.5 click:canvas resize:1000x600 gamepad:pad",
+            ),
+        ] {
+            assert_eq!(result(&first, name), value, "{name}");
+        }
+        assert_eq!(
+            first
+                .matches("DOM method not implemented: HTMLCanvasElement.requestFullscreen")
+                .count(),
+            1,
+            "{first}"
+        );
+        let second = run_platform(&runtime, &storage, 2)?;
+        assert_eq!(result(&second, "localStorage runs"), "2");
+        std::fs::remove_dir_all(&dir)?;
         Ok(())
     }
 }
