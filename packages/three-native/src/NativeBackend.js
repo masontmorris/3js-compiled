@@ -16,8 +16,12 @@ for (const name of ['GPUValidationError', 'GPUOutOfMemoryError', 'GPUInternalErr
 const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
 const errorTypes = { validation: GPUValidationError, 'out-of-memory': GPUOutOfMemoryError, internal: GPUInternalError };
 
-// The OperationError DOMException that WebGPU throws or rejects with.
-const operationError = message => new DOMException(message, 'OperationError');
+// The OperationError DOMException that WebGPU throws or rejects with, with a stack, as Edge's has.
+const operationError = message => {
+  const error = new DOMException(message, 'OperationError');
+  Error.captureStackTrace?.(error, operationError);
+  return error;
+};
 
 // The CREATE_BUFFER usage bit of threejsc_gpu's MAPPED_AT_CREATION.
 const MAPPED_AT_CREATION = 2 ** 31;
