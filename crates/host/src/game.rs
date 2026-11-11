@@ -360,6 +360,75 @@ mod tests {
         Ok(())
     }
 
+    /// The attack page's log, a frame every 6 ms as for the timer page.
+    fn timer_attack(scene: &str) -> Result<String> {
+        run_paced(
+            &format!("timer-attack-{scene}"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-attack.js"),
+            Some(scene),
+            std::time::Duration::from_millis(6),
+        )
+    }
+
+    #[test]
+    fn timers_from_promise_jobs_keep_their_nesting_and_leave_frames_their_rate() -> Result<()> {
+        // Edge draws 253 or 254 frames in each window and clamps from tick 7, from
+        // C:\3jsc\swarm\e3-r15v\lane-v\kit\out\edge\attack-*\console.txt.
+        for scene in ["promise0", "promisethen", "microtask"] {
+            let log = timer_attack(scene)?;
+            let frames: usize =
+                result(&log, &format!("{scene} frames inside the 1500 ms window")).parse()?;
+            assert!(frames >= 150, "{scene}: {frames} frames in 1.5 s");
+            assert_eq!(
+                result(&log, &format!("{scene} first tick whose gap >= 3.5 ms")),
+                "7",
+                "{scene}"
+            );
+        }
+        let log = timer_attack("deep")?;
+        for (chain, level) in [("timer", "7"), ("raf", "8"), ("interval", "2"), ("then", "2")] {
+            assert_eq!(
+                result(&log, &format!("{chain} chain first level whose gap >= 3.5 ms")),
+                level,
+                "{chain} chain"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_turn_of_timers_ends_when_the_next_frame_is_due() -> Result<()> {
+        // 63 zero-delay timers that each work 1 ms would hold a frame back 63 ms in one turn.
+        let log = timer_attack("fanout")?;
+        let gap: f64 = result(&log, "fanout longest frame gap ms").parse()?;
+        assert!(gap < 20.0, "a frame waited {gap} ms");
+        assert_eq!(result(&log, "fanout ticks in 1500 ms"), "63");
+        Ok(())
+    }
+
+    #[test]
+    fn errors_report_and_dom_exceptions_take_edges_shape() -> Result<()> {
+        // Edge's lines, from C:\3jsc\swarm\e3-r15v\lane-v\kit\out\edge\attack-cancel and domex-domex.
+        let log = timer_attack("cancel")?;
+        for (index, line) in [
+            "timer, listener cancels: ErrorEvent type=error message=\"Uncaught Error: lane-v timer throws, canceled\" errorIsThrown=true cancelable=true filename=string lineno=number",
+            "rAF, listener cancels: ErrorEvent type=error message=\"Uncaught Error: lane-v rAF throws, canceled\" errorIsThrown=true cancelable=true filename=string lineno=number",
+            "timer, onerror returns true: onerror args=string,string,number,number,true",
+            "timer, listener throws: ErrorEvent type=error message=\"Uncaught Error: lane-v timer throws, not canceled\" errorIsThrown=true cancelable=true filename=string lineno=number",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(result(&log, &format!("event {index}")), *line);
+        }
+        let log = timer_attack("domex")?;
+        assert_eq!(
+            result(&log, "domex"),
+            "name=OperationError ownName=false code=0 abort=20 default=Error/0 tag=[object DOMException] string=OperationError: m instanceofError=true"
+        );
+        Ok(())
+    }
+
     #[test]
     fn frames_and_timers_run_while_the_entry_module_awaits() -> Result<()> {
         run_until_green(
