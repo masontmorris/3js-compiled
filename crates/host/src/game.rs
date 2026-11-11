@@ -434,6 +434,36 @@ mod tests {
         Ok(())
     }
 
+    /// The deadline page's log, a frame every 6 ms.
+    fn timer_deadline(scene: &str) -> Result<String> {
+        run_paced(
+            &format!("timer-deadline-{scene}"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-deadline.js"),
+            Some(scene),
+            std::time::Duration::from_millis(6),
+        )
+    }
+
+    #[test]
+    fn thousands_of_due_timers_drain_within_twice_edges_time_at_the_frame_rate() -> Result<()> {
+        // Edge runs 10,000 zero-delay timers set at once in 39 ms and 100,000 in 340 ms, at its
+        // frame rate (C:\3jsc\swarm\e3-r16v\lane-v\kit\out\edge\deadline-many*).
+        for (scene, edge_ms) in [("many10k", 39.0), ("many100k", 340.0)] {
+            let log = timer_deadline(scene)?;
+            let done = result(&log, &format!("{scene} ms until every timer ran"));
+            let ms: f64 = done
+                .parse()
+                .map_err(|_| anyhow::anyhow!("{scene}: {done}"))?;
+            assert!(
+                ms <= 2.0 * edge_ms,
+                "{scene}: every timer ran after {ms} ms"
+            );
+            let interval: f64 = result(&log, &format!("{scene} mean frame interval ms")).parse()?;
+            assert!(interval <= 7.5, "{scene}: frames {interval} ms apart");
+        }
+        Ok(())
+    }
+
     #[test]
     fn a_turn_keeps_its_zero_delay_timers_when_frames_arrive_unevenly() -> Result<()> {
         // The host's game thread starts some frames 0.5 ms after the last, when it catches up
