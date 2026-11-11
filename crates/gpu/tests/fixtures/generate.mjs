@@ -476,3 +476,35 @@ copyCases.forEach(([name, run], index) => {
   writeFileSync(new URL(`./copies-${String(index).padStart(2, '0')}-${name}.bin`, import.meta.url), copyDevice.takeFrame());
 });
 }
+
+// Buffers with MAP_READ or MAP_WRITE usage, one frame per case, as C:/3jsc/swarm/e3-r12/kit/apps/rules.js `buffers`
+// makes them for Edge. The mapped-at-creation case copies its data to a buffer that the frame reads back.
+{
+  const device = new RecordingDevice();
+  const cases = [
+    ['map-read', () => device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })],
+    ['map-write', () => device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE })],
+    ['map-read-copy-src', () => device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ })],
+    ['map-write-mapped', () => {
+      const mapped = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE, mappedAtCreation: true });
+      new Uint8Array(mapped.getMappedRange()).fill(7);
+      mapped.unmap();
+      const copy = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(mapped, 0, copy, 0, 16);
+      device.queue.submit([encoder.finish()]);
+      device.commands.readBuffer(100, copy.handle, 0, 16);
+    }],
+    ['map-read-copied', () => {
+      const readback = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const source = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_SRC });
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(source, 0, readback, 0, 64);
+      device.queue.submit([encoder.finish()]);
+    }],
+  ];
+  cases.forEach(([name, run], index) => {
+    run();
+    writeFileSync(new URL(`./map-${index}-${name}.bin`, import.meta.url), device.takeFrame());
+  });
+}

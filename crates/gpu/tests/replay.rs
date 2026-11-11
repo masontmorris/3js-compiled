@@ -1975,3 +1975,46 @@ fn copies_and_passes_raise_edges_errors_for_invalid_and_destroyed_objects() {
         .collect();
     assert_eq!(counts, EDGE_COPY_ERRORS, "{raised:#?}");
 }
+
+/// The errors Edge raises for each case of the `map` fixtures, from rules.js `buffers` in
+/// the round-12 kit's out/edge/rules-buffers/console.txt: only MAP_READ with a usage other than
+/// COPY_DST is invalid.
+const EDGE_MAP_ERRORS: [(&str, usize); 5] = [
+    ("map-read", 0),
+    ("map-write", 0),
+    ("map-read-copy-src", 1),
+    ("map-write-mapped", 0),
+    ("map-read-copied", 0),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn buffers_that_map_are_created_as_in_edge_and_one_mapped_at_creation_holds_its_data() {
+    let mut executor = executor();
+    let mut counts = Vec::new();
+    for (index, (name, _)) in EDGE_MAP_ERRORS.iter().enumerate() {
+        let path = format!(
+            "{}/tests/fixtures/map-{index}-{name}.bin",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let responses = executor
+            .replay(&std::fs::read(path).unwrap(), None)
+            .unwrap();
+        let errors: Vec<_> = responses
+            .iter()
+            .filter(|response| matches!(response, Response::Error { .. }))
+            .collect();
+        if *name == "map-write-mapped" {
+            assert!(
+                responses.contains(&Response::Readback {
+                    request: 100,
+                    bytes: vec![7; 16]
+                }),
+                "{responses:?}"
+            );
+        }
+        counts.push((*name, errors.len()));
+        println!("{name}: {errors:?}");
+    }
+    assert_eq!(counts, EDGE_MAP_ERRORS);
+}
