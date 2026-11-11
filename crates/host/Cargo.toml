@@ -12,7 +12,8 @@ path = "src/main.rs"
 threejsc-gpu = { path = "../gpu" }
 anyhow = "1"
 deno_core = "0.413.0"
-image = { version = "0.25", default-features = false, features = ["png"] }
+deno_error = "=0.7.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 pollster = "0.4"
 sdl3 = { version = "0.22.1", features = ["build-from-source-static", "raw-window-handle"] }
 serde = { version = "1", features = ["derive"] }

@@ -1,5 +1,4 @@
 const ops = Deno.core.ops;
-const listeners = new Map();
 const callbacks = new Map();
 let nextFrame = 1;
 globalThis.window = globalThis;
@@ -31,13 +30,6 @@ globalThis.DOMException ??= class DOMException extends Error {
   get code() { return domExceptionCodes[this.#name] ?? 0; }
   get [Symbol.toStringTag]() { return "DOMException"; }
 };
-// HTML's ErrorEvent, which the host fires at the global object for an uncaught exception.
-globalThis.ErrorEvent ??= class ErrorEvent {
-  constructor(type, { message = "", filename = "", lineno = 0, colno = 0, error = null, cancelable = false } = {}) {
-    Object.assign(this, { type: String(type), message, filename, lineno, colno, error, cancelable, defaultPrevented: false });
-  }
-  preventDefault() { if (this.cancelable) this.defaultPrevented = true; }
-};
 globalThis.TextDecoder ??= class TextDecoder {
   constructor(label = "utf-8") {
     if (!/^utf-?8$/i.test(label)) throw new RangeError(`Unsupported encoding: ${label}`);
@@ -50,11 +42,6 @@ globalThis.TextDecoder ??= class TextDecoder {
 globalThis.performance = { now: () => ops.op_now() };
 globalThis.console = Object.fromEntries(["log", "info", "warn", "error", "debug"].map(level =>
   [level, (...args) => ops.op_log(args.map(arg => typeof arg === "string" ? arg : JSON.stringify(arg)).join(" "))]));
-globalThis.addEventListener = (type, callback) => {
-  if (!listeners.has(type)) listeners.set(type, new Set());
-  listeners.get(type).add(callback);
-};
-globalThis.removeEventListener = (type, callback) => listeners.get(type)?.delete(callback);
 globalThis.requestAnimationFrame = callback => { const id = nextFrame++; callbacks.set(id, callback); return id; };
 let running = null;
 globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(id); };
@@ -158,11 +145,9 @@ globalThis.setClearColor = (r, g, b, a = 1) => ops.op_clear(r, g, b, a);
 globalThis.submitGpuCommands = bytes => {
   if (!ops.op_gpu_submit(bytes)) throw new Error("Only one GPU command stream is allowed per frame");
 };
-const gamepads = [];
-globalThis.navigator = { getGamepads: () => gamepads };
 // HTML's "report an exception": a cancelable error event at the window, whose message has Edge's "Uncaught " prefix,
 // and the console unless a listener cancels the event or onerror returns true. An exception thrown while reporting
-// goes to the console only.
+// goes to the console only. The platform shims make the window an EventTarget and define ErrorEvent.
 let reporting = false;
 function report(error) {
   let canceled = false;
@@ -174,36 +159,13 @@ function report(error) {
     try {
       if (typeof globalThis.onerror === "function" && globalThis.onerror(message, "", 0, 0, error) === true) event.preventDefault();
     } catch (inner) { console.error(inner?.stack ?? String(inner)); }
-    for (const callback of listeners.get("error") ?? []) {
-      try { callback(event); } catch (inner) { console.error(inner?.stack ?? String(inner)); }
-    }
+    globalThis.dispatchEvent(event);
     reporting = false;
     canceled = event.defaultPrevented;
   }
   if (!canceled) console.error(error?.stack ?? String(error));
 }
-globalThis.__hostDispatch = event => {
-  if (event.type === "gpu-response") {
-    for (const response of event.responses) {
-      if (response.type === "readback") response.bytes = ops.op_gpu_readback(response.request);
-    }
-  }
-  if (event.type === "resize") {
-    globalThis.innerWidth = event.width;
-    globalThis.innerHeight = event.height;
-  }
-  if (event.type === "gamepadbutton") {
-    let pad = gamepads[event.index];
-    if (!pad) {
-      pad = gamepads[event.index] = { index: event.index, connected: true, buttons: Array.from({ length: 16 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
-      __hostDispatch({ type: "gamepadconnected", gamepad: pad });
-    }
-    pad.buttons[event.button] = { pressed: event.down, value: event.down ? 1 : 0 };
-  }
-  for (const callback of listeners.get(event.type) ?? []) {
-    try { callback(event); } catch (error) { report(error); }
-  }
-};
+globalThis.reportError = report;
 // The display's refresh interval in ms, which the host sets from its display mode. Frame starts cannot measure it: the
 // game thread starts a frame at once when it catches up, and a turn that overruns stretches the next interval.
 globalThis.__displayInterval = 1000 / 60;
