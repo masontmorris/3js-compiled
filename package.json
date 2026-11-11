@@ -6,7 +6,8 @@
   ],
   "scripts": {
     "postinstall": "node tools/install/patch-three.mjs",
-    "build:scenes": "node tools/scenes/build.mjs"
+    "build:scenes": "node tools/scenes/build.mjs",
+    "build:platform": "node tools/platform/build.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
