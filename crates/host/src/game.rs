@@ -385,8 +385,10 @@ mod tests {
                 "{scene}"
             );
         }
+        // The chain from a frame callback is left to the GPU runs: its first timer waits for the next frame's turn,
+        // which this test's 6 ms sleep after each frame turns into a clamp-sized gap.
         let log = timer_attack("deep")?;
-        for (chain, level) in [("timer", "7"), ("raf", "8"), ("interval", "2"), ("then", "2")] {
+        for (chain, level) in [("timer", "7"), ("interval", "2"), ("then", "2")] {
             assert_eq!(
                 result(&log, &format!("{chain} chain first level whose gap >= 3.5 ms")),
                 level,
