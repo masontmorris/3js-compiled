@@ -108,7 +108,6 @@ impl Gamepads {
 
     /// The `gamepads` input fact when any pad changed since the last one.
     pub fn snapshot(&mut self) -> Option<Value> {
-        self.subsystem.update();
         let pads: Vec<Value> = self
             .pads
             .values()
@@ -175,8 +174,10 @@ impl Gamepads {
                 } else {
                     Axis::TriggerRight
                 };
-                joystick
-                    .set_virtual_axis(axis.to_ll().0 as u32, if down { i16::MAX } else { 0 })?;
+                joystick.set_virtual_axis(
+                    axis.to_ll().0 as u32,
+                    if down { i16::MAX } else { i16::MIN },
+                )?;
             }
             _ => {
                 let Some(Some(button)) = BUTTONS.get(usize::from(button)) else {
@@ -189,7 +190,7 @@ impl Gamepads {
     }
 
     /// Moves axis `axis` of virtual pad `index` to `value`: standard axes 0 to 3 take -1 to 1, and 4 and 5 are
-    /// the left and right triggers, which take 0 to 1.
+    /// the left and right triggers, which take 0 to 1. SDL reads a virtual trigger over the axis's whole range.
     pub fn tilt(&mut self, index: u8, axis: u8, value: f64) -> Result<()> {
         let joystick = self.virtual_pad(index)?;
         let (axis, raw) = match axis {
@@ -203,7 +204,7 @@ impl Gamepads {
                 } else {
                     Axis::TriggerRight
                 },
-                (value.clamp(0.0, 1.0) * 32767.0).round() as i16,
+                (value.clamp(0.0, 1.0) * 65535.0 - 32768.0).round() as i16,
             ),
             _ => return Err(anyhow!("a gamepad has no axis {axis}")),
         };
@@ -246,6 +247,7 @@ mod tests {
             "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)"
         );
     }
+
     #[test]
     fn a_virtual_pad_reports_in_the_standard_mapping() -> Result<()> {
         let sdl = sdl3::init()?;
