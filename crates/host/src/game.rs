@@ -220,6 +220,17 @@ mod tests {
     /// Runs `entry` in `scene` until it turns the clear color green, for at most 10 seconds, and
     /// returns its log.
     fn run_until_green(name: &str, entry: &str, scene: Option<&str>) -> Result<String> {
+        run_paced(name, entry, scene, std::time::Duration::from_millis(1))
+    }
+
+    /// Runs `entry` a frame every `period`, as a display's refresh paces them, until it turns
+    /// the clear colour green, and returns its log.
+    fn run_paced(
+        name: &str,
+        entry: &str,
+        scene: Option<&str>,
+        period: std::time::Duration,
+    ) -> Result<String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -229,12 +240,14 @@ mod tests {
         let log = Rc::new(RefCell::new(File::create(&log_path)?));
         let mut game = Game::new(entry, log, &runtime, scene, (1280, 720), None)?;
         let started = Instant::now();
+        let mut next = started;
         while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
             assert!(
                 started.elapsed().as_secs() < 10,
                 "{name} never turned green"
             );
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            next += period;
+            std::thread::sleep(next.saturating_duration_since(Instant::now()));
         }
         Ok(std::fs::read_to_string(log_path)?)
     }
@@ -265,11 +278,15 @@ mod tests {
         Ok(())
     }
 
+    /// The timer page's log, a frame every 6 ms. Lane T's host ran this page a frame every
+    /// 5.9 ms (median), and headless Edge's order puts its frames 4 to 8 ms apart: frame 10 comes
+    /// after the 20 ms interval's first run and before its second.
     fn timer_rules(scene: &str) -> Result<String> {
-        run_until_green(
+        run_paced(
             &format!("timer-rules-{scene}"),
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-rules.js"),
             Some(scene),
+            std::time::Duration::from_millis(6),
         )
     }
 
@@ -295,7 +312,22 @@ mod tests {
         );
         assert_eq!(result(&log, "timing order"), "d1 d4 d16");
         assert_eq!(result(&log, "early"), "none");
-        assert_eq!(result(&log, "chain first level with gap >= 3.5 ms"), "7");
+        // Levels 2 to 6 of a zero-delay chain run in one turn and level 7 waits at least 4 ms,
+        // as in Edge. Level 1, set in a frame callback, runs at the next frame's turn, where Edge
+        // runs it as soon as the frame ends: one frame later at most.
+        let gaps: Vec<(u32, f64)> = result(&log, "chain gaps")
+            .split(' ')
+            .map(|item| {
+                let (level, gap) = item.split_once(':').unwrap();
+                (level.parse().unwrap(), gap.parse().unwrap())
+            })
+            .collect();
+        for (level, gap) in gaps {
+            assert!(
+                (level >= 7) == (gap >= 3.5) || level == 1,
+                "chain level {level} waited {gap} ms"
+            );
+        }
         assert_eq!(result(&log, "10 ms interval early"), "false");
         assert_eq!(result(&log, "window error events"), "1");
         // WebIDL converts a delay to a long: Infinity, 2^31, -5 and NaN wait 0 ms, and 2^32 + 5
