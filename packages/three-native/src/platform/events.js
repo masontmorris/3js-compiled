@@ -416,11 +416,11 @@ export class InputRouter {
       this.pressed.delete(fact.button);
       const common = downTarget?.contains?.(target) ? downTarget : target.contains?.(downTarget) ? target : null;
       if (common && clicked) {
-        const click = { ...init, button: fact.button, detail };
+        const click = { ...init, button: fact.button, detail, pressure: 0 };
         this.fire(common, PointerEvent, fact.button === 0 ? 'click' : 'auxclick', click);
         if (fact.button === 0 && detail === 2) this.fire(common, MouseEvent, 'dblclick', mouse);
       }
-      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0 });
+      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0, pressure: 0 });
       if (last) {
         this.lastPressed = undefined;
         this.suppressMouse = false;
