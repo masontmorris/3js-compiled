@@ -285,13 +285,20 @@ impl Renderer {
 impl Presenter {
     /// Draws the window with `device` from now on, which the game's `requestDevice()` replaced.
     /// wgpu resizes a configured swap chain in place, and the old one belongs to the old device's
-    /// queue, so the new device gets a new surface.
+    /// queue, so the new device gets a new surface. DXGI allows one swap chain per window, and the
+    /// old surface's lasts while the old device's finished submissions hold its textures, which
+    /// only a poll of that device frees, so the old device finishes its work first.
     fn adopt(&mut self, device: &wgpu::Device) -> Result<()> {
         self.surface = unsafe { self.instance.create_surface_unsafe(self.handles.target())? };
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
         self.device = device.clone();
         self.stretch = stretch_pipeline(device, self.config.format);
         self.scaled = None;
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.surface.configure(device, &self.config);
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            bail!("the window surface for the new device failed to configure: {error}");
+        }
         Ok(())
     }
     fn resize(&mut self, (width, height): (u32, u32)) {
