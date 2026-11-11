@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 /// The stream format version. It changes whenever the same bytes would replay differently.
-pub const VERSION: u16 = 7;
+pub const VERSION: u16 = 8;
 const HEADER_LEN: usize = 20;
 const RECORD_LEN: usize = 8;
 
@@ -84,7 +84,7 @@ pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
             .get(offset..offset + RECORD_LEN)
             .ok_or(DecodeError::Truncated)?;
         let opcode = u16_at(header, 0);
-        if !(1..=45).contains(&opcode) {
+        if !(1..=47).contains(&opcode) {
             return Err(DecodeError::Opcode);
         }
         if u16_at(header, 2) != 0 {

@@ -49,11 +49,11 @@ fn a_stream_of_an_earlier_version_is_rejected_by_version() {
 }
 
 #[test]
-fn insert_debug_marker_is_the_last_opcode() {
+fn pop_error_scope_is_the_last_opcode() {
     let mut frame = include_bytes!("fixtures/frame.bin").to_vec();
     let last = frame.len() - 8;
-    frame[last..last + 2].copy_from_slice(&45u16.to_le_bytes());
-    assert_eq!(decode(&frame).unwrap().records[2].opcode, 45);
-    frame[last..last + 2].copy_from_slice(&46u16.to_le_bytes());
+    frame[last..last + 2].copy_from_slice(&47u16.to_le_bytes());
+    assert_eq!(decode(&frame).unwrap().records[2].opcode, 47);
+    frame[last..last + 2].copy_from_slice(&48u16.to_le_bytes());
     assert_eq!(decode(&frame), Err(DecodeError::Opcode));
 }

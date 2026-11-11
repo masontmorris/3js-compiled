@@ -44,11 +44,13 @@ export const Opcode = Object.freeze({
   PUSH_DEBUG_GROUP: 43,
   POP_DEBUG_GROUP: 44,
   INSERT_DEBUG_MARKER: 45,
+  PUSH_ERROR_SCOPE: 46,
+  POP_ERROR_SCOPE: 47,
 });
 
 const MAGIC = 0x43534a33;
 // threejsc_gpu::VERSION. docs/native-gpu-commands.md says when it changes.
-const VERSION = 7;
+const VERSION = 8;
 const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
@@ -228,12 +230,11 @@ export class CommandEncoder {
     this.append(Opcode.REQUEST_DEVICE, encodeUtf8(JSON.stringify(descriptor)));
   }
 
-  createRenderPipeline(handle, request, descriptor) {
+  createRenderPipeline(handle, descriptor) {
     const bytes = encodeUtf8(JSON.stringify(descriptor));
-    const payload = new Uint8Array(8 + bytes.length);
+    const payload = new Uint8Array(4 + bytes.length);
     new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
-    new DataView(payload.buffer).setUint32(4, u32(request, 'request'), true);
-    payload.set(bytes, 8);
+    payload.set(bytes, 4);
     this.append(Opcode.CREATE_RENDER_PIPELINE, payload);
   }
 

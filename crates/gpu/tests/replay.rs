@@ -72,6 +72,7 @@ fn error(command: usize, request: Option<u32>, message: &str) -> Response {
         command,
         request,
         label: None,
+        filter: wgpu::ErrorFilter::Validation,
         message: message.into(),
     }
 }
@@ -326,9 +327,18 @@ fn recorded_render_pipeline_validates_with_vertex_and_depth_state() {
             .replay(include_bytes!("fixtures/pipeline.bin"), None)
             .unwrap(),
         vec![
-            Response::Validation { request: 3 },
-            Response::Validation { request: 5 },
-            Response::Validation { request: 7 },
+            Response::Compilation {
+                request: 3,
+                message: None
+            },
+            Response::Compilation {
+                request: 5,
+                message: None
+            },
+            Response::Scope {
+                request: 7,
+                error: None
+            },
             Response::Readback {
                 request: 100,
                 bytes: vec![4, 3, 2, 1]
@@ -344,31 +354,59 @@ fn invalid_shader_and_pipeline_report_requests_and_leave_other_work_usable() {
     let responses = executor
         .replay(include_bytes!("fixtures/pipeline-errors.bin"), None)
         .unwrap();
-    assert_eq!(responses.len(), 6);
-    match &responses[0] {
-        Response::Error {
-            request, message, ..
-        } => {
-            assert_eq!(*request, Some(3));
-            assert!(message.contains("broken material"), "{message}");
-            assert!(message.contains(":2:"), "{message}");
-        }
-        response => panic!("expected shader diagnostic, got {response:?}"),
-    }
-    assert_eq!(responses[1], Response::Validation { request: 5 });
-    assert_eq!(responses[2], Response::Validation { request: 7 });
-    match &responses[3] {
-        Response::Error {
-            request, message, ..
-        } => {
-            assert_eq!(*request, Some(9));
-            assert!(message.contains("broken material pipeline"), "{message}");
-        }
-        response => panic!("expected pipeline error, got {response:?}"),
-    }
-    assert_eq!(responses[4], Response::Validation { request: 11 });
+    assert_eq!(responses.len(), 7, "{responses:?}");
+    let Response::Compilation {
+        request: 3,
+        message: Some(message),
+    } = &responses[0]
+    else {
+        panic!(
+            "expected the shader's compilation message, got {:?}",
+            responses[0]
+        );
+    };
+    assert!(
+        message.contains("broken material") && message.contains(":2:"),
+        "{message}"
+    );
+    assert!(
+        matches!(&responses[1], Response::Error { request: None, message, .. } if message.contains("broken material")),
+        "the shader's error is uncaptured outside a scope: {:?}",
+        responses[1]
+    );
+    assert_eq!(
+        responses[2..4],
+        [
+            Response::Compilation {
+                request: 5,
+                message: None
+            },
+            Response::Compilation {
+                request: 7,
+                message: None
+            }
+        ]
+    );
+    let Response::Scope {
+        request: 9,
+        error: Some((wgpu::ErrorFilter::Validation, message)),
+    } = &responses[4]
+    else {
+        panic!(
+            "expected the pipeline's scope to capture its error, got {:?}",
+            responses[4]
+        );
+    };
+    assert!(message.contains("broken material pipeline"), "{message}");
     assert_eq!(
         responses[5],
+        Response::Scope {
+            request: 11,
+            error: None
+        }
+    );
+    assert_eq!(
+        responses[6],
         Response::Readback {
             request: 100,
             bytes: vec![9, 8, 7, 6]
@@ -385,8 +423,14 @@ fn recorded_draws_fill_targets_with_bound_uniform_color() {
             .replay(include_bytes!("fixtures/draw.bin"), None)
             .unwrap(),
         vec![
-            Response::Validation { request: 4 },
-            Response::Validation { request: 6 },
+            Response::Compilation {
+                request: 4,
+                message: None
+            },
+            Response::Compilation {
+                request: 6,
+                message: None
+            },
             Response::Readback {
                 request: 100,
                 bytes: red.clone()
@@ -408,7 +452,10 @@ fn surface_is_bound_for_one_frame_and_bundles_draw_with_an_automatic_layout() {
     let mut executor = Executor::new(device.clone(), queue.clone());
     let frame = include_bytes!("fixtures/surface.bin");
     let drawn = vec![
-        Response::Validation { request: 2 },
+        Response::Compilation {
+            request: 2,
+            message: None,
+        },
         Response::Readback {
             request: 100,
             bytes: [255, 0, 0, 255].repeat(16),
@@ -1137,18 +1184,18 @@ fn a_vertex_attribute_offset_past_u64_is_an_error_in_every_build() {
         .iter_mut()
         .find(|(opcode, _)| *opcode == 13)
         .unwrap();
-    let json = String::from_utf8(payload[8..].to_vec()).unwrap();
+    let json = String::from_utf8(payload[4..].to_vec()).unwrap();
     let crafted = json.replacen("\"offset\":0", "\"offset\":18446744073709551612", 1);
     assert_ne!(crafted, json);
-    payload.truncate(8);
+    payload.truncate(4);
     payload.extend_from_slice(crafted.as_bytes());
     let responses = executor().replay(&stream(&records), None).unwrap();
     assert!(
         responses.iter().any(|response| matches!(
             response,
-            Response::Error { message, .. } if message.contains("vertex attribute")
+            Response::Scope { error: Some((_, message)), .. } if message.contains("vertex attribute")
         )),
-        "{responses:?}"
+        "the pipeline's error scope captures the error: {responses:?}"
     );
 }
 
@@ -1258,7 +1305,7 @@ fn mutate(rng: &mut Rng, base: &[(u16, Vec<u8>)]) -> Vec<(u16, Vec<u8>)> {
                     continue;
                 }
                 let payload = &mut records[pipelines[rng.below(pipelines.len())]].1;
-                let Ok(json) = String::from_utf8(payload[8..].to_vec()) else {
+                let Ok(json) = String::from_utf8(payload[4..].to_vec()) else {
                     continue;
                 };
                 let digits: Vec<_> = json
@@ -1280,7 +1327,7 @@ fn mutate(rng: &mut Rng, base: &[(u16, Vec<u8>)]) -> Vec<(u16, Vec<u8>)> {
                     NUMBERS[rng.below(NUMBERS.len())],
                     &json[end..]
                 );
-                payload.truncate(8);
+                payload.truncate(4);
                 payload.extend_from_slice(mutated.as_bytes());
             }
             _ => {
@@ -1705,5 +1752,156 @@ fn a_device_request_for_more_than_the_defaults_takes_a_device_with_those_limits(
         (surface.width(), surface.height()),
         (9000, 4),
         "the canvas moved to the new device"
+    );
+}
+
+const PUSH_ERROR_SCOPE: u16 = 46;
+const POP_ERROR_SCOPE: u16 = 47;
+const BROKEN_WGSL: &str = "@fragment fn main( -> {";
+
+fn shader(handle: u32, label: &str, code: &str) -> (u16, Vec<u8>) {
+    let mut payload = words(&[handle, label.len() as u32, code.len() as u32, 0]);
+    payload.extend_from_slice(label.as_bytes());
+    payload.extend_from_slice(code.as_bytes());
+    (9, payload)
+}
+
+fn buffer(handle: u32, size: u64, usage: u32) -> (u16, Vec<u8>) {
+    let mut payload = handle.to_le_bytes().to_vec();
+    payload.extend_from_slice(&size.to_le_bytes());
+    payload.extend_from_slice(&words(&[usage, 0]));
+    (1, payload)
+}
+
+fn copy_buffer(source: u32, offset: u64, destination: u32, size: u64) -> (u16, Vec<u8>) {
+    let mut payload = source.to_le_bytes().to_vec();
+    payload.extend_from_slice(&offset.to_le_bytes());
+    payload.extend_from_slice(&destination.to_le_bytes());
+    payload.extend_from_slice(&0u64.to_le_bytes());
+    payload.extend_from_slice(&size.to_le_bytes());
+    (38, payload)
+}
+
+/// What each popped scope captured.
+fn scopes(responses: &[Response]) -> Vec<(u32, Option<wgpu::ErrorFilter>, String)> {
+    responses
+        .iter()
+        .filter_map(|response| match response {
+            Response::Scope { request, error } => Some(match error {
+                Some((filter, message)) => (*request, Some(*filter), message.clone()),
+                None => (*request, None, String::new()),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Edge's answers to the same calls, from rules.js `scopes` in
+/// C:\3jsc\swarm\e3-r12\kit\out\edge\rules-scopes\console.txt.
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn errors_go_to_the_innermost_scope_of_their_filter_and_only_unmatched_ones_are_uncaptured() {
+    use wgpu::ErrorFilter::Validation;
+    let mut executor = executor();
+    let push = |filter: u32| (PUSH_ERROR_SCOPE, words(&[filter]));
+    let pop = |request: u32| (POP_ERROR_SCOPE, words(&[request]));
+    let responses = executor
+        .replay(
+            &stream(&[
+                push(0),
+                push(0),
+                shader(1, "nested", BROKEN_WGSL),
+                pop(101),
+                pop(102),
+                push(0),
+                push(1),
+                shader(2, "under-oom", BROKEN_WGSL),
+                pop(103),
+                pop(104),
+                push(0),
+                push(2),
+                shader(3, "under-internal", BROKEN_WGSL),
+                pop(105),
+                pop(106),
+                push(1),
+                shader(4, "oom-only", BROKEN_WGSL),
+                pop(107),
+                push(0),
+                shader(5, "first", BROKEN_WGSL),
+                shader(6, "second", BROKEN_WGSL),
+                pop(108),
+                push(0),
+                shader(
+                    7,
+                    "valid",
+                    "@fragment fn main() -> @location(0) vec4f { return vec4f(1); }",
+                ),
+                pop(109),
+                buffer(8, 256, 12),
+                buffer(9, 256, 12),
+                push(0),
+                copy_buffer(8, 2, 9, 64),
+                (26, Vec::new()),
+                pop(110),
+                pop(111),
+                push(0),
+            ]),
+            None,
+        )
+        .unwrap();
+    let captured = scopes(&responses);
+    let summary: Vec<_> = captured
+        .iter()
+        .map(|(request, filter, _)| (*request, *filter))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (101, Some(Validation)),
+            (102, None),
+            (103, None),
+            (104, Some(Validation)),
+            (105, None),
+            (106, Some(Validation)),
+            (107, None),
+            (108, Some(Validation)),
+            (109, None),
+            (110, Some(Validation)),
+        ],
+        "{responses:?}"
+    );
+    for (request, label) in [
+        (101, "nested"),
+        (104, "under-oom"),
+        (106, "under-internal"),
+        (108, "first"),
+    ] {
+        let (_, _, message) = captured.iter().find(|(r, ..)| *r == request).unwrap();
+        assert!(
+            message.contains(&format!("shader {label}:")),
+            "scope {request}: {message}"
+        );
+    }
+    let uncaptured: Vec<_> = responses
+        .iter()
+        .filter_map(|response| match response {
+            Response::Error {
+                filter, message, ..
+            } => Some((*filter, message.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(uncaptured.len(), 2, "{uncaptured:?}");
+    assert!(
+        uncaptured[0].1.contains("shader oom-only:"),
+        "{uncaptured:?}"
+    );
+    assert_eq!(uncaptured[1], (Validation, "no error scope to pop"));
+    let later = executor
+        .replay(&stream(&[shader(10, "later", BROKEN_WGSL), pop(112)]), None)
+        .unwrap();
+    assert!(
+        matches!(&later[..], [Response::Scope { request: 112, error: Some((Validation, message)) }] if message.contains("shader later:")),
+        "a scope pushed in one frame captures an error of the next: {later:?}"
     );
 }

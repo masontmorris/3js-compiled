@@ -56,7 +56,7 @@ test('shader compilation information arrives on the response channel', async () 
   const shader = device.createShaderModule({ label: 'broken', code: '@fragment fn main() {}' });
   const [record] = decodeCommands(device.takeFrame());
   const request = new DataView(record.payload.buffer).getUint32(12, true);
-  device.receiveResponses([{ type: 'error', request, message: 'shader broken: wgsl:2:7 invalid expression' }]);
+  device.receiveResponses([{ type: 'compilation', request, message: 'shader broken: wgsl:2:7 invalid expression' }]);
   const info = await shader.getCompilationInfo();
   assert.equal(info.messages[0].lineNum, 2);
   assert.equal(info.messages[0].linePos, 7);
@@ -551,7 +551,7 @@ test('automatic pipeline layouts are shared and bundles replay inline in each pa
   device.queue.submit([encoder.finish()]);
   device.releaseRenderPipeline(pipeline);
   const records = decodeCommands(device.takeFrame());
-  const spec = JSON.parse(new TextDecoder().decode(records.find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE).payload.slice(8)));
+  const spec = JSON.parse(new TextDecoder().decode(records.find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE).payload.slice(4)));
   assert.equal(spec.layout, 0);
   assert.equal(spec.vertex.entryPoint, null);
   assert.equal(records.filter(item => item.opcode === Opcode.GET_BIND_GROUP_LAYOUT).length, 1);
@@ -574,7 +574,7 @@ test('render pipeline snapshots its shader and vertex descriptors', () => {
   });
   attribute.offset = 4;
   const record = decodeCommands(device.takeFrame()).find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE);
-  const spec = JSON.parse(new TextDecoder().decode(record.payload.slice(8)));
+  const spec = JSON.parse(new TextDecoder().decode(record.payload.slice(4)));
   assert.equal(new DataView(record.payload.buffer).getUint32(0, true), pipeline.handle);
   assert.equal(spec.layout, layout.handle);
   assert.equal(spec.vertex.module, vertex.handle);

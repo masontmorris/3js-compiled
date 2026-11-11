@@ -24,20 +24,35 @@ struct Texture {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Response {
-    Validation {
+    /// A shader's compilation message, or `None` when it compiled.
+    Compilation {
         request: u32,
+        message: Option<String>,
     },
     Readback {
         request: u32,
         bytes: Vec<u8>,
     },
+    /// The first error that a popped error scope captured, or `None`.
+    Scope {
+        request: u32,
+        error: Option<(wgpu::ErrorFilter, String)>,
+    },
+    /// An error that no error scope captured, or a readback's error when `request` names it.
     Error {
         frame: u32,
         command: usize,
         request: Option<u32>,
         label: Option<String>,
+        filter: wgpu::ErrorFilter,
         message: String,
     },
+}
+
+/// An open error scope, which captures the first error of its filter that no inner scope does.
+struct ErrorScope {
+    filter: wgpu::ErrorFilter,
+    error: Option<String>,
 }
 
 /// What the queue has done to this frame's surface. A browser gives each frame a transparent black
@@ -115,7 +130,11 @@ pub struct Executor {
     surface_used: bool,
     trailed: bool,
     surface_clear: SurfaceClear,
-    uncaptured: Arc<Mutex<Vec<String>>>,
+    /// The errors a command raises besides its result, by filter: wgpu's errors outside the
+    /// executor's own error scopes, and the further errors WebGPU raises for the command.
+    uncaptured: Arc<Mutex<Vec<(wgpu::ErrorFilter, String)>>>,
+    /// The stream's open error scopes, innermost last. They outlast a frame, as in WebGPU.
+    scopes: Vec<ErrorScope>,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -221,10 +240,18 @@ fn copy_image<'a>(
     )
 }
 
-fn report_uncaptured(device: &wgpu::Device, uncaptured: &Arc<Mutex<Vec<String>>>) {
+fn report_uncaptured(
+    device: &wgpu::Device,
+    uncaptured: &Arc<Mutex<Vec<(wgpu::ErrorFilter, String)>>>,
+) {
     let errors = uncaptured.clone();
     device.on_uncaptured_error(Arc::new(move |error| {
-        errors.lock().unwrap().push(error.to_string());
+        let filter = match error {
+            wgpu::Error::OutOfMemory { .. } => wgpu::ErrorFilter::OutOfMemory,
+            wgpu::Error::Validation { .. } => wgpu::ErrorFilter::Validation,
+            wgpu::Error::Internal { .. } => wgpu::ErrorFilter::Internal,
+        };
+        errors.lock().unwrap().push((filter, error.to_string()));
     }));
 }
 
@@ -283,6 +310,7 @@ impl Executor {
             trailed: false,
             surface_clear: SurfaceClear::Done,
             uncaptured,
+            scopes: Vec::new(),
         }
     }
 
@@ -333,7 +361,7 @@ impl Executor {
             14 => at(8),
             23 | 24 => self.pipeline,
             25 | 26 => self.pass_view,
-            34 | 35 | 37 | 43..=45 => None,
+            34 | 35 | 37 | 43..=47 => None,
             _ => at(0),
         }
     }
@@ -388,39 +416,29 @@ impl Executor {
             } else {
                 self.execute(record.opcode, record.payload)
             };
-            // Each error is its own response, as each raises its own uncapturederror in WebGPU.
             let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
-            let messages = match result {
-                Ok(response) if uncaptured.is_empty() => {
-                    responses.extend(response);
-                    Vec::new()
-                }
-                result => result.err().into_iter().chain(uncaptured).collect(),
+            let (response, error) = match result {
+                Ok(response) => (response, None),
+                Err(error) => (None, Some((wgpu::ErrorFilter::Validation, error))),
             };
+            responses.extend(response);
             let label = self.label(subject).or(before);
-            let request =
-                if (record.opcode == 27 || record.opcode == 28) && record.payload.len() >= 4 {
-                    Some(u32_at(record.payload, 0))
-                } else if record.opcode == 9
-                    && record.payload.len() >= 16
-                    && u32_at(record.payload, 12) != 0
-                {
-                    Some(u32_at(record.payload, 12))
-                } else if record.opcode == 13
-                    && record.payload.len() >= 8
-                    && u32_at(record.payload, 4) != 0
-                {
-                    Some(u32_at(record.payload, 4))
-                } else {
-                    None
-                };
-            responses.extend(messages.into_iter().map(|message| Response::Error {
-                frame: self.frame,
-                command,
-                request,
-                label: label.clone(),
-                message,
-            }));
+            // A readback's errors reject its request.
+            let request = (matches!(record.opcode, 27 | 28) && record.payload.len() >= 4)
+                .then(|| u32_at(record.payload, 0));
+            for (filter, message) in error.into_iter().chain(uncaptured) {
+                match request {
+                    Some(_) => responses.push(Response::Error {
+                        frame: self.frame,
+                        command,
+                        request,
+                        label: label.clone(),
+                        filter,
+                        message,
+                    }),
+                    None => self.raise(&mut responses, command, label.clone(), filter, message),
+                }
+            }
             // A create keeps its label for its error and drops it when the create left no resource.
             if let Some(handle) = subject.filter(|handle| !self.handle_used(*handle)) {
                 self.labels.remove(&handle);
@@ -437,13 +455,13 @@ impl Executor {
             self.invalid_pass = None;
             self.invalid_encoder = false;
             self.encoder = None;
-            responses.push(Response::Error {
-                frame: self.frame,
-                command: records.len(),
-                request: None,
-                label: None,
-                message: "incomplete command submission".into(),
-            });
+            self.raise(
+                &mut responses,
+                records.len(),
+                None,
+                wgpu::ErrorFilter::Validation,
+                "incomplete command submission".into(),
+            );
         }
         for handle in std::mem::take(&mut self.surface_handles) {
             self.textures.remove(&handle);
@@ -466,6 +484,37 @@ impl Executor {
         }
         self.shown = None;
         Ok(responses)
+    }
+
+    /// Raises an error as WebGPU does: the innermost open scope of its filter captures it and keeps
+    /// it when it is that scope's first, and an error that no scope captures is a response, as it
+    /// raises its own uncapturederror.
+    fn raise(
+        &mut self,
+        responses: &mut Vec<Response>,
+        command: usize,
+        label: Option<String>,
+        filter: wgpu::ErrorFilter,
+        message: String,
+    ) {
+        match self
+            .scopes
+            .iter_mut()
+            .rev()
+            .find(|scope| scope.filter == filter)
+        {
+            Some(scope) => {
+                scope.error.get_or_insert(message);
+            }
+            None => responses.push(Response::Error {
+                frame: self.frame,
+                command,
+                request: None,
+                label,
+                filter,
+                message,
+            }),
+        }
     }
 
     /// Whether the last replay replaced the shown canvas: with the canvas texture it bound with
@@ -512,10 +561,10 @@ impl Executor {
         self.trailed = trailed && error.is_none();
         match error {
             Some(error) => {
-                self.uncaptured
-                    .lock()
-                    .unwrap()
-                    .push("the command buffer is invalid due to a previous error".into());
+                self.uncaptured.lock().unwrap().push((
+                    wgpu::ErrorFilter::Validation,
+                    "the command buffer is invalid due to a previous error".into(),
+                ));
                 Err(error.to_string())
             }
             None => Ok(None),
@@ -686,6 +735,8 @@ impl Executor {
             features: Vec<String>,
             limits: wgpu::Limits,
         }
+        // Each request starts a device, whose error scope stack starts empty.
+        self.scopes.clear();
         let request: Request = serde_json::from_slice(payload)
             .map_err(|error| format!("invalid device request: {error}"))?;
         let mut features = wgpu::Features::empty();
@@ -1423,12 +1474,19 @@ impl Executor {
                         label: Some(label),
                         source: wgpu::ShaderSource::Wgsl(code.into()),
                     });
-                if let Some(error) = pollster::block_on(scope.pop()) {
-                    self.shaders.insert(handle, None);
-                    return Err(format!("shader {label}: {error}"));
-                }
-                self.shaders.insert(handle, Some(shader));
-                Ok((request != 0).then_some(Response::Validation { request }))
+                let message = pollster::block_on(scope.pop()).map(|error| {
+                    // As in WebGPU, a shader that fails to compile raises its error as well as
+                    // its compilation message.
+                    let message = format!("shader {label}: {error}");
+                    self.uncaptured
+                        .lock()
+                        .unwrap()
+                        .push((wgpu::ErrorFilter::Validation, message.clone()));
+                    message
+                });
+                self.shaders
+                    .insert(handle, message.is_none().then_some(shader));
+                Ok((request != 0).then_some(Response::Compilation { request, message }))
             }
             10 => {
                 if payload.len() < 8 || !(payload.len() - 8).is_multiple_of(32) {
@@ -1558,20 +1616,18 @@ impl Executor {
                 keep(&mut self.pipeline_layouts, handle, layout)
             }
             13 => {
-                if payload.len() < 9 {
+                if payload.len() < 5 {
                     return Err("invalid render pipeline length".into());
                 }
                 let handle = u32_at(payload, 0);
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate render pipeline handle".into());
                 }
-                let request = u32_at(payload, 4);
-                let spec: crate::pipeline::Pipeline = serde_json::from_slice(&payload[8..])
+                let spec: crate::pipeline::Pipeline = serde_json::from_slice(&payload[4..])
                     .map_err(|error| format!("invalid render pipeline descriptor: {error}"))?;
                 self.set_label(handle, &spec.label);
                 let pipeline = self.render_pipeline(&spec);
                 keep(&mut self.render_pipelines, handle, pipeline)
-                    .map(|_| (request != 0).then_some(Response::Validation { request }))
             }
             14 => {
                 if self.render_pass.is_some() || self.invalid_pass.is_some() {
@@ -1968,10 +2024,11 @@ impl Executor {
                         }
                         let mut uncaptured = self.uncaptured.lock().unwrap();
                         if configured {
-                            uncaptured.push(error.clone());
+                            uncaptured.push((wgpu::ErrorFilter::Validation, error.clone()));
                         }
-                        uncaptured.push(format!(
-                            "could not create a canvas texture of size {width}x{height}"
+                        uncaptured.push((
+                            wgpu::ErrorFilter::Validation,
+                            format!("could not create a canvas texture of size {width}x{height}"),
                         ));
                         return Err(error);
                     }
@@ -2122,6 +2179,28 @@ impl Executor {
                 Ok(None)
             }
             26 => self.submit(payload, None),
+            46 => {
+                size(payload, 4)?;
+                let filter = match u32_at(payload, 0) {
+                    0 => wgpu::ErrorFilter::Validation,
+                    1 => wgpu::ErrorFilter::OutOfMemory,
+                    2 => wgpu::ErrorFilter::Internal,
+                    _ => return Err("invalid error scope filter".into()),
+                };
+                self.scopes.push(ErrorScope {
+                    filter,
+                    error: None,
+                });
+                Ok(None)
+            }
+            47 => {
+                size(payload, 4)?;
+                let scope = self.scopes.pop().ok_or("no error scope to pop")?;
+                Ok(Some(Response::Scope {
+                    request: u32_at(payload, 0),
+                    error: scope.error.map(|message| (scope.filter, message)),
+                }))
+            }
             _ => Err(format!("GPU opcode {opcode} is not implemented")),
         }
     }

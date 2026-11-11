@@ -6,6 +6,18 @@ globalThis.GPUTextureUsage ??= Object.freeze({ COPY_SRC: 1, COPY_DST: 2, TEXTURE
 globalThis.GPUShaderStage ??= Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
 globalThis.GPUMapMode ??= Object.freeze({ READ: 1, WRITE: 2 });
 globalThis.GPURenderBundleEncoder ??= class GPURenderBundleEncoder {};
+globalThis.GPUError ??= class GPUError {
+  constructor(message) {
+    this.message = String(message);
+  }
+};
+globalThis.GPUValidationError ??= class GPUValidationError extends GPUError {};
+globalThis.GPUOutOfMemoryError ??= class GPUOutOfMemoryError extends GPUError {};
+globalThis.GPUInternalError ??= class GPUInternalError extends GPUError {};
+
+// Each GPUErrorFilter, as the stream's PUSH_ERROR_SCOPE numbers it, and the error a scope of it captures.
+const errorFilters = { validation: 0, 'out-of-memory': 1, internal: 2 };
+const errorTypes = { validation: GPUValidationError, 'out-of-memory': GPUOutOfMemoryError, internal: GPUInternalError };
 
 class RecordingBuffer {
   constructor(device, descriptor) {
@@ -455,7 +467,8 @@ export class RecordingDevice {
     this.pipelineLayouts = new Set();
     this.renderPipelines = new Set();
     this.surface = null;
-    this.errorScopes = [];
+    // How many error scopes are open. The executor holds the scopes, because it raises the errors.
+    this.errorScopes = 0;
     this.pending = new Map();
     this.onResponse = event => this.receiveResponses(event.responses);
     globalThis.addEventListener?.('gpu-response', this.onResponse);
@@ -540,14 +553,22 @@ export class RecordingDevice {
   createComputePipelineAsync = notImplemented('GPUDevice.createComputePipelineAsync');
 
   pushErrorScope(filter) {
-    if (filter !== 'validation') throw new Error('Unsupported error scope');
-    this.errorScopes.push([]);
+    if (!(filter in errorFilters)) throw new TypeError(`'${filter}' is not a valid GPUErrorFilter`);
+    this.errorScopes++;
+    this.commands.words(Opcode.PUSH_ERROR_SCOPE, [errorFilters[filter]]);
   }
 
+  // Resolves with the first error the scope captured, or null, once the executor pops it.
   popErrorScope() {
-    const scope = this.errorScopes.pop();
-    if (!scope) return Promise.reject(new Error('No error scope'));
-    return Promise.all(scope).then(results => results.find(result => result !== null) ?? null);
+    if (this.errorScopes === 0) {
+      const error = new Error('No error scopes to pop');
+      error.name = 'OperationError';
+      return Promise.reject(error);
+    }
+    this.errorScopes--;
+    const request = this.handles.allocate();
+    this.commands.words(Opcode.POP_ERROR_SCOPE, [request]);
+    return new Promise((resolve, reject) => this.pending.set(request, { scope: true, resolve, reject }));
   }
 
   readBuffer(buffer, offset, size) {
@@ -562,16 +583,15 @@ export class RecordingDevice {
       const pending = this.pending.get(response.request);
       if (pending) {
         this.pending.delete(response.request);
-        if (pending.shader) {
+        if (response.type === 'compilation') {
           const location = response.message?.match(/:(\d+):(\d+)/);
-          pending.resolve({ messages: response.type === 'error' ? [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] : [] });
-          // A shader module that fails to compile also raises an uncaptured error, as in WebGPU.
-          if (response.type === 'error') this.onuncapturederror?.({ error: new Error(response.message) });
-        } else if (pending.validation) pending.resolve(response.type === 'error' ? { message: response.message } : null);
+          pending.resolve({ messages: response.message == null ? [] : [{ type: 'error', message: response.message, lineNum: Number(location?.[1] ?? 0), linePos: Number(location?.[2] ?? 0) }] });
+        } else if (response.type === 'scope') pending.resolve(response.filter == null ? null : new errorTypes[response.filter](response.message));
         else if (response.type === 'readback') pending.resolve(response.bytes instanceof ArrayBuffer ? response.bytes : Uint8Array.from(response.bytes).buffer);
         else pending.reject(new Error(response.message));
       } else if (response.type === 'error' && response.request == null) {
-        this.onuncapturederror?.({ error: new Error(response.message) });
+        // An error that no error scope captured, such as a shader module's that fails to compile.
+        this.onuncapturederror?.({ error: new errorTypes[response.filter ?? 'validation'](response.message) });
       }
     }
   }
@@ -743,10 +763,7 @@ export class RecordingDevice {
         return autoLayouts.get(index);
       },
     };
-    const scope = this.errorScopes.at(-1);
-    const request = scope ? this.handles.allocate() : 0;
-    if (scope) scope.push(new Promise((resolve, reject) => this.pending.set(request, { resolve, reject, validation: true })));
-    this.commands.createRenderPipeline(pipeline.handle, request, spec);
+    this.commands.createRenderPipeline(pipeline.handle, spec);
     this.renderPipelines.add(pipeline);
     return pipeline;
   }
@@ -839,7 +856,7 @@ export class RecordingDevice {
     globalThis.removeEventListener?.('gpu-response', this.onResponse);
     // A lost WebGPU device resolves its error scopes with no error and rejects its readbacks.
     for (const pending of this.pending.values()) {
-      if (pending.validation) pending.resolve(null);
+      if (pending.scope) pending.resolve(null);
       else pending.reject(new Error('Device is destroyed'));
     }
     this.pending.clear();

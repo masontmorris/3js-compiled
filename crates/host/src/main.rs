@@ -68,6 +68,14 @@ fn log(log: &Log, message: &str) -> Result<()> {
 fn pointer(action: PointerAction, x: f64, y: f64, button: i16) -> Value {
     json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button})
 }
+/// The GPUErrorFilter name of an error's filter.
+fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
+    match filter {
+        wgpu::ErrorFilter::Validation => "validation",
+        wgpu::ErrorFilter::OutOfMemory => "out-of-memory",
+        wgpu::ErrorFilter::Internal => "internal",
+    }
+}
 /// The game thread's share of a frame whose render-thread result has not arrived yet.
 struct Row {
     cpu: Duration,
@@ -88,15 +96,19 @@ fn finish(
             let mut values = Vec::with_capacity(responses.len());
             for response in responses {
                 values.push(match response {
-                    threejsc_gpu::Response::Validation { request } => json!({"type": "validation", "request": request}),
+                    threejsc_gpu::Response::Compilation { request, message } => json!({"type": "compilation", "request": request, "message": message}),
                     threejsc_gpu::Response::Readback { request, bytes } => {
                         readbacks.insert(request, bytes);
                         json!({"type": "readback", "request": request})
                     }
-                    threejsc_gpu::Response::Error { frame, command, request, label, message } => {
+                    threejsc_gpu::Response::Scope { request, error } => {
+                        let (filter, message) = error.map_or((None, None), |(filter, message)| (Some(filter_name(filter)), Some(message)));
+                        json!({"type": "scope", "request": request, "filter": filter, "message": message})
+                    }
+                    threejsc_gpu::Response::Error { frame, command, request, label, filter, message } => {
                         let request_text = request.map_or("none".into(), |request| request.to_string());
                         log(log_file, &format!("GPU error: frame {frame}, command {command}, label {}, request {request_text}: {message}", label.as_deref().unwrap_or("none")))?;
-                        json!({"type": "error", "frame": frame, "command": command, "request": request, "label": label, "message": message})
+                        json!({"type": "error", "frame": frame, "command": command, "request": request, "label": label, "filter": filter_name(filter), "message": message})
                     }
                 });
             }

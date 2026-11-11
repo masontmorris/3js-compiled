@@ -800,7 +800,10 @@ fn a_limit_worse_than_the_default_gives_the_default_and_one_past_the_adapter_rej
     let (f40, f70, errors, log) = edge_case("canvas-cases", "limits-worse");
     assert_eq!(errors, [], "{log}");
     assert!(log.contains("maxTextureDimension2D: 8192"), "{log}");
-    assert_eq!([f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0], [YELLOW, BLUE]);
+    assert_eq!(
+        [f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0],
+        [YELLOW, BLUE]
+    );
     let (_, _, errors, log) = edge_case("canvas-cases", "limits-over");
     assert_eq!(errors, [], "{log}");
     assert!(
