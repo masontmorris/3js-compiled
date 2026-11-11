@@ -36,22 +36,36 @@ class RecordingBuffer {
     throw new Error('GPUBuffer.mapAsync is not implemented; the native device reads buffers back through three\'s getArrayBufferAsync()');
   }
 
+  // Only mappedAtCreation maps a buffer here, so a buffer is never pending.
+  get mapState() {
+    return this.mapped ? 'mapped' : 'unmapped';
+  }
+
   getMappedRange(offset = 0, size = this.size - offset) {
-    if (!this.mapped || offset !== 0 || size !== this.size) throw new Error('Only a whole mapped-at-creation buffer is supported');
+    if (!this.mapped) {
+      const error = new Error('getMappedRange failed: the buffer is not mapped');
+      error.name = 'OperationError';
+      throw error;
+    }
+    if (offset !== 0 || size !== this.size) throw new Error('Only a whole mapped-at-creation buffer is supported');
     return this.mapped;
   }
 
-  // A buffer over maxBufferSize is invalid, and the unmap of an invalid buffer does nothing, so its data stays here.
+  // As in WebGPU, unmap() detaches the mapped range and does nothing on a buffer that is not mapped, such as one
+  // already unmapped or destroyed. A buffer over maxBufferSize is invalid, and the unmap of an invalid buffer does
+  // nothing, so its data stays here.
   unmap() {
-    if (!this.mapped) throw new Error('Buffer is not mapped');
-    const data = this.size > this.device.limits.maxBufferSize ? new Uint8Array() : new Uint8Array(this.mapped);
-    this.device.commands.unmapBuffer(this.handle, data);
+    if (!this.mapped) return;
+    const contents = this.mapped.transfer();
     this.mapped = null;
+    const data = this.size > this.device.limits.maxBufferSize ? new Uint8Array() : new Uint8Array(contents);
+    this.device.commands.unmapBuffer(this.handle, data);
   }
 
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.mapped?.transfer();
     this.mapped = null;
     this.device.commands.destroyBuffer(this.handle);
     this.device.buffers.delete(this);
