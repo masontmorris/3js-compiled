@@ -246,4 +246,40 @@ mod tests {
             "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)"
         );
     }
+    #[test]
+    fn a_virtual_pad_reports_in_the_standard_mapping() -> Result<()> {
+        let sdl = sdl3::init()?;
+        let mut pads = Gamepads::new(sdl.gamepad()?, sdl.joystick()?);
+        let mut events = sdl.event_pump()?;
+        let mut poll = |pads: &mut Gamepads| -> Result<()> {
+            for event in events.poll_iter() {
+                if let sdl3::event::Event::GamepadAdded { which, .. } = event {
+                    pads.added(which.raw())?;
+                }
+            }
+            Ok(())
+        };
+        pads.tilt(0, 0, 0.0)?;
+        poll(&mut pads)?;
+        let fact = pads.snapshot().expect("the pad connects");
+        assert_eq!(fact["pads"][0]["buttons"][7], 0.0);
+        pads.press(0, 0, true)?;
+        pads.press(0, 7, true)?;
+        pads.tilt(0, 4, 0.5)?;
+        pads.tilt(0, 1, -1.0)?;
+        poll(&mut pads)?;
+        let fact = pads.snapshot().expect("the pad changed");
+        let pad = &fact["pads"][0];
+        assert_eq!(pad["id"], "Xbox 360 Controller (XInput STANDARD GAMEPAD)");
+        assert_eq!(pad["buttons"][0], 1.0);
+        assert_eq!(pad["buttons"][1], 0.0);
+        assert_eq!(pad["buttons"][7], 1.0);
+        assert!((pad["buttons"][6].as_f64().unwrap_or(0.0) - 0.5).abs() < 0.001);
+        assert_eq!(pad["axes"][1], -1.0);
+        pads.press(0, 7, false)?;
+        poll(&mut pads)?;
+        let fact = pads.snapshot().expect("the pad changed");
+        assert_eq!(fact["pads"][0]["buttons"][7], 0.0);
+        Ok(())
+    }
 }
