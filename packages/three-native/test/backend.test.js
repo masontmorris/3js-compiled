@@ -617,7 +617,7 @@ test('error scopes record their push and pop, and each pop resolves from its sco
 // Edge's answers for the same calls, from C:\3jsc\swarm\e3-r12\kit\out\edge\rules-scopes\console.txt.
 test('an empty error scope stack rejects its pop and an unknown filter throws, as in Edge', async () => {
   const device = new RecordingDevice();
-  await assert.rejects(device.popErrorScope(), { name: 'OperationError' });
+  await assert.rejects(device.popErrorScope(), { constructor: DOMException, name: 'OperationError' });
   assert.throws(() => device.pushErrorScope('bogus'), TypeError);
   assert.deepEqual(decodeCommands(device.takeFrame()), []);
 });
@@ -922,7 +922,7 @@ test('mapping follows Edge: mapState, a detached range after unmap, and unmap th
   assert.equal(buffer.mapState, 'unmapped');
   assert.equal(range.byteLength, 0, 'unmap detaches the range');
   assert.doesNotThrow(() => buffer.unmap(), 'a second unmap does nothing');
-  assert.throws(() => buffer.getMappedRange(), { name: 'OperationError' });
+  assert.throws(() => buffer.getMappedRange(), { constructor: DOMException, name: 'OperationError' });
   const destroyed = device.createBuffer({ size: 16, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
   const lost = destroyed.getMappedRange();
   destroyed.destroy();
@@ -942,8 +942,8 @@ test('an unknown limit name and an alignment that is no power of two reject requ
     [{ minUniformBufferOffsetAlignment: 384 }, /Required limit \(384\) is not a power of two.*minUniformBufferOffsetAlignment/],
     [{ minStorageBufferOffsetAlignment: 384 }, /Required limit \(384\) is not a power of two.*minStorageBufferOffsetAlignment/],
   ]) {
-    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { name: 'OperationError', message });
-    assert.throws(() => new RecordingDevice({ limits }), { name: 'OperationError', message }, 'with no adapter too');
+    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { constructor: DOMException, name: 'OperationError', message });
+    assert.throws(() => new RecordingDevice({ limits }), { constructor: DOMException, name: 'OperationError', message }, 'with no adapter too');
   }
   assert.doesNotThrow(() => new RecordingDevice({ limits: { maxInterStageShaderComponents: undefined } }), 'an undefined value is ignored');
 });
@@ -973,14 +973,14 @@ test('a requested limit better than the adapter has makes init() reject with an 
     [{ maxBindGroups: 1000 }, /Required limit \(1000\) is greater than the supported limit \(4\).*maxBindGroups/],
     [{ minUniformBufferOffsetAlignment: 1 }, /Required limit \(1\) is lower than the supported limit \(256\).*minUniformBufferOffsetAlignment/],
   ]) {
-    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { name: 'OperationError', message });
+    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { constructor: DOMException, name: 'OperationError', message });
   }
   globalThis.__gpuAdapterLimits = supported;
   const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
   try {
     const requiredLimits = { maxTextureDimension2D: 1 << 20 };
     const failed = new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas, requiredLimits }, { features: ['core-features-and-limits'] }), requiredLimits });
-    await assert.rejects(failed.init(), { name: 'OperationError', message: /maxTextureDimension2D/ });
+    await assert.rejects(failed.init(), { constructor: DOMException, name: 'OperationError', message: /maxTextureDimension2D/ });
     assert.equal(failed.backend.recordingDevice, null, 'no device reports the limit');
   } finally {
     delete globalThis.__gpuAdapterLimits;
