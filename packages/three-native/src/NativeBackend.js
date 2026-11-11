@@ -428,18 +428,24 @@ const defaultLimits = Object.freeze({
 const alignments = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
 
 // The limits a device has for `requested`, as a browser's requestDevice() gives them: a requested limit
-// better than its default, and the default otherwise. A limit better than the adapter's `supported` one
-// throws the OperationError that rejects requestDevice(). Without `supported`, as in Node, nothing is.
+// better than its default, and the default otherwise. A limit name WebGPU does not know, an alignment that is
+// no power of two, and a limit better than the adapter's `supported` one throw the OperationError that rejects
+// requestDevice(). Without `supported`, as in Node, no limit is checked against an adapter.
 function deviceLimits(requested, supported) {
   const limits = { ...defaultLimits };
+  const reject = message => {
+    const error = new Error(message);
+    error.name = 'OperationError';
+    throw error;
+  };
   for (const [name, value] of Object.entries(requested)) {
-    if (value === undefined || !(name in defaultLimits)) continue;
+    if (value === undefined) continue;
+    if (!(name in defaultLimits)) reject(`The limit "${name}" with a non-undefined value is not recognized`);
     const alignment = alignments.has(name);
+    if (alignment && !Number.isInteger(Math.log2(value))) reject(`Required limit (${value}) is not a power of two for ${name}`);
     const better = (a, b) => alignment ? a < b : a > b;
     if (supported?.[name] !== undefined && better(value, supported[name])) {
-      const error = new Error(`Required limit (${value}) is ${alignment ? 'lower' : 'greater'} than the supported limit (${supported[name]}) for ${name}`);
-      error.name = 'OperationError';
-      throw error;
+      reject(`Required limit (${value}) is ${alignment ? 'lower' : 'greater'} than the supported limit (${supported[name]}) for ${name}`);
     }
     if (better(value, limits[name])) limits[name] = value;
   }
