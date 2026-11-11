@@ -859,6 +859,30 @@ test('a requested limit worse than its default gives the default, for maximums a
 });
 
 // Edge rejects requestDevice() with these OperationErrors (C:\3jsc\swarm\e3-r12\kit\out\edge\rules-limits-over-*).
+test('a frame that the page submits nothing in hands the recorded work to the host, as compileAsync needs', async () => {
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  const { backend, renderer } = await boxRenderer(canvas, 0x00ff00);
+  const submitted = [];
+  globalThis.submitGpuCommands = bytes => submitted.push(bytes);
+  try {
+    backend.takeFrame();
+    globalThis.__gpuFrameEnd();
+    assert.deepEqual(submitted, [], 'nothing recorded, nothing submitted');
+    backend.recordingDevice.pushErrorScope('validation');
+    const popped = backend.recordingDevice.popErrorScope();
+    globalThis.__gpuFrameEnd();
+    assert.equal(submitted.length, 1);
+    const [pop] = decodeCommands(submitted[0]).filter(record => record.opcode === Opcode.POP_ERROR_SCOPE);
+    backend.recordingDevice.receiveResponses([{ type: 'scope', request: new DataView(pop.payload.buffer).getUint32(0, true), filter: null, message: null }]);
+    assert.equal(await popped, null);
+  } finally {
+    delete globalThis.submitGpuCommands;
+    await renderer.dispose();
+  }
+  globalThis.__gpuFrameEnd();
+  assert.equal(submitted.length, 1, 'a disposed renderer submits nothing');
+});
+
 // Edge's errors, from the round-12 adversary's C:\3jsc\worktrees\interrogate-e3r13-opus\repro13\out\edge-limits-*.log.
 test('an unknown limit name and an alignment that is no power of two reject requestDevice, as in Edge', () => {
   const supported = { maxTextureDimension2D: 16384, minUniformBufferOffsetAlignment: 256, maxBufferSize: 2 ** 31 };

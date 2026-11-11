@@ -179,6 +179,58 @@ mod tests {
         Ok(())
     }
 
+    /// Runs `entry` until it turns the clear color green, for at most 10 seconds, and returns its log.
+    fn run_until_green(name: &str, entry: &str) -> Result<String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-{name}-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        let started = Instant::now();
+        while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
+            assert!(started.elapsed().as_secs() < 10, "{name} never turned green");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Ok(std::fs::read_to_string(log_path)?)
+    }
+
+    #[test]
+    fn timers_run_between_frames_in_edges_order() -> Result<()> {
+        // Edge's results for the same page, from C:\3jsc\swarm\e3-r13\kit\out\edge\timers-default.
+        let log = run_until_green(
+            "timers",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timers.js"),
+        )?;
+        for line in [
+            "R order: rafA rafA.promise rafA.microtask rafB rafB.promise t1 t2 args(a,b) throws t3 t3.promise t4 t3.nested t3.nested.nested raf-from-timer",
+            "R a timer ran inside a frame callback: false",
+            "R a 30 ms timer runs no sooner than 30 ms: true",
+            "R equal deadlines run in the order they were set: first,second",
+            "R an interval cleared on its third run ran: 3",
+            "R queueMicrotask is a function: function",
+            "R setInterval returns a number: number",
+        ] {
+            assert!(log.contains(line), "{line}\n{log}");
+        }
+        assert!(
+            log.contains("a timer callback throws"),
+            "a timer's error is reported and frames go on\n{log}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn frames_and_timers_run_while_the_entry_module_awaits() -> Result<()> {
+        run_until_green(
+            "top-level-await",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/top-level-await.js"),
+        )?;
+        Ok(())
+    }
+
     #[test]
     fn bootstrap_provides_window_size_self_and_utf8_decoding() -> Result<()> {
         let runtime = tokio::runtime::Builder::new_current_thread()
