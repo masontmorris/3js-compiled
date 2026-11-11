@@ -49,11 +49,11 @@ fn a_stream_of_an_earlier_version_is_rejected_by_version() {
 }
 
 #[test]
-fn unmap_buffer_is_the_last_opcode() {
+fn map_buffer_is_the_last_opcode() {
     let mut frame = include_bytes!("fixtures/frame.bin").to_vec();
     let last = frame.len() - 8;
-    frame[last..last + 2].copy_from_slice(&48u16.to_le_bytes());
-    assert_eq!(decode(&frame).unwrap().records[2].opcode, 48);
-    frame[last..last + 2].copy_from_slice(&49u16.to_le_bytes());
+    frame[last..last + 2].copy_from_slice(&56u16.to_le_bytes());
+    assert_eq!(decode(&frame).unwrap().records[2].opcode, 56);
+    frame[last..last + 2].copy_from_slice(&57u16.to_le_bytes());
     assert_eq!(decode(&frame), Err(DecodeError::Opcode));
 }
