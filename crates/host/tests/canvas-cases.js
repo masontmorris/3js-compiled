@@ -16,6 +16,10 @@
 //                   again with the saved configuration and draws blue.
 //   configure-idle  draws nothing in frame 20 and calls configure() again with the same configuration
 //   unconfigure-idle  draws nothing in frame 20, calls unconfigure(), and configures again at frame 60
+//   limits-worse    requires maxTextureDimension2D 4096, worse than WebGPU's default, which the device gets in its
+//                   place, so from frame 20 to 59 a 6000x64 render target draws before each draw of the canvas
+//   limits-over     requires maxTextureDimension2D 2^20, more than any adapter has, so init() rejects
+// The page logs the result of init() and the device's maxTextureDimension2D.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
@@ -24,18 +28,22 @@ const mode = native ? globalThis.__sceneName : new URLSearchParams(location.sear
 const canvas = native
   ? { width: 1280, height: 720, style: {}, addEventListener() {}, removeEventListener() {} }
   : document.querySelector('canvas');
-const requiredLimits = mode.endsWith('-limits') ? { maxTextureDimension2D: 16384 } : undefined;
+const requiredLimits = mode.endsWith('-limits')
+  ? { maxTextureDimension2D: 16384 }
+  : { 'limits-worse': { maxTextureDimension2D: 4096 }, 'limits-over': { maxTextureDimension2D: 1 << 20 } }[mode];
 const backend = native
   ? new NativeBackend({ canvas, requiredLimits }, { features: ['core-features-and-limits'], limits: { maxUniformBufferBindingSize: 65536 } })
   : undefined;
 const renderer = new THREE.WebGPURenderer({ canvas, backend, antialias: false, requiredLimits });
 renderer.setSize(1280, 720, false);
-await renderer.init();
+renderer._getFallback = null;
+console.log(`init: ${await renderer.init().then(() => 'resolved', error => `rejected ${error.name}: ${error.message}`)}`);
 let frames = 0;
 let errors = 0;
 const device = renderer.backend.device;
-const report = device.onuncapturederror;
-device.onuncapturederror = event => {
+console.log(`maxTextureDimension2D: ${device?.limits.maxTextureDimension2D}`);
+const report = device?.onuncapturederror;
+if (device) device.onuncapturederror = event => {
   errors++;
   if (errors <= 60) console.log(`uncaptured ${frames}: ${(event.error?.message ?? String(event)).split('\n').filter(Boolean).join(' | ').slice(0, 200)}`);
   report?.call(device, event);
@@ -58,8 +66,8 @@ function frame() {
   const context = renderer.backend.context;
   if (frames < 20) draw(0xff0000);
   else if (frames < 60) {
-    if (mode === 'oversize-target') {
-      target ??= new THREE.RenderTarget(16400, 64);
+    if (mode === 'oversize-target' || mode === 'limits-worse') {
+      target ??= new THREE.RenderTarget(mode === 'limits-worse' ? 6000 : 16400, 64);
       renderer.setRenderTarget(target);
       draw(0xff00ff);
       renderer.setRenderTarget(null);
@@ -94,4 +102,4 @@ function frame() {
   globalThis.__frame = frames++;
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if (device) requestAnimationFrame(frame);

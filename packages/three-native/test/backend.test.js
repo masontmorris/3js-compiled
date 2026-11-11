@@ -820,6 +820,48 @@ test('a device has WebGPU default limits unless its request asks for more, and r
   }
 });
 
+// Edge's device.limits for the same request, from C:\3jsc\swarm\e3-r12\kit\out\edge\rules-limits-rule\console.txt.
+test('a requested limit worse than its default gives the default, for maximums and alignments, as in Edge', () => {
+  const requested = {
+    maxTextureDimension2D: 4096, maxBindGroups: 2, maxVertexBuffers: 4, maxBufferSize: 1048576,
+    minUniformBufferOffsetAlignment: 512, minStorageBufferOffsetAlignment: 1024, maxColorAttachments: 8,
+    maxStorageBufferBindingSize: 268435456,
+  };
+  const edge = {
+    maxTextureDimension2D: 8192, maxBindGroups: 4, maxVertexBuffers: 8, maxBufferSize: 268435456,
+    minUniformBufferOffsetAlignment: 256, minStorageBufferOffsetAlignment: 256, maxColorAttachments: 8,
+    maxStorageBufferBindingSize: 268435456,
+  };
+  const device = new RecordingDevice({ limits: requested });
+  assert.deepEqual(Object.fromEntries(Object.keys(requested).map(name => [name, device.limits[name]])), edge);
+  const [request] = decodeAll(device.takeFrame());
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(request.payload)).limits, edge, 'the executor takes the limits the device reports');
+});
+
+// Edge rejects requestDevice() with these OperationErrors (C:\3jsc\swarm\e3-r12\kit\out\edge\rules-limits-over-*).
+test('a requested limit better than the adapter has makes init() reject with an error that names the limit', async () => {
+  const supported = { maxTextureDimension2D: 16384, maxBindGroups: 4, minUniformBufferOffsetAlignment: 256 };
+  for (const [limits, message] of [
+    [{ maxTextureDimension2D: 1 << 20 }, /Required limit \(1048576\) is greater than the supported limit \(16384\).*maxTextureDimension2D/],
+    [{ maxBindGroups: 1000 }, /Required limit \(1000\) is greater than the supported limit \(4\).*maxBindGroups/],
+    [{ minUniformBufferOffsetAlignment: 1 }, /Required limit \(1\) is lower than the supported limit \(256\).*minUniformBufferOffsetAlignment/],
+  ]) {
+    assert.throws(() => new RecordingDevice({ limits }, undefined, supported), { name: 'OperationError', message });
+  }
+  globalThis.__gpuAdapterLimits = supported;
+  const canvas = { width: 4, height: 4, style: {}, addEventListener() {}, removeEventListener() {} };
+  try {
+    const requiredLimits = { maxTextureDimension2D: 1 << 20 };
+    const failed = new WebGPURenderer({ canvas, backend: new NativeBackend({ canvas, requiredLimits }, { features: ['core-features-and-limits'] }), requiredLimits });
+    await assert.rejects(failed.init(), { name: 'OperationError', message: /maxTextureDimension2D/ });
+    assert.equal(failed.backend.recordingDevice, null, 'no device reports the limit');
+  } finally {
+    delete globalThis.__gpuAdapterLimits;
+  }
+  const next = await boxRenderer(canvas, 0x00ff00);
+  await next.renderer.dispose();
+});
+
 test('a render bundle records the objects it sets, and a pass records the bundles it executes', () => {
   const device = new RecordingDevice();
   const shader = device.createShaderModule({ code: '' });

@@ -702,8 +702,16 @@ fn drawing_at_a_zero_size_shows_a_cleared_canvas_with_edges_errors() {
 }
 
 /// Runs the test page `page` in `mode`, captures the window at frames 40 and 70, and returns both
-/// captures and the number of GPU errors in each frame that raises any, by frame.
-fn edge_case(page: &str, mode: &str) -> (image::RgbaImage, image::RgbaImage, Vec<(u32, usize)>) {
+/// captures, the number of GPU errors in each frame that raises any, by frame, and the host log.
+fn edge_case(
+    page: &str,
+    mode: &str,
+) -> (
+    image::RgbaImage,
+    image::RgbaImage,
+    Vec<(u32, usize)>,
+    String,
+) {
     let dir = workdir(mode);
     let (f40, f70) = (dir.join("f40.png"), dir.join("f70.png"));
     let steps = serde_json::json!([
@@ -723,7 +731,7 @@ fn edge_case(page: &str, mode: &str) -> (image::RgbaImage, image::RgbaImage, Vec
         }
     }
     let open = |path: &Path| image::open(path).unwrap().to_rgba8();
-    (open(&f40), open(&f70), frames.into_iter().collect())
+    (open(&f40), open(&f70), frames.into_iter().collect(), log)
 }
 
 /// The errors of a mode that raises `first` in frame 20 and `each` in frames 21 to 59.
@@ -751,7 +759,7 @@ fn configure_and_unconfigure_leave_the_canvas_transparent_as_in_edge() {
         ("unconfigure", TRANSPARENT, TRANSPARENT),
         ("unconfigure-idle", TRANSPARENT, TRANSPARENT),
     ] {
-        let (f40, f70, errors) = edge_case("canvas-cases", mode);
+        let (f40, f70, errors, _) = edge_case("canvas-cases", mode);
         assert_eq!(errors, [], "{mode} raises no error, as in Edge");
         assert_eq!(f40.get_pixel(8, 8).0, corner, "{mode} at frame 40");
         assert_eq!(f40.get_pixel(640, 360).0, center, "{mode} at frame 40");
@@ -765,7 +773,7 @@ fn a_canvas_over_the_default_texture_limit_fails_as_in_edge_unless_three_asks_fo
     // Edge raises 16 errors in the first frame at 16400x64 or 9000x64, over WebGPU's default
     // maxTextureDimension2D of 8192, and 7 in each later one, and shows a transparent canvas.
     for mode in ["oversize-16400", "oversize-9000"] {
-        let (f40, f70, errors) = edge_case("canvas-cases", mode);
+        let (f40, f70, errors, _) = edge_case("canvas-cases", mode);
         assert_eq!(errors, edge_errors(16, 7), "{mode} raises Edge's errors");
         assert_eq!(f40.get_pixel(8, 8).0, TRANSPARENT, "{mode} at frame 40");
         assert_eq!(
@@ -774,7 +782,7 @@ fn a_canvas_over_the_default_texture_limit_fails_as_in_edge_unless_three_asks_fo
             "{mode} draws again at 1280x720"
         );
     }
-    let (f40, _, errors) = edge_case("canvas-cases", "oversize-9000-limits");
+    let (f40, _, errors, _) = edge_case("canvas-cases", "oversize-9000-limits");
     assert_eq!(
         errors,
         [],
@@ -785,8 +793,27 @@ fn a_canvas_over_the_default_texture_limit_fails_as_in_edge_unless_three_asks_fo
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_limit_worse_than_the_default_gives_the_default_and_one_past_the_adapter_rejects_init() {
+    // canvas-cases.js against Edge (C:\3jsc\swarm\e3-r12\kit\out\edge\cases-limits-*): Edge's
+    // device has the default maxTextureDimension2D of 8192 for a request of 4096, so a 6000x64
+    // render target draws with no error, and its init() rejects a request for 2^20.
+    let (f40, f70, errors, log) = edge_case("canvas-cases", "limits-worse");
+    assert_eq!(errors, [], "{log}");
+    assert!(log.contains("maxTextureDimension2D: 8192"), "{log}");
+    assert_eq!([f40.get_pixel(8, 8).0, f70.get_pixel(8, 8).0], [YELLOW, BLUE]);
+    let (_, _, errors, log) = edge_case("canvas-cases", "limits-over");
+    assert_eq!(errors, [], "{log}");
+    assert!(
+        log.contains("init: rejected OperationError: Required limit (1048576) is greater than the supported limit")
+            && log.contains("maxTextureDimension2D: undefined"),
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn an_empty_vertex_buffer_draws_with_no_error_as_in_edge() {
-    let (f40, f70, errors) = edge_case("canvas-cases", "empty-geometry");
+    let (f40, f70, errors, _) = edge_case("canvas-cases", "empty-geometry");
     assert_eq!(errors, []);
     assert_eq!(
         [f40.get_pixel(8, 8).0, f40.get_pixel(640, 360).0],
@@ -810,7 +837,7 @@ fn invalid_objects_of_every_type_raise_edges_errors() {
         ("pipeline", 2, 2),
         ("bundle", 3, 2),
     ] {
-        let (f40, f70, errors) = edge_case("invalid-objects", mode);
+        let (f40, f70, errors, _) = edge_case("invalid-objects", mode);
         assert_eq!(
             errors,
             edge_errors(creates + uses, uses),
