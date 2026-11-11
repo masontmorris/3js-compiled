@@ -591,12 +591,15 @@ mod tests {
     }
 
     /// Adversary round 6: the same page when the warning has just gone. ui-host's latest reply
-    /// lacks it; the host's latest does not.
+    /// lacks it; the host's latest does not. A rect after the button takes the button's place
+    /// in ui-host's list.
     #[test]
     fn a_click_on_a_fixed_button_lands_on_it_when_a_rect_before_it_goes() {
         let warning = rect(WARNING, [40.0, 20.0, 200.0, 80.0]);
-        let mut host = Host::new(OLD, vec![warning, right_button(1280)[0]]);
-        host.placer.replied(Some(right_button(1280)));
+        let other = rect(OTHER, [40.0, 140.0, 200.0, 80.0]);
+        let mut host = Host::new(OLD, vec![warning, right_button(1280)[0], other]);
+        host.placer
+            .replied(Some(vec![right_button(1280)[0], other]));
         host.click(1160.0);
         assert_eq!(host.take(), [Page(at(1, 1160.0)), Page(at(2, 1160.0))]);
     }
