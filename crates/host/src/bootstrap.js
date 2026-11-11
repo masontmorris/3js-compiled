@@ -61,9 +61,8 @@ globalThis.cancelAnimationFrame = id => { callbacks.delete(id); running?.delete(
 // HTML's timers. Each frame begins with a turn of timer tasks, as a browser runs its tasks between renderings: each
 // due timer in order of deadline and then of setting, each with its promise jobs after it, until the frame is due. The
 // game thread starts a frame while the render thread still renders the one before, so the frame is due once the render
-// thread has caught up and the turn has had its share: it starts timers for 3.5 ms, or a display refresh if that is
-// shorter, which with the one running then gives timers about 4 ms of each frame, as Edge gives its tasks whatever the
-// frame's own work costs. A turn also ends a display refresh after it began. While nothing is due and the frame is not,
+// thread has caught up and the turn has had its share: 3.3 ms of timers a frame on average, or a display refresh if
+// that is shorter, about what Edge gives its tasks whatever the frame's own work costs. A turn also ends a display refresh after it began. While nothing is due and the frame is not,
 // the turn sleeps until the next timer falls due, so an interval shorter than a frame keeps its schedule. The turn
 // checks between timers, so it runs at least one due timer and holds the frame callbacks back by at most the callback
 // running when the frame falls due. A timer set from a timer task or its promise jobs is nested one deeper, and one
@@ -236,7 +235,7 @@ globalThis.__displayInterval = 1000 / 60;
 // due no sooner than this long after the frame before began its callbacks.
 globalThis.__framePacing = null;
 let framesBegan = -Infinity;
-let shareLeft = 3.5;
+let shareLeft = 3.3;
 // Runs timers while the host waits for the render thread to catch up before it hands over the next frame: each timer as
 // it falls due, until the render thread has caught up, as a browser runs its tasks while it waits to render.
 globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
@@ -246,7 +245,7 @@ globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
 globalThis.__hostFrame = () => {
   const start = performance.now();
   const interval = globalThis.__displayInterval;
-  const share = Math.min(3.5, interval);
+  const share = Math.min(3.3, interval);
   runTimers(start + interval, start + shareLeft, framesBegan + (globalThis.__framePacing ?? -Infinity), true);
   // A turn that ran past its share takes the overrun out of the next one's, so timers average the share of each frame
   // rather than the share plus the timer running when it ends.
