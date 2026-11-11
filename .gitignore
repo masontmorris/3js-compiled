@@ -6,3 +6,4 @@ host.log
 frames.csv
 __pycache__/
 examples/scenes/scene-bundle.js
+examples/platform/platform-bundle.js
