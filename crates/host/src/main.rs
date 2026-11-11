@@ -3,7 +3,7 @@ mod input;
 mod renderer;
 
 use anyhow::{Context, Result, bail};
-use game::{Game, Log};
+use game::{Game, Log, RenderProgress};
 use renderer::{Frame, Rendered, Renderer, Target};
 use sdl3::event::Event;
 use serde_json::{Value, json};
@@ -14,6 +14,7 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
     rc::Rc,
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 use threejsc_host::{
@@ -195,7 +196,18 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     {
         game.set_display_interval(1000.0 / f64::from(hz))?;
     }
-    let mut render = Worker::spawn("render", || Ok(Renderer::new(target)), Renderer::frame)?;
+    let progress = Arc::new(RenderProgress::default());
+    game.set_render_progress(progress.clone());
+    let rendering = progress.clone();
+    let mut render = Worker::spawn(
+        "render",
+        || Ok(Renderer::new(target)),
+        move |renderer, frame| {
+            let rendered = renderer.frame(frame);
+            rendering.finished.fetch_add(1, Ordering::Release);
+            rendered
+        },
+    )?;
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
@@ -300,6 +312,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             commands: game.take_commands(),
             captures,
         })?;
+        progress.submitted.fetch_add(1, Ordering::Release);
         let render_wait = submitted.elapsed();
         if let Some(rendered) = rendered {
             let row = row.take().expect("a rendered frame has a game-thread row");

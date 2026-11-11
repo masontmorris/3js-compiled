@@ -1,7 +1,17 @@
 use anyhow::{Context, Result};
 use deno_core::{FsModuleLoader, JsRuntime, OpState, RuntimeOptions, extension, op2};
 use std::{
-    cell::RefCell, collections::HashMap, fs::File, future::Future, io::Write, pin::Pin, rc::Rc,
+    cell::RefCell,
+    collections::HashMap,
+    fs::File,
+    future::Future,
+    io::Write,
+    pin::Pin,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -12,6 +22,29 @@ struct State {
     readbacks: HashMap<u32, Vec<u8>>,
     start: Instant,
     log: Log,
+    render: Option<Arc<RenderProgress>>,
+}
+
+/// How many frames the game thread has handed to the render thread, and how many it has
+/// rendered. The next frame is due once the render thread has caught up, as a browser's rendering
+/// opportunity comes once its compositor is ready.
+#[derive(Default)]
+pub struct RenderProgress {
+    pub submitted: AtomicU64,
+    pub finished: AtomicU64,
+}
+
+/// Whether the render thread has rendered every frame handed to it. A host with no render
+/// thread, as in the unit tests, never reports a frame due.
+#[op2(fast)]
+fn op_frame_due(state: &mut OpState) -> bool {
+    state
+        .borrow::<State>()
+        .render
+        .as_ref()
+        .is_some_and(|render| {
+            render.finished.load(Ordering::Acquire) >= render.submitted.load(Ordering::Acquire)
+        })
 }
 
 #[op2(fast)]
@@ -62,6 +95,7 @@ extension!(
         op_clear,
         op_gpu_submit,
         op_gpu_submitted,
+        op_frame_due,
         op_host_alive,
         op_gpu_readback,
         op_now,
@@ -96,6 +130,7 @@ impl<'a> Game<'a> {
             readbacks: HashMap::new(),
             start: Instant::now(),
             log,
+            render: None,
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let scene = serde_json::to_string(&scene)?;
@@ -122,6 +157,10 @@ impl<'a> Game<'a> {
         };
         game.tick().context("load entry module")?;
         Ok(game)
+    }
+    /// Lets the frame's turn of timers end once the render thread has caught up with `render`.
+    pub fn set_render_progress(&mut self, render: Arc<RenderProgress>) {
+        self.js.op_state().borrow_mut().borrow_mut::<State>().render = Some(render);
     }
     /// Sets the display's refresh interval, which ends a frame's turn of timers.
     pub fn set_display_interval(&mut self, ms: f64) -> Result<()> {
