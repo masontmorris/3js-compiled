@@ -27,7 +27,7 @@ class RecordingBuffer {
     this.usage = descriptor.usage;
     this.destroyed = false;
     this.mapped = descriptor.mappedAtCreation ? new ArrayBuffer(descriptor.size) : null;
-    // The executor creates a buffer mapped at creation mapped, and unmap() carries its data.
+    // The executor creates a buffer mapped at creation mapped, and unmap() records its data.
     const usage = descriptor.mappedAtCreation ? (descriptor.usage | MAPPED_AT_CREATION) >>> 0 : descriptor.usage;
     device.commands.createBuffer(this.handle, descriptor.size, usage, descriptor.label ?? '');
   }
@@ -41,9 +41,11 @@ class RecordingBuffer {
     return this.mapped;
   }
 
+  // A buffer over maxBufferSize is invalid, and the unmap of an invalid buffer does nothing, so its data stays here.
   unmap() {
     if (!this.mapped) throw new Error('Buffer is not mapped');
-    this.device.commands.writeBuffer(this.handle, 0, new Uint8Array(this.mapped));
+    const data = this.size > this.device.limits.maxBufferSize ? new Uint8Array() : new Uint8Array(this.mapped);
+    this.device.commands.unmapBuffer(this.handle, data);
     this.mapped = null;
   }
 
@@ -853,6 +855,9 @@ export class RecordingDevice {
 
   createBuffer(descriptor) {
     if (this.destroyed) throw new Error('Device is destroyed');
+    if (descriptor.mappedAtCreation && descriptor.size % 4 !== 0) {
+      throw new RangeError(`createBuffer failed, size (${descriptor.size}) is not a multiple of 4 when mappedAtCreation`);
+    }
     const buffer = new RecordingBuffer(this, descriptor);
     this.buffers.add(buffer);
     return buffer;

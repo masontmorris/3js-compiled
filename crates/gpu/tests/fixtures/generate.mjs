@@ -508,3 +508,50 @@ copyCases.forEach(([name, run], index) => {
     writeFileSync(new URL(`./map-${index}-${name}.bin`, import.meta.url), device.takeFrame());
   });
 }
+
+// Buffers mapped at creation that are invalid, one frame per case, as the round-12 adversary's probe.js
+// `mapped-invalid` and `attr-huge` make them for Edge. `over-max` is a vertex buffer over maxBufferSize that a pass
+// sets and draws from, as three's attribute over that limit does, in two frames.
+{
+  const device = new RecordingDevice();
+  const module = device.createShaderModule({ code: `
+@vertex fn vs(@location(0) p: vec4f) -> @builtin(position) vec4f { return p; }
+@fragment fn fs() -> @location(0) vec4f { return vec4f(1); }` });
+  const pipeline = device.createRenderPipeline({
+    layout: 'auto', fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },
+    vertex: { module, entryPoint: 'vs', buffers: [{ arrayStride: 16, attributes: [{ format: 'float32x4', offset: 0, shaderLocation: 0 }] }] },
+  });
+  const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT }).createView();
+  const mapped = descriptor => {
+    const buffer = device.createBuffer({ ...descriptor, mappedAtCreation: true });
+    new Uint8Array(buffer.getMappedRange()).fill(7);
+    buffer.unmap();
+    return buffer;
+  };
+  let huge = null;
+  const draw = () => {
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }] });
+    pass.setPipeline(pipeline);
+    pass.setVertexBuffer(0, huge);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+  };
+  const cases = [
+    ['setup', () => {}],
+    ['map-write-vertex', () => mapped({ size: 16, usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.VERTEX })],
+    ['usage-zero', () => mapped({ size: 16, usage: 0 })],
+    ['map-write-copy-src', () => mapped({ size: 16, usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC })],
+    ['size-zero', () => mapped({ size: 0, usage: GPUBufferUsage.VERTEX })],
+    ['over-max', () => {
+      huge = mapped({ size: device.limits.maxBufferSize + 16, usage: GPUBufferUsage.VERTEX });
+      draw();
+    }],
+    ['over-max-again', draw],
+  ];
+  cases.forEach(([name, run], index) => {
+    run();
+    writeFileSync(new URL(`./mapped-${index}-${name}.bin`, import.meta.url), device.takeFrame());
+  });
+}

@@ -46,11 +46,12 @@ export const Opcode = Object.freeze({
   INSERT_DEBUG_MARKER: 45,
   PUSH_ERROR_SCOPE: 46,
   POP_ERROR_SCOPE: 47,
+  UNMAP_BUFFER: 48,
 });
 
 const MAGIC = 0x43534a33;
 // threejsc_gpu::VERSION. docs/native-gpu-commands.md says when it changes.
-const VERSION = 8;
+const VERSION = 9;
 const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
@@ -361,6 +362,15 @@ export class CommandEncoder {
     view.setBigUint64(4, u64(offset, 'offset'), true);
     payload.set(data, 12);
     this.append(Opcode.WRITE_BUFFER, payload);
+  }
+
+  // The unmap of a buffer mapped at creation, with the data its mapped range holds.
+  unmapBuffer(handle, data) {
+    if (!(data instanceof Uint8Array)) throw new TypeError('Buffer data must be a Uint8Array');
+    const payload = new Uint8Array(4 + data.byteLength);
+    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
+    payload.set(data, 4);
+    this.append(Opcode.UNMAP_BUFFER, payload);
   }
 
   readBuffer(request, handle, offset, size) {

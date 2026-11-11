@@ -14,8 +14,8 @@ struct Buffer {
     mapped: bool,
 }
 
-/// The `CREATE_BUFFER` usage bit that creates the buffer mapped, as `mappedAtCreation` does. The
-/// buffer's next `WRITE_BUFFER` carries its data and unmaps it.
+/// The `CREATE_BUFFER` usage bit that creates the buffer mapped, as `mappedAtCreation` does, until
+/// its `UNMAP_BUFFER`.
 const MAPPED_AT_CREATION: u32 = 1 << 31;
 
 struct Texture {
@@ -1146,22 +1146,6 @@ impl Executor {
                 let bytes = &payload[12..];
                 if matches!(self.buffer_use(handle), Use::Destroyed | Use::Freed) {
                     return Err("a destroyed buffer is written".into());
-                }
-                if let Some(Some(buffer)) = self.buffers.get_mut(&handle)
-                    && std::mem::take(&mut buffer.mapped)
-                {
-                    if offset != 0 || bytes.len() as u64 != buffer.size {
-                        return Err("invalid mapped buffer unmap".into());
-                    }
-                    if !bytes.is_empty() {
-                        buffer
-                            .raw
-                            .get_mapped_range_mut(..)
-                            .map_err(|error| error.to_string())?
-                            .copy_from_slice(bytes);
-                    }
-                    buffer.raw.unmap();
-                    return Ok(None);
                 }
                 let buffer = valid(&self.buffers, handle, "buffer")?;
                 if !buffer.usage.contains(wgpu::BufferUsages::COPY_DST)
@@ -2392,6 +2376,32 @@ impl Executor {
                 Ok(None)
             }
             26 => self.submit(payload, None),
+            48 => {
+                if payload.len() < 4 {
+                    return Err("truncated buffer unmap".into());
+                }
+                let bytes = &payload[4..];
+                // As in WebGPU, the unmap of an invalid buffer does nothing.
+                let Some(buffer) = self
+                    .buffers
+                    .get_mut(&u32_at(payload, 0))
+                    .ok_or("unknown buffer handle")?
+                else {
+                    return Ok(None);
+                };
+                if !std::mem::take(&mut buffer.mapped) || bytes.len() as u64 != buffer.size {
+                    return Err("invalid buffer unmap".into());
+                }
+                if !bytes.is_empty() {
+                    buffer
+                        .raw
+                        .get_mapped_range_mut(..)
+                        .map_err(|error| error.to_string())?
+                        .copy_from_slice(bytes);
+                }
+                buffer.raw.unmap();
+                Ok(None)
+            }
             46 => {
                 size(payload, 4)?;
                 let filter = match u32_at(payload, 0) {

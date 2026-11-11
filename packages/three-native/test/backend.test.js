@@ -31,8 +31,8 @@ test('mapped creation and typed-array writes record the selected bytes', () => {
   device.queue.writeBuffer(buffer, 0, new Uint16Array([0x0102, 0x0304, 0x0506, 0x0708]), 1, 2);
   buffer.destroy();
   const records = decodeCommands(device.takeFrame());
-  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.WRITE_BUFFER, Opcode.WRITE_BUFFER, Opcode.DESTROY_BUFFER]);
-  assert.deepEqual([...records[1].payload.slice(12)], [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.UNMAP_BUFFER, Opcode.WRITE_BUFFER, Opcode.DESTROY_BUFFER]);
+  assert.deepEqual([...records[1].payload.slice(4)], [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual([...records[2].payload.slice(12)], [4, 3, 6, 5]);
   device.queue.writeBuffer(buffer, 0, new Uint8Array(4));
   assert.deepEqual(decodeCommands(device.takeFrame()).map(record => record.opcode), [Opcode.WRITE_BUFFER],

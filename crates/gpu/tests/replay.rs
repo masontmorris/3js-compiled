@@ -2018,3 +2018,47 @@ fn buffers_that_map_are_created_as_in_edge_and_one_mapped_at_creation_holds_its_
     }
     assert_eq!(counts, EDGE_MAP_ERRORS);
 }
+
+/// The errors Edge raises for each case of the `mapped` fixtures: the round-12 adversary's
+/// `mapped-invalid` and `attr-huge` in
+/// C:\3jsc\worktrees\interrogate-e3r13-opus\repro13\out\edge-mapped-invalid.log and
+/// edge-attr-huge.log. An invalid buffer's create raises one error and its unmap none. A pass that
+/// sets one raises one error as its encoder finishes and one at submit.
+const EDGE_MAPPED_ERRORS: [(&str, usize); 7] = [
+    ("setup", 0),
+    ("map-write-vertex", 1),
+    ("usage-zero", 1),
+    ("map-write-copy-src", 0),
+    ("size-zero", 0),
+    ("over-max", 3),
+    ("over-max-again", 2),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_invalid_buffer_mapped_at_creation_raises_edges_errors_and_its_unmap_none() {
+    let mut executor = executor();
+    let mut raised = Vec::new();
+    for (index, (name, _)) in EDGE_MAPPED_ERRORS.iter().enumerate() {
+        let path = format!(
+            "{}/tests/fixtures/mapped-{index}-{name}.bin",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let responses = executor
+            .replay(&std::fs::read(path).unwrap(), None)
+            .unwrap();
+        let errors: Vec<_> = responses
+            .iter()
+            .filter_map(|response| match response {
+                Response::Error { message, .. } => Some(message.clone()),
+                _ => None,
+            })
+            .collect();
+        raised.push((*name, errors.len(), errors));
+    }
+    let counts: Vec<_> = raised
+        .iter()
+        .map(|(name, count, _)| (*name, *count))
+        .collect();
+    assert_eq!(counts, EDGE_MAPPED_ERRORS, "{raised:#?}");
+}
