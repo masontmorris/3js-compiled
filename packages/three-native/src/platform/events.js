@@ -112,13 +112,18 @@ function flatten(options) {
     ? { capture: !!options.capture, once: !!options.once, passive: options.passive, signal: options.signal }
     : { capture: !!options };
 }
+// Edge makes wheel and touch listeners on the window, the document, the root element and the body passive unless
+// they say otherwise, so such an event is not cancelable when only they listen.
+const PASSIVE_TYPES = new Set(['wheel', 'mousewheel', 'touchstart', 'touchmove']);
+const passiveByDefault = (target, type) => PASSIVE_TYPES.has(type) && (target?.document?.defaultView === target || target?.nodeType === 9 || target?.localName === 'html' || target?.localName === 'body');
 export function addEventListener(type, callback, options) {
   if (callback == null) return;
   const { capture, once, passive, signal } = flatten(options);
   if (signal?.aborted) return;
-  const list = listeners(this, String(type));
+  type = String(type);
+  const list = listeners(this, type);
   if (list.some(entry => entry.callback === callback && entry.capture === capture)) return;
-  const entry = { callback, capture, once, passive: !!passive, removed: false };
+  const entry = { callback, capture, once, passive: passive === undefined ? passiveByDefault(this, type) : !!passive, removed: false };
   list.push(entry);
   signal?.addEventListener?.('abort', () => removeEventListener.call(this, type, callback, { capture }));
 }
@@ -128,6 +133,10 @@ export function removeEventListener(type, callback, options) {
   const capture = flatten(options).capture;
   const index = list.findIndex(entry => entry.callback === callback && entry.capture === capture && !entry.handler);
   if (index >= 0) list.splice(index, 1)[0].removed = true;
+}
+// Whether `node` has a listener for `type`, or a listener that is not passive when `active` is set.
+export function hasListener(node, type, active = false) {
+  return !!node?.[LISTENERS]?.get(type)?.some(entry => !entry.removed && (!active || !entry.passive));
 }
 export function dispatchEvent(event) {
   if (!(event instanceof Event)) throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
@@ -297,7 +306,9 @@ export class InputRouter {
     const printable = [...fact.key].length === 1 || fact.key === 'Enter';
     if (fact.type === 'keydown' && proceed && printable && !fact.ctrl && !fact.meta) {
       const charCode = fact.key === 'Enter' ? 13 : fact.key.codePointAt(0);
-      target.dispatchEvent(trusted(new KeyboardEvent('keypress', { ...init, keyCode: charCode, which: charCode, charCode })));
+      // A keydown listener that moves focus sends the keypress to the newly focused element, as in Edge.
+      const focused = this.document.activeElement ?? this.window;
+      focused.dispatchEvent(trusted(new KeyboardEvent('keypress', { ...init, keyCode: charCode, which: charCode, charCode })));
     }
   }
   capture(element, pointerId) {
@@ -331,25 +342,36 @@ export class InputRouter {
     if (old) this.fire(old.isConnected ? old : this.document, PointerEvent, 'lostpointercapture', init);
     if (this.captureTarget) this.fire(this.captureTarget, PointerEvent, 'gotpointercapture', init);
   }
+  // A compatibility mouse event's init from its pointer event's. Edge gives mouse events whole-pixel coordinates.
+  mouseInit(init, fields) {
+    const mouse = { ...init, clientX: Math.floor(init.clientX), clientY: Math.floor(init.clientY), screenX: Math.floor(init.screenX), screenY: Math.floor(init.screenY), ...fields };
+    for (const key of Object.keys(POINTER)) delete mouse[key];
+    delete mouse.pressure;
+    return mouse;
+  }
   // Fires the boundary events for a pointer that moves onto `target` from the element it was over.
   enter(target, modifiers) {
     const old = this.hover;
     this.hover = target;
     const pointer = this.pointerInit({ button: -1, relatedTarget: old }, modifiers);
-    const mouse = { ...pointer, button: 0 };
+    const mouse = this.mouseInit(pointer, { button: 0 });
     const leaving = ancestors(old).filter(node => !ancestors(target).includes(node) && node.nodeType === 1);
     const entering = ancestors(target).filter(node => !ancestors(old).includes(node) && node.nodeType === 1).reverse();
+    // Edge fires enter and leave events only at the elements that listen for them.
+    const boundary = (nodes, Class, type, init) => {
+      for (const node of nodes) if (hasListener(node, type)) this.fire(node, Class, type, { ...init, bubbles: false, cancelable: false });
+    };
     if (old) {
       this.fire(old, PointerEvent, 'pointerout', { ...pointer, relatedTarget: target });
-      for (const node of leaving) this.fire(node, PointerEvent, 'pointerleave', { ...pointer, bubbles: false, cancelable: false, relatedTarget: target });
+      boundary(leaving, PointerEvent, 'pointerleave', { ...pointer, relatedTarget: target });
       this.fire(old, MouseEvent, 'mouseout', { ...mouse, relatedTarget: target });
-      for (const node of leaving) this.fire(node, MouseEvent, 'mouseleave', { ...mouse, bubbles: false, cancelable: false, relatedTarget: target });
+      boundary(leaving, MouseEvent, 'mouseleave', { ...mouse, relatedTarget: target });
     }
     if (target) {
       this.fire(target, PointerEvent, 'pointerover', pointer);
-      for (const node of entering) this.fire(node, PointerEvent, 'pointerenter', { ...pointer, bubbles: false, cancelable: false });
+      boundary(entering, PointerEvent, 'pointerenter', pointer);
       this.fire(target, MouseEvent, 'mouseover', mouse);
-      for (const node of entering) this.fire(node, MouseEvent, 'mouseenter', { ...mouse, bubbles: false, cancelable: false });
+      boundary(entering, MouseEvent, 'mouseenter', mouse);
     }
   }
   pointer(fact) {
@@ -374,9 +396,11 @@ export class InputRouter {
     const init = this.pointerInit({ button, movementX, movementY }, modifiers);
     const proceed = this.fire(target, PointerEvent, first ? 'pointerdown' : last ? 'pointerup' : 'pointermove', init);
     if (first && !proceed) this.suppressMouse = true;
-    const mouse = { ...init, button: Math.max(button, 0), detail };
-    for (const key of Object.keys(POINTER)) delete mouse[key];
-    delete mouse.pressure;
+    // Pressing another button between this button's press and release cancels its click, and its mouseup then
+    // counts no click, as in Edge.
+    const clicked = fact.type !== 'pointerup' || this.lastPressed === fact.button;
+    if (fact.type === 'pointerdown') this.lastPressed = fact.button;
+    const mouse = this.mouseInit(init, { button: Math.max(button, 0), detail: clicked ? detail : 0 });
     const mouseType = { pointermove: 'mousemove', pointerdown: 'mousedown', pointerup: 'mouseup' }[fact.type];
     const mouseProceed = this.suppressMouse || this.fire(target, MouseEvent, mouseType, mouse);
     if (fact.type === 'pointerdown') {
@@ -391,13 +415,14 @@ export class InputRouter {
       const downTarget = this.pressed.get(fact.button);
       this.pressed.delete(fact.button);
       const common = downTarget?.contains?.(target) ? downTarget : target.contains?.(downTarget) ? target : null;
-      if (common) {
+      if (common && clicked) {
         const click = { ...init, button: fact.button, detail };
         this.fire(common, PointerEvent, fact.button === 0 ? 'click' : 'auxclick', click);
         if (fact.button === 0 && detail === 2) this.fire(common, MouseEvent, 'dblclick', mouse);
       }
       if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0 });
       if (last) {
+        this.lastPressed = undefined;
         this.suppressMouse = false;
         this.pendingCapture = null;
         this.processCapture();
@@ -415,7 +440,9 @@ export class InputRouter {
     const init = this.pointerInit({ button: 0, deltaX: fact.deltaX ?? 0, deltaY: fact.deltaY ?? 0, deltaZ: 0, deltaMode: 0 }, this.modifiers(fact));
     for (const key of Object.keys(POINTER)) delete init[key];
     delete init.pressure;
-    this.fire(this.hit(), WheelEvent, 'wheel', init);
+    const target = this.hit();
+    init.cancelable = ancestors(target).concat(this.window).some(node => hasListener(node, 'wheel', true));
+    this.fire(target, WheelEvent, 'wheel', init);
   }
   focus(fact) {
     const document = this.document;
@@ -439,9 +466,11 @@ export class InputRouter {
   }
 }
 
-// Legacy wheel deltas, which Edge derives from the pixel deltas: 120 per 100 px, toward the user negative.
+// Legacy wheel deltas. Edge gives an input wheel event one tick of 120 against each axis it scrolls, and a
+// constructed one its pixel deltas.
+const legacy = (event, delta) => (event.isTrusted ? -Math.sign(delta) * 120 : delta) || 0;
 Object.defineProperties(WheelEvent.prototype, {
-  wheelDeltaX: { get() { return Math.round(-this.deltaX * 1.2); }, configurable: true },
-  wheelDeltaY: { get() { return Math.round(-this.deltaY * 1.2); }, configurable: true },
-  wheelDelta: { get() { return Math.round(-(this.deltaY || this.deltaX) * 1.2); }, configurable: true },
+  wheelDeltaX: { get() { return legacy(this, this.deltaX); }, configurable: true },
+  wheelDeltaY: { get() { return legacy(this, this.deltaY); }, configurable: true },
+  wheelDelta: { get() { return legacy(this, this.deltaY || this.deltaX); }, configurable: true },
 });

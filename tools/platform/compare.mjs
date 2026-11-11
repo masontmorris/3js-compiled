@@ -81,7 +81,7 @@ async function runEdge() {
         await withTimeout(cdp.send('Input.dispatchKeyEvent', {
           type: step.down ? (text ? 'keyDown' : 'rawKeyDown') : 'keyUp', code: step.code, key, text, unmodifiedText: text,
           windowsVirtualKeyCode: keyCode(step.code), nativeVirtualKeyCode: keyCode(step.code), autoRepeat: !!step.repeat,
-          location: location(step.code), modifiers,
+          location: location(step.code) === 3 ? 0 : location(step.code), isKeypad: location(step.code) === 3, modifiers,
         }), name);
       } else if (step.type === 'pointer') {
         x = step.x;
@@ -92,6 +92,7 @@ async function runEdge() {
         await withTimeout(cdp.send('Input.dispatchMouseEvent', {
           type: { move: 'mouseMoved', down: 'mousePressed', up: 'mouseReleased' }[step.action], x, y, modifiers, buttons,
           button: step.action === 'move' ? 'none' : BUTTONS[button], clickCount: step.action === 'move' ? 0 : 1,
+          force: buttons ? 0.5 : 0,
         }), name);
       } else if (step.type === 'wheel') {
         await withTimeout(cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: step.x, deltaY: step.y, modifiers, buttons }), name);
