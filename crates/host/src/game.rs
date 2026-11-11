@@ -443,6 +443,41 @@ mod tests {
     }
 
     #[test]
+    fn intervals_shorter_than_a_frame_keep_their_schedule() -> Result<()> {
+        // A setInterval of 5 or 10 ms that works 0.3 ms, beside 3 ms frame callbacks. Edge runs
+        // a 5 ms interval 596 to 599 times in 3 s and its last tick 0.5 to 6.3 ms behind
+        // schedule (C:\3jsc\swarm\e3-r18v\lane-v\kit\out). Its timers do not depend on the
+        // display, so the schedule is the reference at 166.7 Hz and at 60 Hz alike.
+        let mut misses = Vec::new();
+        for (scene, every, hz) in [
+            ("step5", 5.0, 166.7),
+            ("step5", 5.0, 60.0),
+            ("step10", 10.0, 60.0),
+        ] {
+            let log = run_rendered(
+                &format!("timer-patterns-rendered-{scene}-{hz}hz"),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-patterns.js"),
+                Some(scene),
+                std::time::Duration::from_secs_f64(1.0 / hz),
+            )?;
+            let ticks: f64 = result(&log, &format!("{scene} ticks")).parse()?;
+            let behind: f64 = result(
+                &log,
+                &format!("{scene} behind schedule at the last tick ms"),
+            )
+            .parse()?;
+            let schedule = 3000.0 / every;
+            if ticks < 0.95 * schedule || ticks > schedule || behind > 1000.0 / hz + 2.0 {
+                misses.push(format!(
+                    "{scene} at {hz} Hz: {ticks} ticks, {behind} ms behind"
+                ));
+            }
+        }
+        assert!(misses.is_empty(), "{}", misses.join("; "));
+        Ok(())
+    }
+
+    #[test]
     fn timers_run_between_frames_in_edges_order() -> Result<()> {
         // Edge's results for the same page, from C:\3jsc\swarm\e3-r13\kit\out\edge\timers-default.
         let log = run_until_green(
