@@ -34,8 +34,9 @@ test('mapped creation and typed-array writes record the selected bytes', () => {
   assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.WRITE_BUFFER, Opcode.WRITE_BUFFER, Opcode.DESTROY_BUFFER]);
   assert.deepEqual([...records[1].payload.slice(12)], [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual([...records[2].payload.slice(12)], [4, 3, 6, 5]);
-  assert.throws(() => device.queue.writeBuffer(buffer, 0, new Uint8Array(4)));
-  assert.deepEqual(decodeCommands(device.takeFrame()), []);
+  device.queue.writeBuffer(buffer, 0, new Uint8Array(4));
+  assert.deepEqual(decodeCommands(device.takeFrame()).map(record => record.opcode), [Opcode.WRITE_BUFFER],
+    'a write to a destroyed buffer records, and the executor raises its error, as Edge does');
 });
 
 test('shader modules remove the subgroup directive and retain labels', () => {
@@ -943,6 +944,33 @@ test('encoder copies, clears and debug markers record their fields, and unsuppor
   const [read] = decodeCommands(device.takeFrame()).filter(record => record.opcode === Opcode.READ_BUFFER);
   device.receiveResponses([{ type: 'readback', request: view(read).getUint32(0, true), bytes: [0, 0, 0, 0] }]);
   assert.equal(await done, undefined, 'work done resolves when the readback after the work returns');
+});
+
+test('copies, clears, passes and queue writes record destroyed buffers and textures, which fail at submit in Edge', () => {
+  const device = new RecordingDevice();
+  const usage = GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+  const source = device.createBuffer({ size: 256, usage });
+  const destination = device.createBuffer({ size: 256, usage: usage | GPUBufferUsage.VERTEX });
+  const texture = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+  const view = texture.createView();
+  for (const object of [source, destination, texture]) object.destroy();
+  const encoder = device.createCommandEncoder();
+  encoder.copyBufferToBuffer(source, 0, destination, 0, 64);
+  encoder.clearBuffer(source);
+  encoder.copyBufferToTexture({ buffer: source, bytesPerRow: 256 }, { texture }, [4, 4]);
+  encoder.copyTextureToBuffer({ texture }, { buffer: destination, bytesPerRow: 256 }, [4, 4]);
+  encoder.copyTextureToTexture({ texture }, { texture }, [4, 4]);
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store' }] });
+  pass.setVertexBuffer(0, destination);
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+  device.queue.writeBuffer(destination, 0, new Uint8Array(4));
+  device.queue.writeTexture({ texture }, new Uint8Array(64), { bytesPerRow: 16 }, [4, 4]);
+  const opcodes = decodeCommands(device.takeFrame()).map(record => record.opcode);
+  assert.deepEqual(opcodes.slice(opcodes.lastIndexOf(Opcode.DESTROY_TEXTURE) + 1), [Opcode.COPY_BUFFER_TO_BUFFER, Opcode.CLEAR_BUFFER,
+    Opcode.COPY_BUFFER_TO_TEXTURE, Opcode.COPY_TEXTURE_TO_BUFFER, Opcode.COPY_TEXTURE_TO_TEXTURE, Opcode.BEGIN_RENDER_PASS,
+    Opcode.SET_VERTEX_BUFFER, Opcode.END_RENDER_PASS, Opcode.SUBMIT, Opcode.WRITE_BUFFER, Opcode.WRITE_TEXTURE]);
+  assert.throws(() => device.createCommandEncoder().copyBufferToBuffer({}, 0, source, 0, 4), TypeError, 'a value that is no buffer is a type error');
 });
 
 test('a shader that fails to compile gets its compilation message, and its uncaptured error is its own response', async () => {
