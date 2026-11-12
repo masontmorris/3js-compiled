@@ -53,6 +53,8 @@ renderer.setAnimationLoop(time => {
   cube.position.x = 4 * Math.sin(time / 1000);
   cube.rotation.y = time / 700;
   renderer.render(world, camera);
+  // The host shows the stream a page submits, once per frame, and keeps what the page records until it does.
+  if (native) globalThis.submitGpuCommands(backend.takeFrame());
   if (frame < frames) {
     console.log(`A f=${frame} x=${cube.position.x.toFixed(4)} px=${sound.panner.positionX.value.toFixed(4)} peak=${peak(analyser.getFrequencyData())}`);
   }

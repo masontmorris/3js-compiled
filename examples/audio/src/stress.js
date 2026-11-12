@@ -65,4 +65,6 @@ renderer.setAnimationLoop(time => {
     voice.panner.positionZ.setValueAtTime(z, now);
   }
   renderer.render(world, camera);
+  // The host shows the stream a page submits, once per frame, and keeps what the page records until it does.
+  if (native) globalThis.submitGpuCommands(backend.takeFrame());
 });
