@@ -32,7 +32,7 @@ test('mapped creation and typed-array writes record the selected bytes', () => {
   buffer.destroy();
   const records = decodeCommands(device.takeFrame());
   assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.UNMAP_BUFFER, Opcode.WRITE_BUFFER, Opcode.DESTROY_BUFFER]);
-  assert.deepEqual([...records[1].payload.slice(4)], [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual([...records[1].payload.slice(12)], [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual([...records[2].payload.slice(12)], [4, 3, 6, 5]);
   device.queue.writeBuffer(buffer, 0, new Uint8Array(4));
   assert.deepEqual(decodeCommands(device.takeFrame()).map(record => record.opcode), [Opcode.WRITE_BUFFER],
@@ -165,7 +165,7 @@ test('bind group layouts record binding types and release once', () => {
   assert.equal(view.getBigUint64(32, true), 16n);
   assert.equal(view.getUint32(8 + 32 + 12, true), 2);
   assert.equal(view.getUint32(8 + 64 + 16, true), 2);
-  assert.throws(() => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 1, storageTexture: {} }] }), /Unsupported/);
+  assert.throws(() => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 1, storageTexture: {} }] }), /Storage and external texture bindings are not implemented/);
 });
 
 test('shared bind group layouts are released after the last binding group', async () => {
@@ -550,7 +550,7 @@ test('automatic pipeline layouts are shared and bundles replay inline in each pa
     pass.end();
   }
   device.queue.submit([encoder.finish()]);
-  device.releaseRenderPipeline(pipeline);
+  device.releasePipeline(pipeline);
   const records = decodeCommands(device.takeFrame());
   const spec = JSON.parse(new TextDecoder().decode(records.find(item => item.opcode === Opcode.CREATE_RENDER_PIPELINE).payload.slice(4)));
   assert.equal(spec.layout, 0);
@@ -931,7 +931,7 @@ test('mapping follows Edge: mapState, a detached range after unmap, and unmap th
   assert.doesNotThrow(() => destroyed.unmap(), 'unmap after destroy does nothing');
   const records = decodeCommands(device.takeFrame());
   assert.deepEqual(records.filter(record => record.opcode === Opcode.UNMAP_BUFFER).length, 1, 'only the first unmap records');
-  assert.deepEqual([...records.find(record => record.opcode === Opcode.UNMAP_BUFFER).payload.slice(4)], Array(16).fill(7));
+  assert.deepEqual([...records.find(record => record.opcode === Opcode.UNMAP_BUFFER).payload.slice(12)], Array(16).fill(7));
 });
 
 // Edge's errors, from the round-12 adversary's C:\3jsc\worktrees\interrogate-e3r13-opus\repro13\out\edge-limits-*.log.
@@ -959,11 +959,11 @@ test('a buffer mapped at creation throws for a size that is no multiple of 4, an
   buffer.unmap();
   const records = decodeCommands(device.takeFrame());
   assert.deepEqual(records.map(record => record.opcode), [Opcode.CREATE_BUFFER, Opcode.UNMAP_BUFFER]);
-  assert.deepEqual([...records[1].payload.slice(4)], Array(16).fill(7));
+  assert.deepEqual([...records[1].payload.slice(12)], Array(16).fill(7));
   const huge = device.createBuffer({ size: device.limits.maxBufferSize + 4, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
   huge.unmap();
   const [, unmap] = decodeCommands(device.takeFrame());
-  assert.equal(unmap.payload.byteLength, 4, 'a buffer over maxBufferSize is invalid, so its unmap carries no data');
+  assert.equal(unmap.payload.byteLength, 12, 'a buffer over maxBufferSize is invalid, so its unmap carries no data');
 });
 
 test('a requested limit better than the adapter has makes init() reject with an error that names the limit', async () => {
@@ -1030,8 +1030,7 @@ test('encoder copies, clears and debug markers record their fields, and unsuppor
   encoder.copyTextureToTexture({ texture, origin: [0, 0, 1] }, { texture: target }, [4, 4]);
   encoder.insertDebugMarker('done');
   encoder.popDebugGroup();
-  const unsupported = [[encoder, 'beginComputePass'], [encoder, 'resolveQuerySet'], [encoder, 'writeTimestamp'],
-    [device.queue, 'copyExternalImageToTexture'], [device, 'createQuerySet'], [device, 'createComputePipeline'], [buffer, 'mapAsync']];
+  const unsupported = [[encoder, 'writeTimestamp'], [device.queue, 'copyExternalImageToTexture'], [device, 'importExternalTexture']];
   for (const [object, method] of unsupported) assert.throws(() => object[method](), new RegExp(method + ' is not implemented'));
   device.queue.submit([encoder.finish()]);
   const records = decodeCommands(device.takeFrame()).filter(record => record.opcode >= Opcode.COPY_BUFFER_TO_BUFFER);

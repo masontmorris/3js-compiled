@@ -47,11 +47,19 @@ export const Opcode = Object.freeze({
   PUSH_ERROR_SCOPE: 46,
   POP_ERROR_SCOPE: 47,
   UNMAP_BUFFER: 48,
+  CREATE_COMPUTE_PIPELINE: 49,
+  BEGIN_COMPUTE_PASS: 50,
+  DISPATCH: 51,
+  DISPATCH_INDIRECT: 52,
+  END_COMPUTE_PASS: 53,
+  CREATE_QUERY_SET: 54,
+  RESOLVE_QUERY_SET: 55,
+  MAP_BUFFER: 56,
 });
 
 const MAGIC = 0x43534a33;
 // threejsc_gpu::VERSION. docs/native-gpu-commands.md says when it changes.
-const VERSION = 9;
+const VERSION = 10;
 const HEADER_SIZE = 20;
 const RECORD_SIZE = 8;
 const validOpcodes = new Set(Object.values(Opcode));
@@ -82,6 +90,15 @@ function encodeUtf8(value) {
     else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 63), 0x80 | ((point >> 6) & 63), 0x80 | (point & 63));
   }
   return new Uint8Array(bytes);
+}
+
+// A pass's timestampWrites: the query set handle, or 0 for none, and the two write indexes, each 0xffffffff when absent.
+function timestampWrites(view, offset, timestamps) {
+  if (timestamps === null) return;
+  const index = value => value === undefined ? 0xffffffff : u32(value, 'timestamp write index');
+  view.setUint32(offset, u32(timestamps.querySet, 'query set handle', true), true);
+  view.setUint32(offset + 4, index(timestamps.begin), true);
+  view.setUint32(offset + 8, index(timestamps.end), true);
 }
 
 export class Handles {
@@ -243,8 +260,9 @@ export class CommandEncoder {
     this.append(Opcode.CREATE_RENDER_PIPELINE, payload);
   }
 
-  beginRenderPass(colors, depth) {
-    const payload = new Uint8Array(4 + colors.length * 52 + 32);
+  // `timestamps` is a pass's timestampWrites as { querySet, begin, end } handles and indexes, or null.
+  beginRenderPass(colors, depth, timestamps = null) {
+    const payload = new Uint8Array(4 + colors.length * 52 + 44);
     const view = new DataView(payload.buffer);
     view.setUint32(0, u32(colors.length, 'color attachment count'), true);
     colors.forEach((color, index) => {
@@ -273,7 +291,61 @@ export class CommandEncoder {
       view.setUint32(offset + 24, u32(depth.stencilStore, 'stencil store'), true);
       view.setUint32(offset + 28, u32(depth.stencilClear, 'stencil clear'), true);
     }
+    timestampWrites(view, 4 + colors.length * 52 + 32, timestamps);
     this.append(Opcode.BEGIN_RENDER_PASS, payload);
+  }
+
+  beginComputePass(timestamps = null) {
+    const payload = new Uint8Array(12);
+    timestampWrites(new DataView(payload.buffer), 0, timestamps);
+    this.append(Opcode.BEGIN_COMPUTE_PASS, payload);
+  }
+
+  createComputePipeline(handle, descriptor) {
+    const label = encodeUtf8(descriptor.label);
+    const entry = encodeUtf8(descriptor.entryPoint ?? '');
+    const payload = new Uint8Array(20 + label.length + entry.length);
+    const view = new DataView(payload.buffer);
+    [u32(handle, 'handle', true), u32(descriptor.layout, 'layout'), u32(descriptor.module, 'shader', true), label.length, entry.length]
+      .forEach((value, index) => view.setUint32(index * 4, value, true));
+    payload.set(label, 20);
+    payload.set(entry, 20 + label.length);
+    this.append(Opcode.CREATE_COMPUTE_PIPELINE, payload);
+  }
+
+  dispatchIndirect(buffer, offset) {
+    const payload = new Uint8Array(12);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(buffer, 'buffer handle', true), true);
+    view.setBigUint64(4, u64(offset, 'indirect offset'), true);
+    this.append(Opcode.DISPATCH_INDIRECT, payload);
+  }
+
+  createQuerySet(handle, type, count, label = '') {
+    const name = encodeUtf8(label);
+    const payload = new Uint8Array(16 + name.length);
+    const view = new DataView(payload.buffer);
+    [u32(handle, 'handle', true), u32(type, 'query type'), u32(count, 'query count'), name.length].forEach((value, index) => view.setUint32(index * 4, value, true));
+    payload.set(name, 16);
+    this.append(Opcode.CREATE_QUERY_SET, payload);
+  }
+
+  resolveQuerySet(querySet, first, count, buffer, offset) {
+    const payload = new Uint8Array(24);
+    const view = new DataView(payload.buffer);
+    [u32(querySet, 'query set handle', true), u32(first, 'first query'), u32(count, 'query count'), u32(buffer, 'buffer handle', true)]
+      .forEach((value, index) => view.setUint32(index * 4, value, true));
+    view.setBigUint64(16, u64(offset, 'buffer offset'), true);
+    this.append(Opcode.RESOLVE_QUERY_SET, payload);
+  }
+
+  mapBuffer(request, handle, mode, offset, size) {
+    const payload = new Uint8Array(28);
+    const view = new DataView(payload.buffer);
+    [u32(request, 'request', true), u32(handle, 'handle', true), u32(mode, 'map mode')].forEach((value, index) => view.setUint32(index * 4, value, true));
+    view.setBigUint64(12, u64(offset, 'map offset'), true);
+    view.setBigUint64(20, u64(size, 'map size'), true);
+    this.append(Opcode.MAP_BUFFER, payload);
   }
 
   copyTo(destination) {
@@ -368,12 +440,14 @@ export class CommandEncoder {
     this.append(Opcode.WRITE_BUFFER, payload);
   }
 
-  // The unmap of a buffer mapped at creation, with the data its mapped range holds.
-  unmapBuffer(handle, data) {
+  // An unmap, with the data written to the mapped range from `offset` on, which a range mapped for reading has none of.
+  unmapBuffer(handle, offset, data) {
     if (!(data instanceof Uint8Array)) throw new TypeError('Buffer data must be a Uint8Array');
-    const payload = new Uint8Array(4 + data.byteLength);
-    new DataView(payload.buffer).setUint32(0, u32(handle, 'handle', true), true);
-    payload.set(data, 4);
+    const payload = new Uint8Array(12 + data.byteLength);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, u32(handle, 'handle', true), true);
+    view.setBigUint64(4, u64(offset, 'unmap offset'), true);
+    payload.set(data, 12);
     this.append(Opcode.UNMAP_BUFFER, payload);
   }
 

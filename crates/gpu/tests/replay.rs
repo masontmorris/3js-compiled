@@ -33,7 +33,7 @@ impl<T> DerefMut for Exclusive<T> {
     }
 }
 
-fn device() -> Exclusive<(wgpu::Device, wgpu::Queue)> {
+fn software() -> Exclusive<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
     static ADAPTER: Mutex<()> = Mutex::new(());
     let turn = ADAPTER.lock().unwrap_or_else(PoisonError::into_inner);
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -49,9 +49,33 @@ fn device() -> Exclusive<(wgpu::Device, wgpu::Queue)> {
     }))
     .expect("a software adapter is required");
     assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     Exclusive {
-        value: pollster::block_on(adapter.request_device(&Default::default())).unwrap(),
+        value: (adapter, device, queue),
         _turn: turn,
+    }
+}
+
+fn device() -> Exclusive<(wgpu::Device, wgpu::Queue)> {
+    let Exclusive {
+        value: (_, device, queue),
+        _turn,
+    } = software();
+    Exclusive {
+        value: (device, queue),
+        _turn,
+    }
+}
+
+/// An executor whose `REQUEST_DEVICE` can take a device with other features, such as timestamp queries.
+fn adapter_executor() -> Exclusive<Executor> {
+    let Exclusive {
+        value: (adapter, device, queue),
+        _turn,
+    } = software();
+    Exclusive {
+        value: Executor::with_adapter(adapter, device, queue),
+        _turn,
     }
 }
 
@@ -554,7 +578,7 @@ fn each_frame_that_acquires_the_surface_starts_transparent() {
         for component in [0.0f64, 0.0, 1.0, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         [(14, payload), (25, vec![]), (26, vec![])]
     };
     let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
@@ -653,7 +677,7 @@ fn a_surface_pass_that_never_reaches_the_queue_leaves_it_transparent() {
         for component in [0.0f64, 0.0, 1.0, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         (14, payload)
     };
     let read = |texture: u32| (28, words(&[100, texture, 0, 0, 0, 0, 4, 4]));
@@ -740,7 +764,7 @@ fn a_resize_to_a_zero_size_after_a_resized_draw_leaves_the_canvas_transparent() 
         for component in [r, g, b, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         vec![
             (30, words(&[texture, width, height])),
             (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
@@ -798,7 +822,7 @@ fn a_resize_leaves_the_canvas_transparent_only_after_a_configure() {
         for component in [r, g, b, 1.0] {
             payload.extend_from_slice(&component.to_bits().to_le_bytes());
         }
-        payload.extend_from_slice(&[0; 32]);
+        payload.extend_from_slice(&[0; 44]);
         vec![
             (30, words(&[texture, 4, 4])),
             (7, words(&[texture + 1, texture, 0, 0, 0, 0, 0, 0, 0])),
@@ -873,7 +897,19 @@ fn drawing_at_a_zero_size_shows_a_transparent_canvas_with_edges_errors() {
             for component in [rgb[0], rgb[1], rgb[2], 1.0] {
                 pass.extend_from_slice(&component.to_bits().to_le_bytes());
             }
-            pass.extend_from_slice(&words(&[depth + 1, 1, 1, 1, 1f32.to_bits(), 0, 0, 0]));
+            pass.extend_from_slice(&words(&[
+                depth + 1,
+                1,
+                1,
+                1,
+                1f32.to_bits(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ]));
             records.push((14, pass));
             let viewport = [0.0, 0.0, width as f32, height as f32, 0.0, 1.0];
             records.push((
@@ -1492,7 +1528,7 @@ fn clear_canvas(
     for component in [r, g, b, 1.0] {
         payload.extend_from_slice(&component.to_bits().to_le_bytes());
     }
-    payload.extend_from_slice(&[0; 32]);
+    payload.extend_from_slice(&[0; 44]);
     vec![
         (30, words(&[handle, width, height])),
         (7, words(&[handle + 1, handle, 0, 0, 0, 0, 0, 0, 0])),
@@ -2061,4 +2097,218 @@ fn an_invalid_buffer_mapped_at_creation_raises_edges_errors_and_its_unmap_none()
         .map(|(name, count, _)| (*name, *count))
         .collect();
     assert_eq!(counts, EDGE_MAPPED_ERRORS, "{raised:#?}");
+}
+
+/// The responses to the fixture frames `<prefix>-<index>-<name>.bin`, one list per frame, from one executor.
+fn replay_cases<'a>(
+    executor: &mut Executor,
+    prefix: &str,
+    names: impl IntoIterator<Item = &'a str>,
+    width: usize,
+) -> Vec<(&'a str, Vec<Response>)> {
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let path = format!(
+                "{}/tests/fixtures/{prefix}-{index:0width$}-{name}.bin",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let responses = executor
+                .replay(&std::fs::read(path).unwrap(), None)
+                .unwrap();
+            (name, responses)
+        })
+        .collect()
+}
+
+/// How many errors each case raised, besides the errors that reject a request, which a map's raise
+/// as well.
+fn raised<'a>(cases: &[(&'a str, Vec<Response>)]) -> Vec<(&'a str, usize)> {
+    cases
+        .iter()
+        .map(|(name, responses)| {
+            let count = responses
+                .iter()
+                .filter(|response| matches!(response, Response::Error { request: None, .. }))
+                .count();
+            (*name, count)
+        })
+        .collect()
+}
+
+/// The last readback among `responses`.
+fn readback(responses: &[Response]) -> Option<&[u8]> {
+    responses.iter().rev().find_map(|response| match response {
+        Response::Readback { bytes, .. } => Some(bytes.as_slice()),
+        _ => None,
+    })
+}
+
+fn u32s(bytes: &[u8]) -> Vec<u32> {
+    bytes
+        .chunks(4)
+        .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+        .collect()
+}
+
+// compute-rules.js `compute` in Edge (C:\3jsc\swarm\e4\owner\kit\out\edge\compute-rules-compute\console.txt).
+const EDGE_COMPUTE_ERRORS: [(&str, usize); 7] = [
+    ("dispatch", 0),
+    ("indirect", 0),
+    ("bad-shader", 4),
+    ("bad-entry", 3),
+    ("no-pipeline", 2),
+    ("too-many-groups", 2),
+    ("destroyed-storage", 1),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn compute_passes_fill_storage_buffers_and_fail_as_in_edge() {
+    let mut executor = executor();
+    let cases = replay_cases(
+        &mut executor,
+        "compute",
+        EDGE_COMPUTE_ERRORS.map(|(name, _)| name),
+        1,
+    );
+    let filled = u32s(readback(&cases[0].1).expect("the dispatch's map"));
+    assert_eq!(filled, (0..256).map(|i| i * 3 + 1).collect::<Vec<_>>());
+    let indirect = u32s(readback(&cases[1].1).expect("the indirect dispatch's map"));
+    assert_eq!(&indirect[..128], &[7; 128]);
+    assert_eq!(indirect[128], 128 * 3 + 1, "two workgroups of 64 run");
+    assert_eq!(raised(&cases), EDGE_COMPUTE_ERRORS, "{cases:#?}");
+}
+
+// compute-rules.js `map` in Edge (C:\3jsc\swarm\e4\owner\kit\out\edge\compute-rules-map\console.txt). Each map Edge
+// rejects raises one validation error as well.
+const EDGE_MAP_ASYNC_ERRORS: [(&str, usize); 12] = [
+    ("read", 0),
+    ("write", 0),
+    ("no-usage", 1),
+    ("wrong-mode", 1),
+    ("both-modes", 1),
+    ("unaligned-offset", 1),
+    ("unaligned-size", 1),
+    ("out-of-range", 1),
+    ("destroyed", 1),
+    ("mapped-submit", 1),
+    ("remap", 0),
+    ("written-ranges", 0),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn maps_read_and_write_their_ranges_and_reject_as_in_edge() {
+    let mut executor = executor();
+    let cases = replay_cases(
+        &mut executor,
+        "mapasync",
+        EDGE_MAP_ASYNC_ERRORS.map(|(name, _)| name),
+        2,
+    );
+    assert_eq!(readback(&cases[0].1).map(u32s), Some(vec![33, 44, 55, 66]));
+    assert_eq!(
+        readback(&cases[1].1),
+        Some(&[0; 16][..]),
+        "a new buffer maps zeroed"
+    );
+    for (name, responses) in &cases[2..9] {
+        assert!(
+            responses.iter().any(|response| matches!(
+                response,
+                Response::Error {
+                    request: Some(_),
+                    ..
+                }
+            )),
+            "{name} rejects its map: {responses:?}"
+        );
+    }
+    assert_eq!(
+        readback(&cases[10].1),
+        Some(&[0; 8][..]),
+        "a buffer maps again after its unmap"
+    );
+    assert_eq!(
+        readback(&cases[11].1).map(u32s),
+        Some(vec![1, 2, 3, 4, 0, 0, 0, 0])
+    );
+    assert_eq!(raised(&cases), EDGE_MAP_ASYNC_ERRORS, "{cases:#?}");
+}
+
+// compute-rules.js `queries` in Edge (C:\3jsc\swarm\e4\owner\kit\out\edge\compute-rules-queries\console.txt).
+const EDGE_TIMESTAMP_ERRORS: [(&str, usize); 8] = [
+    ("passes", 0),
+    ("same-index", 2),
+    ("index-past-count", 2),
+    ("resolve-unaligned", 2),
+    ("resolve-usage", 2),
+    ("resolve-past-count", 2),
+    ("too-many", 3),
+    ("destroyed", 1),
+];
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn passes_write_ordered_nanosecond_timestamps_and_resolves_fail_as_in_edge() {
+    let mut executor = adapter_executor();
+    let cases = replay_cases(
+        &mut executor,
+        "timestamps",
+        EDGE_TIMESTAMP_ERRORS.map(|(name, _)| name),
+        1,
+    );
+    let times: Vec<u64> = readback(&cases[0].1)
+        .expect("the resolved timestamps")
+        .chunks(8)
+        .map(|time| u64::from_le_bytes(time.try_into().unwrap()))
+        .collect();
+    assert!(
+        times[0] > 0 && times[1] >= times[0],
+        "the render pass: {times:?}"
+    );
+    assert!(
+        times[2] >= times[1] && times[3] >= times[2],
+        "the compute pass after it: {times:?}"
+    );
+    assert!(
+        times[3] - times[0] < 1_000_000_000,
+        "both passes take under a second of nanoseconds: {times:?}"
+    );
+    assert_eq!(raised(&cases), EDGE_TIMESTAMP_ERRORS, "{cases:#?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_canvas_copied_mid_frame_reaches_the_texture_and_its_mips() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let mut surface = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let responses = executor
+        .replay(
+            include_bytes!("fixtures/copy-surface.bin"),
+            Some(&mut surface),
+        )
+        .unwrap();
+    // The pass clears to (1, 0.5, 0, 1), which bgra8unorm stores as blue, green, red and alpha.
+    assert_eq!(
+        responses,
+        vec![
+            Response::Readback {
+                request: 700,
+                bytes: [0, 128, 255, 255].repeat(4)
+            },
+            Response::Readback {
+                request: 701,
+                bytes: vec![0, 128, 255, 255]
+            },
+        ]
+    );
+    assert_eq!(
+        read_surface(device, queue, &surface),
+        [0, 128, 255, 255].repeat(16)
+    );
 }
