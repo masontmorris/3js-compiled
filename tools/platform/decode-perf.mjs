@@ -1,7 +1,8 @@
 // E5's perf rule: total decode time of a set of images, in headless Edge and in the host, interleaved. Each run
 // reads every file first, idles 3 s so the machine's load can be read just before it measures, then decodes the
-// whole set with createImageBitmap, as three's ImageBitmapLoader does, three times, and reports each pass's total
-// in ms. It writes each run's idle window to windows.txt. It drives the GPU, so run it under the lease:
+// whole set with createImageBitmap three times with colorSpaceConversion 'none', as three's ImageBitmapLoader
+// passes it, and three times with 'default', which converts embedded color spaces as an image element does, and
+// reports each pass's total in ms. It writes each run's idle window to windows.txt. It drives the GPU, so run it under the lease:
 //   node tools/platform/decode-perf.mjs --images <dir> --out <dir> [--host <host.exe>] [--runs 3]
 import { createServer } from 'node:http';
 import { copyFile, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -27,14 +28,16 @@ const blobs = await Promise.all(files.map(async file => (await fetch(new URL('im
 const idleStart = new Date().toISOString();
 await new Promise(resolve => setTimeout(resolve, 3000));
 const idle = [idleStart, new Date().toISOString()];
-const passes = [];
+const passes = { none: [], default: [] };
 let pixels = 0;
-for (let pass = 0; pass < 3; pass++) {
-  const start = performance.now();
-  const bitmaps = await Promise.all(blobs.map(blob => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })));
-  passes.push(performance.now() - start);
-  pixels = bitmaps.reduce((sum, bitmap) => sum + bitmap.width * bitmap.height, 0);
-  for (const bitmap of bitmaps) bitmap.close();
+for (const conversion of ['none', 'default']) {
+  for (let pass = 0; pass < 3; pass++) {
+    const start = performance.now();
+    const bitmaps = await Promise.all(blobs.map(blob => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: conversion })));
+    passes[conversion].push(performance.now() - start);
+    pixels = bitmaps.reduce((sum, bitmap) => sum + bitmap.width * bitmap.height, 0);
+    for (const bitmap of bitmaps) bitmap.close();
+  }
 }
 console.log('DECODE ' + JSON.stringify({ files: files.length, bytes: blobs.reduce((sum, blob) => sum + blob.size, 0), pixels, passes, idle }));
 globalThis.__done = true;
@@ -109,17 +112,20 @@ const timed = async (name, run) => {
 };
 const results = { edge: [], native: [] };
 for (let run = 0; run < runs; run++) {
+  const show = result => Object.entries(result.passes).map(([conversion, ms]) => `${conversion} ${ms.map(value => value.toFixed(1)).join(' ')}`).join(', ');
   results.edge.push(await timed(`edge-${run}`, edge));
-  console.log(`edge ${run}: ${results.edge.at(-1).passes.map(ms => ms.toFixed(1)).join(' ')} ms`);
+  console.log(`edge ${run}: ${show(results.edge.at(-1))} ms`);
   results.native.push(await timed(`native-${run}`, () => native(run)));
-  console.log(`native ${run}: ${results.native.at(-1).passes.map(ms => ms.toFixed(1)).join(' ')} ms`);
+  console.log(`native ${run}: ${show(results.native.at(-1))} ms`);
 }
 await writeFile(join(out, 'windows.txt'), windows.join('\n') + '\n');
 const median = values => [...values].sort((a, b) => a - b)[values.length >> 1];
-const summary = side => median(results[side].map(result => median(result.passes)));
-const edgeMs = summary('edge');
-const nativeMs = summary('native');
-const verdict = nativeMs <= edgeMs * 1.25 ? 'PASS' : 'FAIL';
-const report = { files: results.edge[0].files, bytes: results.edge[0].bytes, pixels: results.edge[0].pixels, edgeMs, nativeMs, ratio: nativeMs / edgeMs, verdict, results };
+const report = { files: results.edge[0].files, bytes: results.edge[0].bytes, pixels: results.edge[0].pixels, results, rule: {} };
+for (const conversion of ['none', 'default']) {
+  const summary = side => median(results[side].map(result => median(result.passes[conversion])));
+  const edgeMs = summary('edge');
+  const nativeMs = summary('native');
+  report.rule[conversion] = { edgeMs, nativeMs, ratio: nativeMs / edgeMs, verdict: nativeMs <= edgeMs * 1.25 ? 'PASS' : 'FAIL' };
+  console.log(`${report.files} files, ${(report.bytes / 1e6).toFixed(1)} MB, ${(report.pixels / 1e6).toFixed(1)} Mpx, colorSpaceConversion ${conversion}: Edge ${edgeMs.toFixed(1)} ms, native ${nativeMs.toFixed(1)} ms, ${(nativeMs / edgeMs).toFixed(2)}x: ${report.rule[conversion].verdict}`);
+}
 await writeFile(join(out, 'decode-perf.json'), JSON.stringify(report, null, 1));
-console.log(`${report.files} files, ${(report.bytes / 1e6).toFixed(1)} MB, ${(report.pixels / 1e6).toFixed(1)} Mpx: Edge ${edgeMs.toFixed(1)} ms, native ${nativeMs.toFixed(1)} ms, ${report.ratio.toFixed(2)}x: ${verdict}`);
