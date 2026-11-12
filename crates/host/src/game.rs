@@ -15,7 +15,7 @@ use std::{
     },
     time::Instant,
 };
-use threejsc_host::platform;
+use threejsc_host::{canvas2d, platform};
 
 pub type Log = Rc<RefCell<File>>;
 struct State {
@@ -330,6 +330,7 @@ impl<'a> Game<'a> {
                 host_ext::init(),
                 platform::extension::init(),
                 threejsc_host::audio::extension::init(),
+                canvas2d::extension::init(),
             ],
             ..Default::default()
         });
@@ -486,6 +487,10 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    /// Whether the entry module's top level has finished.
+    pub fn evaluated(&self) -> bool {
+        self.evaluation.is_none()
     }
     /// Runs timers as they fall due until the render thread has caught up. The host calls it
     /// after it takes a frame's commands and before it hands the frame to the render thread.

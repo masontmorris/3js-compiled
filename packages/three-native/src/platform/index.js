@@ -7,6 +7,7 @@ import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
 import { EVENT_HANDLERS } from './dom-methods.js';
+import { CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, TextMetrics, setCanvasHost } from './canvas2d.js';
 import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
 import { MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry, updateIntersections } from './observers.js';
@@ -50,6 +51,15 @@ setHost({
     const decoded = await ops.op_image_decode(bytes, convert);
     return { width: decoded.width, height: decoded.height, data: new Uint8Array(decoded.data), premultiplied: false };
   },
+});
+setCanvasHost({
+  fontLoad: bytes => ops.op_canvas2d_font_load(bytes),
+  fillRect: (pixels, width, height, draw) => ops.op_canvas2d_fill_rect(pixels, width, height, draw),
+  clearRect: (pixels, width, height, draw) => ops.op_canvas2d_clear_rect(pixels, width, height, draw),
+  drawImage: (pixels, width, height, image, draw) => ops.op_canvas2d_draw_image(pixels, width, height, image, draw),
+  text: (pixels, width, height, draw) => ops.op_canvas2d_text(pixels, width, height, draw),
+  measure: request => ops.op_canvas2d_measure(request),
+  unpremultiply: (from, to) => ops.op_canvas2d_unpremultiply(from, to),
 });
 
 const floats = bytes => new Float32Array(bytes.slice().buffer);
@@ -229,7 +239,8 @@ Object.assign(window, {
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
   MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
-  AbortController, AbortSignal, DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
+  AbortController, AbortSignal, CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, TextMetrics,
+  DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
   XMLHttpRequest, ProgressEvent,
   AudioContext: audio.AudioContext, OfflineAudioContext: audio.OfflineAudioContext, BaseAudioContext: audio.BaseAudioContext,
   AudioNode: audio.AudioNode, AudioParam: audio.AudioParam, AudioBuffer: audio.AudioBuffer, AudioListener: audio.AudioListener,
