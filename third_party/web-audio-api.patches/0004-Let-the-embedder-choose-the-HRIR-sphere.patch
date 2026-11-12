@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 02:32:36 -0500
+Subject: [PATCH 4/5] Let the embedder choose the HRIR sphere
+
+set_hrir_sphere() replaces the bundled IRCAM subject 1003 for every HRTF
+PannerNode created after the call, so an application can ship another
+HRIR set without patching the crate.
+---
+ src/node/panner.rs | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/src/node/panner.rs b/src/node/panner.rs
+index 2663579..e814420 100644
+--- a/src/node/panner.rs
++++ b/src/node/panner.rs
+@@ -31,6 +31,17 @@ pub(crate) fn assert_valid_cone_outer_gain(value: f64) {
+     );
+ }
+ 
++static HRIR_SPHERE: OnceLock<&'static [u8]> = OnceLock::new();
++
++/// Use `sphere`, an HRIR sphere in the `hrtf` crate's binary format, for every HRTF `PannerNode`
++/// in place of the bundled IRCAM subject 1003.
++///
++/// Call it before the first HRTF panner is created. It returns `false`, and changes nothing, when
++/// a sphere was already chosen.
++pub fn set_hrir_sphere(sphere: &'static [u8]) -> bool {
++    HRIR_SPHERE.set(sphere).is_ok()
++}
++
+ /// Load the HRTF processor for the given sample_rate
+ ///
+ /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
+@@ -48,8 +59,8 @@ pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
+     }
+ 
+     // The following snippet might panic
+-    let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+-    let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
++    let resource = HRIR_SPHERE.get_or_init(|| include_bytes!("../../resources/IRC_1003_C.bin"));
++    let hrir_sphere = HrirSphere::new(*resource, sample_rate).unwrap();
+     let len = hrir_sphere.len();
+ 
+     let interpolation_steps = 1; // TODO?

@@ -31,6 +31,17 @@ pub(crate) fn assert_valid_cone_outer_gain(value: f64) {
     );
 }
 
+static HRIR_SPHERE: OnceLock<&'static [u8]> = OnceLock::new();
+
+/// Use `sphere`, an HRIR sphere in the `hrtf` crate's binary format, for every HRTF `PannerNode`
+/// in place of the bundled IRCAM subject 1003.
+///
+/// Call it before the first HRTF panner is created. It returns `false`, and changes nothing, when
+/// a sphere was already chosen.
+pub fn set_hrir_sphere(sphere: &'static [u8]) -> bool {
+    HRIR_SPHERE.set(sphere).is_ok()
+}
+
 /// Load the HRTF processor for the given sample_rate
 ///
 /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
@@ -48,8 +59,8 @@ pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     }
 
     // The following snippet might panic
-    let resource = include_bytes!("../../resources/IRC_1003_C.bin");
-    let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+    let resource = HRIR_SPHERE.get_or_init(|| include_bytes!("../../resources/IRC_1003_C.bin"));
+    let hrir_sphere = HrirSphere::new(*resource, sample_rate).unwrap();
     let len = hrir_sphere.len();
 
     let interpolation_steps = 1; // TODO?
