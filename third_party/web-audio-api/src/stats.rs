@@ -38,6 +38,7 @@ struct AudioStatsInner {
     callback_count: AtomicU64,
     render_duration_ns_total: AtomicU64,
     callback_budget_ns_total: AtomicU64,
+    callback_budget_min_ns: AtomicU64,
     underrun_count: AtomicU64,
     peak_load_ppm: AtomicU64,
     underrun_duration_ns_total: AtomicU64,
@@ -62,6 +63,7 @@ pub(crate) struct AudioStatsSnapshot {
     pub callback_count: u64,
     pub render_duration_ns_total: u64,
     pub callback_budget_ns_total: u64,
+    pub callback_budget_min_ns: u64,
     pub underrun_count: u64,
     pub underrun_duration_ns_total: u64,
     pub underrun_events_total: u64,
@@ -84,6 +86,7 @@ impl AudioStats {
                 callback_count: AtomicU64::new(0),
                 render_duration_ns_total: AtomicU64::new(0),
                 callback_budget_ns_total: AtomicU64::new(0),
+                callback_budget_min_ns: AtomicU64::new(u64::MAX),
                 underrun_count: AtomicU64::new(0),
                 peak_load_ppm: AtomicU64::new(0),
                 underrun_duration_ns_total: AtomicU64::new(0),
@@ -117,6 +120,9 @@ impl AudioStats {
         self.inner
             .callback_budget_ns_total
             .fetch_add(callback_budget_ns, Ordering::Relaxed);
+        self.inner
+            .callback_budget_min_ns
+            .fetch_min(callback_budget_ns, Ordering::Relaxed);
         let load_ppm = render_duration_ns
             .saturating_mul(1_000_000)
             .checked_div(callback_budget_ns)
@@ -182,6 +188,7 @@ impl AudioStats {
             callback_count: self.inner.callback_count.load(Ordering::Relaxed),
             render_duration_ns_total: self.inner.render_duration_ns_total.load(Ordering::Relaxed),
             callback_budget_ns_total: self.inner.callback_budget_ns_total.load(Ordering::Relaxed),
+            callback_budget_min_ns: self.inner.callback_budget_min_ns.load(Ordering::Relaxed),
             underrun_count: self.inner.underrun_count.load(Ordering::Relaxed),
             underrun_duration_ns_total: self
                 .inner

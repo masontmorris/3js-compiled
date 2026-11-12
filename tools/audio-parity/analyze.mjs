@@ -244,7 +244,9 @@ function scenarioLanes() {
   verdicts.other = Object.fromEntries(['param-errors', 'node-errors', 'decode-callbacks', 'audio-element', 'xhr'].map(n => [n, same(n) ? 'same' : { host: host[n], edge: edge[n] }]));
 }
 
+const inputs = { lane1: 'lane1', graphLanes: 'graphs', lane5: 'lane5', lane6: 'lane6', lane7: 'lane7', scenarioLanes: 'scenarios' };
 for (const [name, run] of Object.entries({ lane1, graphLanes, lane5, lane6, lane7, scenarioLanes })) {
+  if (!existsSync(at(inputs[name]))) continue;
   try { run(); } catch (error) { verdicts[name] = { error: String(error.stack ?? error) }; }
 }
 writeFileSync(at('verdicts.json'), `${JSON.stringify(verdicts, null, 1)}\n`);

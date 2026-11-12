@@ -39,8 +39,13 @@ const lanes = {
     node('tools/audio-parity/host.mjs', 'graphs', 'C:/3jsc/swarm/e7/owner/spike/edge', at('graphs'), '--dump', '-', '--frames', String(60 * fps));
   },
   // Lane 5: lane 3's graphs in real time with a 200 ms game-thread block in each.
+  // A loopback recording of the virtual device shows any sound the device dropped.
   async lane5() {
+    mkdirSync(at('lane5'), { recursive: true });
+    const loopback = spawn(loopbackExe, [device, '50', at('lane5', 'loopback.wav')], { stdio: 'inherit' });
+    const done = new Promise(r => loopback.on('exit', r));
     await runHost('examples/audio/realtime.js', '', at('lane5'), { frames: 45 * fps });
+    await done;
   },
   // Lane 6: Howler with folio's calls; a key press at about 1 s runs Howler's unlock.
   async lane6() {

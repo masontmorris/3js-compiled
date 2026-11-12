@@ -638,11 +638,15 @@ export class OfflineAudioCompletionEvent extends Event {
   constructor(type, init) { super(type, init); this.renderedBuffer = init.renderedBuffer; }
 }
 
+// Host calls a context has started that have not settled, kept off the page's view of the object.
+const PENDING = Symbol('pending host calls');
+
 export class BaseAudioContext extends EventTarget {
   #state;
   #listener;
   #destination;
   #queue = Promise.resolve();
+  [PENDING] = 0;
   constructor(info, state) {
     super();
     this.id = info.id;
@@ -670,7 +674,8 @@ export class BaseAudioContext extends EventTarget {
   }
   // Host calls for one context run in order, so a suspend() then resume() settle in that order.
   serially(call) {
-    const result = this.#queue.then(call);
+    this[PENDING]++;
+    const result = this.#queue.then(call).finally(() => { this[PENDING]--; });
     this.#queue = result.catch(() => {});
     return result;
   }
@@ -738,8 +743,12 @@ export class AudioContext extends BaseAudioContext {
     if (options.sinkId !== undefined && options.sinkId !== '') throw unsupported('AudioContext', 'sinkId');
     const info = host.context({ kind: 'online', sampleRate: options.sampleRate ?? null, latencyHint: typeof options.latencyHint === 'number' ? options.latencyHint : String(options.latencyHint ?? 'interactive') });
     super(info, 'running');
-    // Edge fires the first statechange once the audio thread runs, after any lifecycle call made in the same turn.
-    setTimeout(() => this.settled().then(() => this.notifyStatechange()), 0);
+    // Edge fires the first statechange in one task once the audio thread runs. A lifecycle call made in the same turn
+    // goes first: its promise settles, then its event, then this one.
+    setTimeout(() => {
+      if (this[PENDING] === 0) this.dispatchEvent(new Event('statechange'));
+      else this.settled().then(() => this.notifyStatechange());
+    }, 0);
   }
   get baseLatency() { return host.baseLatency(this.id); }
   get outputLatency() { return host.outputLatency(this.id); }
