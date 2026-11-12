@@ -450,6 +450,7 @@ enum Status {
 
 #[test]
 fn reference_graphs_match_edge() {
+    threejsc_audio::init();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let specs: Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("tests/graphs.json")).unwrap())

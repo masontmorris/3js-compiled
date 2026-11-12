@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 01:20:49 -0500
-Subject: [PATCH 3/3] Measure the PannerNode cone angle from the source to the
+Subject: [PATCH 3/8] Measure the PannerNode cone angle from the source to the
  listener
 
 The cone angle used the listener-to-source vector, so a source facing the

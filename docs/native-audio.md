@@ -38,7 +38,9 @@ Nothing opens an audio device until a page creates an `AudioContext`. Each conte
 
 ## HRTF
 
-HRTF panning uses the HRIR set in `crates/audio/hrir/sphere.bin`. It is IRCAM LISTEN subject 1003, the set the engine bundles. Edge uses Chromium's composite IRCAM set, so HRTF channel levels differ from Edge's by up to 5.74 dB, against lane 4's 1 dB rule. Replacing the file swaps the set, with no code change.
+HRTF panning uses Chromium's composite IRCAM set, the one Edge uses, in `crates/audio/hrir/chromium/Composite.flac`, copied unchanged from chromium/chromium at `09931c1f02320a1b1175af4f338c992c02342f89`, path `third_party/blink/renderer/platform/audio/resources/`. `threejsc_audio::init()` converts each response to the context's rate with the ported Chromium resampler, and the engine renders with a port of Chromium's `HRTFPanner`: kernels with their group delay taken out, 7 kernels interpolated between each pair of measured azimuths, the measured elevation at or below the source, per-ear delay lines, overlap-add convolvers, and a 2048-frame crossfade when the kernel changes. Replacing the file swaps the set, with no code change.
+
+The responses come from IRCAM's LISTEN HRTF database, measured by IRCAM's Room Acoustics Team, Olivier Warusfel, in the LISTEN project with AKG. IRCAM's pages state no terms. The copy of the terms libmysofa ships with LISTEN data, in [`tests/LICENSE.LISTEN_1002_IRC_1002_C_HRIR`](https://github.com/hoene/libmysofa/blob/main/tests/LICENSE.LISTEN_1002_IRC_1002_C_HRIR), reads: "The Listen database is public and available for any use. We would however appreciate an acknowledgment of the database somewhere in the description of your work (e.g. paper) or in your development." Chromium and WebKit ship these files without a separate license. The operator chose on 2026-11-12 to ship them on those terms, the footing on which web-audio-api-rs ships LISTEN subject 1003. `crates/audio/hrir/chromium/NOTICE` carries the acknowledgement, the terms and the sources.
 
 ## Engine patches
 
@@ -47,9 +49,11 @@ HRTF panning uses the HRIR set in `crates/audio/hrir/sphere.bin`. It is IRCAM LI
 1. Event boundaries at `ceil(time * sampleRate)`, as Chromium places them.
 2. A loop started at or past `loopEnd` starts at `loopStart`.
 3. The cone angle measured from the source to the listener.
-4. `set_hrir_sphere()`, the HRIR data seam.
-5. A render observer on `AudioContext`, for `--audio-out` and `audio.csv`.
-6. An unknown output device is an error, never the default device.
+4. A render observer on `AudioContext`, for `--audio-out` and `audio.csv`.
+5. An unknown output device is an error, never the default device.
+6. `baseLatency` is the device period, the shortest callback, as Chromium reports it.
+7. HRTF directions mapped onto the HRIR sphere's axes. The engine had swapped two, so horizontal sources were looked up on the sphere's vertical circle.
+8. `set_hrtf_responses()` and the port of Chromium's HRTF panner.
 
 ## Checks
 

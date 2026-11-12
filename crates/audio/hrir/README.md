@@ -1,7 +1,5 @@
-# HRIR sphere
+# HRTF responses
 
-`sphere.bin` is the head-related impulse response set every HRTF `PannerNode` uses, in the `hrtf` crate's sphere format. `threejsc_audio::init()` hands it to the engine, so swapping the set means replacing this file and rerunning lane 4. No code changes.
+`chromium/Composite.flac` is the head-related impulse response set every HRTF `PannerNode` uses: Chromium's composite IRCAM set, the one Edge uses, copied unchanged. `chromium/NOTICE` names its source, carries the acknowledgement IRCAM asks for and the LISTEN terms, and records the operator's decision to ship it.
 
-The current file is IRCAM LISTEN subject 1003, compensated, the `IRC_1003_C.bin` that web-audio-api-rs bundles. It comes from the LISTEN HRTF database, measured by IRCAM's Room Acoustics Team (Olivier Warusfel). The database's terms ask for an acknowledgement in the work that uses it.
-
-Edge uses a different set, Chromium's `IRC_Composite_C_R0195`. Its redistribution terms are unclear, so this repo doesn't ship it yet. With subject 1003, HRTF channel levels differ from Edge's by up to 5.74 dB, against lane 4's 1 dB rule.
+`threejsc_audio::init()` decodes it, converts each response to the context's rate with Chromium's resampler, and hands the responses to the engine, which renders HRTF panning with its port of Chromium's HRTF panner. Swapping the set means replacing the file and rerunning lane 4. No code changes.

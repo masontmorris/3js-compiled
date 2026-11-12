@@ -46,6 +46,8 @@ mod media_stream_track_source;
 pub use media_stream_track_source::*;
 mod oscillator;
 pub use oscillator::*;
+mod hrtf_chromium;
+pub use hrtf_chromium::{set_hrtf_responses, HrtfResponses};
 mod panner;
 pub use panner::*;
 mod script_processor;

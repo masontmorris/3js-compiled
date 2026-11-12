@@ -31,17 +31,6 @@ pub(crate) fn assert_valid_cone_outer_gain(value: f64) {
     );
 }
 
-static HRIR_SPHERE: OnceLock<&'static [u8]> = OnceLock::new();
-
-/// Use `sphere`, an HRIR sphere in the `hrtf` crate's binary format, for every HRTF `PannerNode`
-/// in place of the bundled IRCAM subject 1003.
-///
-/// Call it before the first HRTF panner is created. It returns `false`, and changes nothing, when
-/// a sphere was already chosen.
-pub fn set_hrir_sphere(sphere: &'static [u8]) -> bool {
-    HRIR_SPHERE.set(sphere).is_ok()
-}
-
 /// Load the HRTF processor for the given sample_rate
 ///
 /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
@@ -59,8 +48,8 @@ pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     }
 
     // The following snippet might panic
-    let resource = HRIR_SPHERE.get_or_init(|| include_bytes!("../../resources/IRC_1003_C.bin"));
-    let hrir_sphere = HrirSphere::new(*resource, sample_rate).unwrap();
+    let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+    let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
     let len = hrir_sphere.len();
 
     let interpolation_steps = 1; // TODO?
@@ -176,7 +165,7 @@ impl Default for PannerOptions {
 enum ControlMessage {
     DistanceModel(DistanceModelType),
     // Box this payload - one large variant can penalize the memory layout of this enum
-    PanningModel(Box<Option<HrtfState>>),
+    PanningModel(Box<Option<Hrtf>>),
     RefDistance(f64),
     MaxDistance(f64),
     RollOffFactor(f64),
@@ -218,6 +207,21 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     );
 }
 
+/// The HRTF renderer: Chromium's, when the embedder supplied its responses, or the HRIR sphere's.
+enum Hrtf {
+    Sphere(HrtfState),
+    Chromium(super::hrtf_chromium::ChromiumHrtf),
+}
+
+impl Hrtf {
+    fn tail_time_samples(&self) -> usize {
+        match self {
+            Hrtf::Sphere(state) => state.tail_time_samples(),
+            Hrtf::Chromium(panner) => panner.tail_time_samples(),
+        }
+    }
+}
+
 /// Internal state of the HRTF renderer
 struct HrtfState {
     len: usize,
@@ -251,10 +255,12 @@ impl HrtfState {
         // reset state of output buffer
         self.output_interleaved.fill((0., 0.));
 
+        // The HRIR spheres have the front at -z, up at +y and the left at -x, so a source in
+        // front lands at -z and an elevated one at +y.
         let new_sample_vector = Vec3 {
             x: projected_source[0],
-            z: projected_source[1],
-            y: projected_source[2],
+            y: projected_source[1],
+            z: -projected_source[2],
         };
 
         let context = HrtfContext {
@@ -650,9 +656,17 @@ impl PannerNode {
         let hrtf_option = match value {
             PanningModelType::EqualPower => None,
             PanningModelType::HRTF => {
-                let sample_rate = self.context().sample_rate() as u32;
-                let (processor, len) = load_hrtf_processor(sample_rate);
-                Some(HrtfState::new(processor, len))
+                let sample_rate = self.context().sample_rate();
+                Some(match super::hrtf_chromium::database(sample_rate) {
+                    Some(database) => Hrtf::Chromium(super::hrtf_chromium::ChromiumHrtf::new(
+                        database,
+                        sample_rate,
+                    )),
+                    None => {
+                        let (processor, len) = load_hrtf_processor(sample_rate as u32);
+                        Hrtf::Sphere(HrtfState::new(processor, len))
+                    }
+                })
             }
         };
 
@@ -684,7 +698,7 @@ struct PannerRenderer {
     cone_inner_angle: f64,
     cone_outer_angle: f64,
     cone_outer_gain: f64,
-    hrtf_state: Option<HrtfState>, // use EqualPower panning model if `None`
+    hrtf_state: Option<Hrtf>, // use EqualPower panning model if `None`
     tail_time_counter: usize,
 }
 
@@ -786,7 +800,33 @@ impl AudioProcessor for PannerRenderer {
                 }
             });
 
-        if let Some(hrtf_state) = &mut hrtf_state {
+        if let Some(Hrtf::Chromium(panner)) = &mut hrtf_state {
+            // HRTF panning as Chromium does it - always k-rate so take a single value from the a-rate iter
+            let SpatialParams {
+                dist_gain,
+                cone_gain,
+                azimuth,
+                elevation,
+            } = a_rate_params.next().unwrap();
+            let mut source_l = [0.; RENDER_QUANTUM_SIZE];
+            let mut source_r = [0.; RENDER_QUANTUM_SIZE];
+            source_l.copy_from_slice(input.channel_data(0));
+            source_r.copy_from_slice(input.channel_data(input.number_of_channels().min(2) - 1));
+            output.set_number_of_channels(2);
+            let [left, right] = output.stereo_mut();
+            panner.pan(
+                f64::from(azimuth),
+                f64::from(elevation),
+                &source_l,
+                &source_r,
+                &mut left[..],
+                &mut right[..],
+            );
+            let gain = cone_gain * dist_gain;
+            left.iter_mut()
+                .chain(right.iter_mut())
+                .for_each(|v| *v *= gain);
+        } else if let Some(Hrtf::Sphere(hrtf_state)) = &mut hrtf_state {
             // HRTF panning - always k-rate so take a single value from the a-rate iter
             let SpatialParams {
                 dist_gain,
