@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
@@ -38,31 +38,6 @@ struct Options {
     storage: Option<PathBuf>,
     hash: String,
     vsync: bool,
-}
-/// The default `localStorage` file for a game, named after the directory its entry module is in.
-fn default_storage(entry: &str) -> Option<PathBuf> {
-    let game = std::path::absolute(entry)
-        .ok()?
-        .parent()?
-        .file_name()?
-        .to_string_lossy()
-        .into_owned();
-    let game: String = game
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    Some(
-        PathBuf::from(std::env::var_os("LOCALAPPDATA")?)
-            .join("threejsc")
-            .join(game)
-            .join("localStorage.json"),
-    )
 }
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
@@ -93,7 +68,11 @@ fn options() -> Result<Options> {
         }
     }
     let entry: String = entry.context("--entry is required")?;
-    let storage = storage.or_else(|| default_storage(&entry));
+    let storage = storage.or_else(|| {
+        std::env::var_os("LOCALAPPDATA").map(|home| {
+            threejsc_host::platform::storage::default_path(Path::new(&entry), Path::new(&home))
+        })
+    });
     Ok(Options {
         entry,
         scene,

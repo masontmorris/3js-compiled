@@ -23,6 +23,35 @@ pub struct Store {
     writer: Option<JoinHandle<()>>,
 }
 
+/// The default `localStorage` file for the game whose entry module is `entry`:
+/// `<local app data>/threejsc/<folder>-<hash>/localStorage.json`, where `<folder>` is the name of the entry's
+/// folder and `<hash>` is 16 hex digits of FNV-1a over its absolute path, lowercased with forward slashes. Two games
+/// built to folders of the same name get different files, and a rebuild in place keeps its file.
+pub fn default_path(entry: &Path, local_app_data: &Path) -> PathBuf {
+    let absolute = std::path::absolute(entry).unwrap_or_else(|_| entry.to_owned());
+    let key = absolute.to_string_lossy().replace('\\', "/").to_lowercase();
+    let hash = key.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let folder: String = absolute
+        .parent()
+        .and_then(Path::file_name)
+        .map_or_else(|| "game".into(), |name| name.to_string_lossy().into_owned())
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    local_app_data
+        .join("threejsc")
+        .join(format!("{folder}-{hash:016x}"))
+        .join("localStorage.json")
+}
+
 /// Reads a store file, which holds one JSON object of string values.
 pub fn read(path: &Path) -> Result<BTreeMap<String, String>> {
     match std::fs::read(path) {
@@ -169,12 +198,29 @@ mod tests {
         let a = default_path(Path::new("C:/games/gameA/dist/index.js"), home);
         let b = default_path(Path::new("C:/games/gameB/dist/index.js"), home);
         assert_ne!(a, b, "two games built to dist share no file");
-        assert_eq!(a, default_path(Path::new("C:/games/gameA/dist/index.js"), home));
-        assert_eq!(a, default_path(Path::new("c:\\games\\gameA\\dist\\index.js"), home), "the same entry spelled another way");
-        let name = a.parent().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        assert!(name.starts_with("dist-") && name.len() == "dist-".len() + 16, "{name}");
+        assert_eq!(
+            a,
+            default_path(Path::new("C:/games/gameA/dist/index.js"), home)
+        );
+        assert_eq!(
+            a,
+            default_path(Path::new("c:\\games\\gameA\\dist\\index.js"), home),
+            "the same entry spelled another way"
+        );
+        let name = a
+            .parent()
+            .and_then(Path::file_name)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        assert!(
+            name.starts_with("dist-") && name.len() == "dist-".len() + 16,
+            "{name}"
+        );
         assert!(a.starts_with(home.join("threejsc")));
-        assert_eq!(a.file_name().and_then(|name| name.to_str()), Some("localStorage.json"));
+        assert_eq!(
+            a.file_name().and_then(|name| name.to_str()),
+            Some("localStorage.json")
+        );
     }
 
     #[test]
