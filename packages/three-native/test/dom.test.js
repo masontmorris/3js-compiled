@@ -296,3 +296,22 @@ test('an element whose inline style fixes its box measures that box, as in Edge 
   assert.equal(box('position:fixed;left:10.5px;top:0;width:100.25px;height:10px'), '10.5,0,100.25,10,100,10,100,10');
   assert.equal(box('width:100px;height:50px'), '0,0,0,0,0,0,0,0', 'a box in the flow needs layout, which the stand-in does not do');
 });
+
+test('click events floor their coordinates, and implicit release fires lostpointercapture right after pointerup', () => {
+  const { window, document } = page();
+  const canvas = document.createElement('canvas');
+  document.body.append(canvas);
+  const router = new InputRouter(window, document);
+  const seen = [];
+  for (const type of ['click', 'auxclick', 'contextmenu', 'pointerup', 'mouseup', 'lostpointercapture', 'gotpointercapture']) {
+    window.addEventListener(type, event => seen.push(`${type} ${event.clientX},${event.clientY} ${event.offsetX},${event.offsetY} ${event.button}`));
+  }
+  router.pointer({ type: 'pointermove', clientX: 150.5, clientY: 120.25, button: 0 });
+  router.pointer({ type: 'pointerdown', clientX: 150.5, clientY: 120.25, button: 0 });
+  router.pointer({ type: 'pointerup', clientX: 160.75, clientY: 130.5, button: 0 });
+  assert.deepEqual(seen.splice(0), ['pointerup 160.75,130.5 160.75,130.5 0', 'mouseup 160,130 161,131 0', 'click 160,130 161,131 0'], 'Edge 157 (lane L3)');
+  canvas.addEventListener('pointerdown', event => canvas.setPointerCapture(event.pointerId));
+  router.pointer({ type: 'pointerdown', clientX: 210, clientY: 210, button: 2 });
+  router.pointer({ type: 'pointerup', clientX: 210, clientY: 210, button: 2 });
+  assert.deepEqual(seen.map(line => line.split(' ')[0] + ' ' + line.split(' ').at(-1)), ['gotpointercapture -1', 'pointerup 2', 'lostpointercapture 2', 'mouseup 2', 'auxclick 2', 'contextmenu 2']);
+});
