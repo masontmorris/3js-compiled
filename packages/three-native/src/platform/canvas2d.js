@@ -74,10 +74,14 @@ export function serializeColor([r, g, b, a]) {
 
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui']);
 const SIZES = { 'xx-small': 9, 'x-small': 10, small: 13, medium: 16, large: 18, 'x-large': 24, 'xx-large': 32, 'xxx-large': 48 };
-const UNITS = { px: 1, pt: 4 / 3, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, q: 96 / 101.6, em: 10, rem: 10, '%': 0.1 };
+const UNITS = { px: 1, pt: 4 / 3, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, q: 96 / 101.6, em: 10, rem: 16, '%': 0.1 };
+// What Edge resolves the CSS system font keywords to, in this document's default style.
+const SYSTEM_FONTS = { caption: '16px Arial', icon: '16px Arial', menu: '12px "Segoe UI"', 'message-box': '16px Arial', 'small-caption': '12px "Segoe UI"', 'status-bar': '12px "Segoe UI"' };
 const STRETCHES = new Set(['ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded']);
 
 function splitFamilies(text) {
+  // Edge rejects a list with nothing after its last comma.
+  if (/,\s*$/.test(text)) return null;
   const families = [];
   const pattern = /\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^,"']+?))\s*(?:,|$)/gy;
   let match;
@@ -96,6 +100,8 @@ function splitFamilies(text) {
 // Parses the `font` shorthand. Returns null when the value is not one a canvas accepts.
 export function parseFont(input) {
   const text = String(input).trim();
+  if (/!\s*important/i.test(text)) return null;
+  if (SYSTEM_FONTS[text.toLowerCase()]) return parseFont(SYSTEM_FONTS[text.toLowerCase()]);
   const sizeMatch = /(?:^|\s)((?:\d*\.)?\d+(?:e[+-]?\d+)?)(px|pt|pc|in|cm|mm|q|em|rem|%)(?:\s*\/\s*[^\s]+)?\s+(.+)$|(?:^|\s)(xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large)(?:\s*\/\s*[^\s]+)?\s+(.+)$/i.exec(text);
   if (!sizeMatch) return null;
   const size = sizeMatch[1] !== undefined ? Number(sizeMatch[1]) * UNITS[sizeMatch[2].toLowerCase()] : SIZES[sizeMatch[4].toLowerCase()];
@@ -126,8 +132,12 @@ const needsQuotes = name => !GENERIC.has(name.toLowerCase()) && !/^-?[a-z_][\w-]
 export function serializeFont(font) {
   const size = `${Number(font.size.toPrecision(6))}px`;
   const weight = font.weight === 400 ? '' : font.weight === 700 ? 'bold' : String(font.weight);
-  const families = font.families.map(({ name }) => (needsQuotes(name) ? `"${name.replace(/["\\]/g, '\\$&')}"` : name)).join(', ');
-  return [font.style === 'normal' ? '' : font.style, weight, font.variant === 'normal' ? '' : font.variant, font.stretch === 'normal' ? '' : font.stretch, size, families].filter(Boolean).join(' ');
+  // A generic keyword serializes lowercase, and a family the page quoted keeps its quotes, as Edge does.
+  const families = font.families.map(({ name, quoted }) => {
+    const value = quoted || !GENERIC.has(name.toLowerCase()) ? name : name.toLowerCase();
+    return quoted || needsQuotes(value) ? `"${value.replace(/["\\]/g, '\\$&')}"` : value;
+  }).join(', ');
+  return [font.style === 'normal' ? '' : font.style, weight, font.variant === 'normal' ? '' : font.variant, size, families].filter(Boolean).join(' ');
 }
 
 const DEFAULT_FONT = parseFont('10px sans-serif');
@@ -142,6 +152,9 @@ function parseWeightRange(value) {
 function normalizeFamily(family) {
   return String(family).trim().replace(/^(["'])(.*)\1$/, '$2');
 }
+
+// Bumped whenever a face starts a load, so `document.fonts.ready` changes when the page asks for a new font.
+let loadGeneration = 0;
 
 export class FontFace {
   #source;
@@ -161,32 +174,39 @@ export class FontFace {
     this.loaded = new Promise((resolve, reject) => { this.#resolve = resolve; this.#reject = reject; });
     this.loaded.catch(() => {});
     this.#source = source;
-    if (typeof source !== 'string') this.load();
+    // A face from bytes parses in the constructor, so Edge reports it loaded on the same tick.
+    if (typeof source !== 'string') {
+      try {
+        const bytes = ArrayBuffer.isView(source) ? new Uint8Array(source.buffer, source.byteOffset, source.byteLength) : new Uint8Array(source);
+        this.faceId = host.fontLoad(bytes);
+        this.status = 'loaded';
+        this.#resolve(this);
+      } catch (error) {
+        this.status = 'error';
+        this.#reject(new DOMException(`A network error occurred, or the font could not be parsed: ${error?.message ?? error}`, 'NetworkError'));
+      }
+      this.#load = this.loaded;
+    }
   }
 
   load() {
     if (this.#load) return this.loaded;
     this.status = 'loading';
+    loadGeneration++;
     this.#load = (async () => {
       const source = this.#source;
       let bytes;
-      if (typeof source === 'string') {
-        let lastError = null;
-        for (const [, url] of source.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/g).map(m => [m[0], m[1] ?? m[2] ?? m[3]])) {
-          try {
-            const response = await fetch(new URL(url, globalThis.location?.href).href);
-            if (!response.ok) throw new Error(`status ${response.status}`);
-            bytes = new Uint8Array(await response.arrayBuffer());
-            this.faceId = host.fontLoad(bytes);
-            break;
-          } catch (error) { lastError = error; bytes = undefined; }
-        }
-        if (bytes === undefined) throw lastError ?? new Error('no url() in the source');
-      } else {
-        bytes = ArrayBuffer.isView(source) ? new Uint8Array(source.buffer, source.byteOffset, source.byteLength) : new Uint8Array(source);
-        await null;
-        this.faceId = host.fontLoad(bytes);
+      let lastError = null;
+      for (const [, url] of source.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/g).map(m => [m[0], m[1] ?? m[2] ?? m[3]])) {
+        try {
+          const response = await fetch(new URL(url, globalThis.location?.href).href);
+          if (!response.ok) throw new Error(`status ${response.status}`);
+          bytes = new Uint8Array(await response.arrayBuffer());
+          this.faceId = host.fontLoad(bytes);
+          break;
+        } catch (error) { lastError = error; bytes = undefined; }
       }
+      if (bytes === undefined) throw lastError ?? new Error('no url() in the source');
     })().then(() => {
       this.status = 'loaded';
       this.#resolve(this);
@@ -204,17 +224,27 @@ export class FontFace {
 
 export class FontFaceSet extends EventTarget {
   #faces = new Set();
+  #ready = null;
   get size() { return this.#faces.size; }
   get status() { return [...this.#faces].some(face => face.status === 'loading') ? 'loading' : 'loaded'; }
-  get ready() { return Promise.allSettled([...this.#faces].map(face => face.loaded)).then(() => this); }
+  // Resolves once every face that is loading finishes; an unloaded face does not hold it, and reads of an
+  // unchanged set return the same promise, as in Edge.
+  get ready() {
+    if (!this.#ready || this.#ready.generation !== loadGeneration) {
+      const promise = Promise.allSettled([...this.#faces].filter(face => face.status === 'loading').map(face => face.loaded)).then(() => this);
+      this.#ready = { generation: loadGeneration, promise };
+    }
+    return this.#ready.promise;
+  }
   add(face) {
     if (!(face instanceof FontFace)) throw new TypeError("Failed to execute 'add' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.");
     this.#faces.add(face);
+    this.#ready = null;
     return this;
   }
-  delete(face) { return this.#faces.delete(face); }
+  delete(face) { const deleted = this.#faces.delete(face); if (deleted) this.#ready = null; return deleted; }
   has(face) { return this.#faces.has(face); }
-  clear() { this.#faces.clear(); }
+  clear() { this.#faces.clear(); this.#ready = null; }
   forEach(callback, thisArg) { for (const face of this.#faces) callback.call(thisArg, face, face, this); }
   values() { return this.#faces.values(); }
   keys() { return this.#faces.values(); }
@@ -279,6 +309,37 @@ export class CanvasGradient {
   }
 }
 
+// A path a page builds for calls the canvas does not draw: its methods do nothing.
+export class Path2D {
+  constructor() { logOnce('Path2D is not implemented; its paths draw nothing'); }
+  addPath() {}
+  arc() {}
+  arcTo() {}
+  bezierCurveTo() {}
+  closePath() {}
+  ellipse() {}
+  lineTo() {}
+  moveTo() {}
+  quadraticCurveTo() {}
+  rect() {}
+  roundRect() {}
+}
+
+// A canvas outside the document. Its 2D context draws into its own pixels, but nothing presents them.
+export class OffscreenCanvas {
+  constructor(width, height) {
+    this.width = width >>> 0;
+    this.height = height >>> 0;
+    logOnce('OffscreenCanvas is not implemented; its 2D context draws but nothing presents it');
+  }
+  getContext(type) { return type === '2d' ? (this[CONTEXT_2D] ??= new CanvasRenderingContext2D(this)) : null; }
+  transferToImageBitmap() { logOnce('OffscreenCanvas.transferToImageBitmap is not implemented'); return null; }
+  convertToBlob() {
+    logOnce('OffscreenCanvas.convertToBlob is not implemented');
+    return Promise.reject(new DOMException('OffscreenCanvas.convertToBlob is not implemented', 'NotSupportedError'));
+  }
+}
+
 export class TextMetrics {
   constructor(metrics) { Object.assign(this, metrics); }
 }
@@ -311,14 +372,21 @@ const finite = (...values) => values.every(Number.isFinite);
 function defaultState() {
   return {
     fillStyle: [0, 0, 0, 255], strokeStyle: [0, 0, 0, 255], globalAlpha: 1, lineWidth: 1, lineJoin: 'miter', lineCap: 'butt', miterLimit: 10,
-    font: DEFAULT_FONT, textAlign: 'start', textBaseline: 'alphabetic', direction: 'ltr', transform: IDENTITY,
+    font: DEFAULT_FONT, textAlign: 'start', textBaseline: 'alphabetic', direction: 'inherit', transform: IDENTITY,
     imageSmoothingEnabled: true, imageSmoothingQuality: 'low', globalCompositeOperation: 'source-over',
+    shadowBlur: 0, shadowColor: 'rgba(0, 0, 0, 0)', shadowOffsetX: 0, shadowOffsetY: 0, filter: 'none',
+    letterSpacing: '0px', wordSpacing: '0px', fontKerning: 'auto', fontStretch: 'normal', fontVariantCaps: 'normal', textRendering: 'auto', lineDashOffset: 0,
   };
 }
 
+// State a canvas keeps but E6 does not draw with: setting one logs once, and save, restore and a resize keep it.
+const UNSUPPORTED_DEFAULTS = { shadowBlur: 0, shadowColor: 'rgba(0, 0, 0, 0)', shadowOffsetX: 0, shadowOffsetY: 0, filter: 'none', letterSpacing: '0px', wordSpacing: '0px', fontKerning: 'auto', fontStretch: 'normal', fontVariantCaps: 'normal', textRendering: 'auto', lineDashOffset: 0 };
+
+const COMPOSITE = new Set(['source-over', 'source-in', 'source-out', 'source-atop', 'destination-over', 'destination-in', 'destination-out', 'destination-atop', 'lighter', 'copy', 'xor', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity']);
+
 // Calls a game might make that this canvas does not draw: each logs its name once and returns undefined.
 const NOT_IMPLEMENTED = ['beginPath', 'closePath', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'arc', 'arcTo', 'ellipse', 'rect', 'roundRect', 'fill', 'stroke',
-  'clip', 'isPointInPath', 'isPointInStroke', 'setLineDash', 'getLineDash', 'createPattern', 'createConicGradient', 'strokeRect', 'drawFocusIfNeeded', 'getContextAttributes'];
+  'clip', 'isPointInPath', 'isPointInStroke', 'setLineDash', 'getLineDash', 'createPattern', 'strokeRect', 'drawFocusIfNeeded'];
 
 export class CanvasRenderingContext2D {
   #canvas;
@@ -411,9 +479,48 @@ export class CanvasRenderingContext2D {
   set imageSmoothingQuality(value) { if (['low', 'medium', 'high'].includes(value)) this.#state.imageSmoothingQuality = value; }
   get globalCompositeOperation() { return this.#state.globalCompositeOperation; }
   set globalCompositeOperation(value) {
+    value = String(value);
+    if (!COMPOSITE.has(value)) return;
     if (value !== 'source-over') logOnce(`CanvasRenderingContext2D: globalCompositeOperation '${value}' is not implemented; drawing uses source-over`);
-    this.#state.globalCompositeOperation = String(value);
+    this.#state.globalCompositeOperation = value;
   }
+
+  get shadowBlur() { return this.#state.shadowBlur; }
+  set shadowBlur(value) { this.#unsupported('shadowBlur', value); }
+  get shadowColor() { return this.#state.shadowColor; }
+  set shadowColor(value) { this.#unsupported('shadowColor', value); }
+  get shadowOffsetX() { return this.#state.shadowOffsetX; }
+  set shadowOffsetX(value) { this.#unsupported('shadowOffsetX', value); }
+  get shadowOffsetY() { return this.#state.shadowOffsetY; }
+  set shadowOffsetY(value) { this.#unsupported('shadowOffsetY', value); }
+  get filter() { return this.#state.filter; }
+  set filter(value) { this.#unsupported('filter', value); }
+  get letterSpacing() { return this.#state.letterSpacing; }
+  set letterSpacing(value) { this.#unsupported('letterSpacing', value); }
+  get wordSpacing() { return this.#state.wordSpacing; }
+  set wordSpacing(value) { this.#unsupported('wordSpacing', value); }
+  get fontKerning() { return this.#state.fontKerning; }
+  set fontKerning(value) { this.#unsupported('fontKerning', value); }
+  get fontStretch() { return this.#state.fontStretch; }
+  set fontStretch(value) { this.#unsupported('fontStretch', value); }
+  get fontVariantCaps() { return this.#state.fontVariantCaps; }
+  set fontVariantCaps(value) { this.#unsupported('fontVariantCaps', value); }
+  get textRendering() { return this.#state.textRendering; }
+  set textRendering(value) { this.#unsupported('textRendering', value); }
+  get lineDashOffset() { return this.#state.lineDashOffset; }
+  set lineDashOffset(value) { this.#unsupported('lineDashOffset', value); }
+  #unsupported(name, value) {
+    if (String(value) !== String(UNSUPPORTED_DEFAULTS[name])) logOnce(`CanvasRenderingContext2D.${name} is not implemented`);
+    this.#state[name] = value;
+  }
+
+  createConicGradient(startAngle, x, y) {
+    if (!finite(startAngle, x, y)) throw new TypeError("Failed to execute 'createConicGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.");
+    logOnce('CanvasRenderingContext2D.createConicGradient is not implemented; it returns an inert gradient');
+    return { addColorStop() {} };
+  }
+  getContextAttributes() { return { alpha: true, colorSpace: 'srgb', colorType: 'unorm8', desynchronized: false, toneMapping: { mode: 'standard' }, willReadFrequently: false }; }
+  isContextLost() { return false; }
 
   scale(x, y) { if (finite(x, y)) this.transform(x, 0, 0, y, 0, 0); }
   rotate(angle) { if (finite(angle)) { const c = Math.cos(angle); const s = Math.sin(angle); this.transform(c, s, -s, c, 0, 0); } }
@@ -462,14 +569,15 @@ export class CanvasRenderingContext2D {
     this.#changed();
   }
 
-  // The font list as the host resolves it: loaded faces by ID, the rest by name for the host's system fonts.
+  // The font list as the host resolves it: loaded faces by ID, generic keywords as generics, the rest by name for
+  // the host's installed fonts.
   #fontSpec() {
     const font = this.#state.font;
     const families = [];
     for (const { name, quoted } of font.families) {
-      if (!quoted && GENERIC.has(name.toLowerCase())) { families.push({ system: name.toLowerCase() }); continue; }
+      if (!quoted && GENERIC.has(name.toLowerCase())) { families.push({ generic: name.toLowerCase() }); continue; }
       const [face] = this.#fonts?.matching(name, font) ?? [];
-      if (face?.status === 'loaded') families.push({ face: face.faceId });
+      if (face?.status === 'loaded') families.push({ face: { id: face.faceId, weight: face.weightRange } });
       else {
         if (face?.status === 'unloaded') face.load();
         families.push({ system: name.toLowerCase() });
@@ -586,18 +694,5 @@ for (const name of NOT_IMPLEMENTED) {
     logOnce(`CanvasRenderingContext2D.${name} is not implemented`);
     return name === 'getLineDash' ? [] : name === 'createPattern' ? null : name.startsWith('isPointIn') ? false : undefined;
   };
-}
-for (const name of ['shadowBlur', 'shadowColor', 'shadowOffsetX', 'shadowOffsetY', 'filter', 'letterSpacing', 'wordSpacing', 'fontKerning', 'textRendering', 'lineDashOffset']) {
-  const defaults = { shadowBlur: 0, shadowColor: 'rgba(0, 0, 0, 0)', shadowOffsetX: 0, shadowOffsetY: 0, filter: 'none', letterSpacing: '0px', wordSpacing: '0px', fontKerning: 'auto', textRendering: 'auto', lineDashOffset: 0 };
-  const values = new WeakMap();
-  Object.defineProperty(CanvasRenderingContext2D.prototype, name, {
-    get() { return values.has(this) ? values.get(this) : defaults[name]; },
-    set(value) {
-      if (String(value) !== String(defaults[name])) logOnce(`CanvasRenderingContext2D.${name} is not implemented`);
-      values.set(this, value);
-    },
-    configurable: true,
-    enumerable: true,
-  });
 }
 

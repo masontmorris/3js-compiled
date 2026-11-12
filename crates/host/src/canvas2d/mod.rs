@@ -2,6 +2,8 @@
 //! premultiplied RGBA8, and each draw call passes them to an op here, which shapes text, rasterizes and composites
 //! in place. The ops keep the fonts the page loaded and a renderer the canvases share.
 
+#[cfg(windows)]
+mod dwrite;
 mod fonts;
 mod paint;
 mod text;

@@ -738,15 +738,26 @@ export class HTMLTextAreaElement extends HTMLInputElement {}
 
 const reflectSize = (name, fallback) => ({
   get() { const value = Number.parseInt(this.getAttribute(name), 10); return Number.isInteger(value) && value >= 0 ? value : fallback; },
-  set(value) { this.setAttribute(name, String(value >>> 0)); this[CONTEXT_2D]?.[RESIZE](); },
+  set(value) { this.setAttribute(name, String(value >>> 0)); },
   configurable: true,
   enumerable: true,
 });
+// Edge's data URL prefix for a canvas; the canvas does not encode its pixels here.
+const TRANSPARENT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 export class HTMLCanvasElement extends HTMLElement {
+  // Setting the width or height attribute resizes the canvas and resets its context, as the property does.
+  setAttribute(name, value) {
+    super.setAttribute(name, value);
+    if (String(name).toLowerCase() === 'width' || String(name).toLowerCase() === 'height') this[CONTEXT_2D]?.[RESIZE]();
+  }
   getContext(type) {
     if (type === '2d') return this[CONTEXT_2D] ??= new CanvasRenderingContext2D(this, this.ownerDocument?.fonts);
     logOnce(`DOM stand-in: HTMLCanvasElement.getContext('${type}') is not implemented and returns null`);
     return null;
+  }
+  toDataURL() {
+    logOnce('HTMLCanvasElement.toDataURL is not implemented; it returns a transparent 1x1 PNG');
+    return TRANSPARENT_PNG;
   }
   get [Symbol.for('threejsc.pixels')]() { return this[CONTEXT_2D]?.[Symbol.for('threejsc.pixels')]; }
 }

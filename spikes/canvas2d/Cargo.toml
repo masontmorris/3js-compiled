@@ -13,4 +13,7 @@ skrifa = "=0.44.0"
 png = "0.18"
 serde_json = "1"
 tiny-skia = "=0.11.4"
+dwrote = "=0.11.5"
+winapi = { version = "0.3.9", features = ["dwrite", "dwrite_1", "dwrite_2", "dwrite_3", "winerror"] }
+wio = "0.2"
 vello_cpu = { version = "=0.2.0", default-features = false, features = ["std", "text", "u8_pipeline"] }

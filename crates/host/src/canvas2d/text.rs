@@ -1,8 +1,8 @@
 //! Text layout as Chromium does it for canvas: each character takes the first font in the list that has it, then
-//! the fallback fonts, runs shape with HarfBuzz's rules at 16.16 fixed point, and the font metrics come from the
-//! first font, rounded as Blink rounds them.
+//! a font Windows' fallback picks for it, runs shape with HarfBuzz's rules at 16.16 fixed point, and the font
+//! metrics come from the first font, rounded as Blink rounds them.
 
-use super::fonts::{EMOJI, FALLBACK, FaceId, Fonts, STANDARD, generic};
+use super::fonts::{FaceId, Fonts, STANDARD};
 use harfrust::{ShaperInstance, UnicodeBuffer, Variation};
 use serde::Deserialize;
 use skrifa::{
@@ -10,15 +10,24 @@ use skrifa::{
     instance::{LocationRef, Size},
     raw::TableProvider,
 };
+use std::collections::HashMap;
+
+/// A face the page loaded with `FontFace`, with the weight range its descriptor declares.
+#[derive(Deserialize, Clone, Debug)]
+pub struct LoadedFace {
+    pub id: FaceId,
+    pub weight: [f32; 2],
+}
 
 /// One family of a CSS font list, as the page's script resolved it.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum Family {
-    /// A face the page loaded with `FontFace`.
-    Face(FaceId),
+    Face(LoadedFace),
     /// A generic family or a Windows font by name.
     System(String),
+    /// A generic family keyword, which the host maps to a Windows family.
+    Generic(String),
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -33,9 +42,11 @@ pub struct FontSpec {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Instance {
     pub face: FaceId,
-    /// The `wght` value for a variable face, clamped to its axis.
+    /// The `wght` value for a variable face.
     pub weight: Option<f32>,
     pub coords: Vec<i16>,
+    /// Whether the glyphs draw emboldened, as for a bold font whose face is not bold.
+    pub synthetic_bold: bool,
 }
 
 pub struct Run {
@@ -59,10 +70,17 @@ pub struct FontMetrics {
     pub em_descent: f64,
 }
 
-fn instance(fonts: &Fonts, face: FaceId, weight: f32) -> Instance {
+/// CSS synthesizes bold when the font asks for 600 or more and the face is lighter.
+fn synthesizes_bold(asked: f32, face_weight: f32) -> bool {
+    asked >= 600.0 && face_weight < 600.0
+}
+
+/// An instance at `weight`, within the face's declared `range` and its `wght` axis.
+fn instance(fonts: &Fonts, face: FaceId, weight: f32, range: Option<[f32; 2]>) -> Instance {
     let font = fonts.get(face);
-    let weight = font.weight_axis.map(|(min, max)| weight.clamp(min, max));
-    let coords = match weight {
+    let declared = range.map_or(weight, |[min, max]| weight.clamp(min, max));
+    let axis_weight = font.weight_axis.map(|(min, max)| declared.clamp(min, max));
+    let coords = match axis_weight {
         Some(weight) => font
             .font()
             .axes()
@@ -73,22 +91,25 @@ fn instance(fonts: &Fonts, face: FaceId, weight: f32) -> Instance {
             .collect(),
         None => Vec::new(),
     };
+    let synthetic_bold = match range {
+        Some([_, max]) => synthesizes_bold(weight, max),
+        None => font.simulated_bold,
+    };
     Instance {
         face,
-        weight,
+        weight: axis_weight,
         coords,
+        synthetic_bold,
     }
 }
 
-/// The fonts a text draws with: the font list's available faces, or the standard font when none is, then, once a
-/// character needs them, the fallback fonts, with the emoji font last.
+/// The fonts a text draws with: the font list's available faces, or the standard font when none is, then the
+/// faces Windows' fallback picked for characters those lack, in the order the text needed them.
 pub struct Chain {
     pub instances: Vec<Instance>,
     /// How many of the instances come from the font list, or are the standard font in its place.
     listed: usize,
-    emoji: Option<usize>,
     spec: (f32, bool),
-    fallback: bool,
 }
 
 impl Chain {
@@ -96,79 +117,43 @@ impl Chain {
     pub fn primary(&self) -> Option<&Instance> {
         self.instances.first()
     }
-
-    /// The order to try the fonts in for `c`: the listed fonts, then the emoji font for an emoji, then the rest.
-    fn order(&self, c: char) -> impl Iterator<Item = usize> + '_ {
-        let emoji = self.emoji.filter(|_| is_emoji(c));
-        (0..self.listed)
-            .chain(emoji)
-            .chain((self.listed..self.instances.len()).filter(move |index| Some(*index) != emoji))
-    }
-
-    /// Adds the fallback fonts, which load from disk the first time any text needs them.
-    fn add_fallback(&mut self, fonts: &mut Fonts) {
-        if self.fallback {
-            return;
-        }
-        self.fallback = true;
-        let (weight, italic) = self.spec;
-        let bold = weight >= 600.0;
-        let faces: Vec<FaceId> = FALLBACK
-            .iter()
-            .filter_map(|name| fonts.system(name, bold, italic))
-            .collect();
-        for face in faces {
-            if !self.instances.iter().any(|known| known.face == face) {
-                self.instances.push(instance(fonts, face, weight));
-            }
-        }
-        if let Some(face) = fonts.system(EMOJI, false, false) {
-            self.emoji = Some(
-                self.instances
-                    .iter()
-                    .position(|known| known.face == face)
-                    .unwrap_or_else(|| {
-                        self.instances.push(instance(fonts, face, weight));
-                        self.instances.len() - 1
-                    }),
-            )
-            .filter(|index| *index >= self.listed);
-        }
-    }
 }
 
 pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
-    let bold = spec.weight >= 600.0;
-    let mut faces = Vec::new();
+    let mut instances: Vec<Instance> = Vec::new();
+    let mut faces: Vec<(FaceId, Option<[f32; 2]>)> = Vec::new();
     for family in &spec.families {
-        let face = match family {
-            Family::Face(id) => Some(*id),
-            Family::System(name) => fonts.system(generic(name).unwrap_or(name), bold, spec.italic),
-        };
-        faces.extend(face);
+        match family {
+            Family::Face(loaded) => faces.push((loaded.id, Some(loaded.weight))),
+            Family::System(name) => faces.extend(
+                fonts
+                    .family(name, spec.weight, spec.italic)
+                    .map(|face| (face, None)),
+            ),
+            Family::Generic(name) => faces.extend(
+                fonts
+                    .generic(name, spec.weight, spec.italic)
+                    .map(|face| (face, None)),
+            ),
+        }
     }
     if faces.is_empty() {
-        faces.extend(fonts.system(STANDARD, bold, spec.italic));
+        faces.extend(
+            fonts
+                .family(STANDARD, spec.weight, spec.italic)
+                .map(|face| (face, None)),
+        );
     }
-    let mut instances: Vec<Instance> = Vec::new();
-    for face in faces {
+    for (face, range) in faces {
         if !instances.iter().any(|known| known.face == face) {
-            instances.push(instance(fonts, face, spec.weight));
+            instances.push(instance(fonts, face, spec.weight, range));
         }
     }
     Chain {
         listed: instances.len(),
         instances,
-        emoji: None,
         spec: (spec.weight, spec.italic),
-        fallback: false,
     }
-}
-
-/// Characters Windows draws from its emoji font: pictographs, dingbats and the other symbols with an emoji
-/// presentation.
-fn is_emoji(c: char) -> bool {
-    matches!(c as u32, 0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2300..=0x23FF | 0x2B00..=0x2BFF | 0x3030 | 0x303D | 0x3297 | 0x3299)
 }
 
 /// The size Blink draws and measures a font at: the CSS size truncated to 1/100 pixel.
@@ -182,47 +167,129 @@ fn continues_cluster(c: char) -> bool {
     matches!(c as u32, 0x200C | 0x200D | 0xFE00..=0xFE0F | 0x1F3FB..=0x1F3FF | 0xE0020..=0xE007F | 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x20D0..=0x20FF)
 }
 
-/// Shapes `text` left to right, a run per stretch of characters that the same font draws.
-pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> Layout {
-    if !chain.fallback {
-        let listed: Vec<_> = chain
-            .instances
-            .iter()
-            .map(|instance| fonts.get(instance.face).font().charmap())
-            .collect();
-        let missing = text.chars().any(|c| {
-            !continues_cluster(c) && !listed.iter().any(|charmap| charmap.map(c).is_some())
-        });
-        if missing {
-            chain.add_fallback(fonts);
+/// The families Chromium tries on Windows for a character in a script the font list lacks, before Windows'
+/// own fallback, in its order. Edge 157 picked these for each script (`CSS.getPlatformFontsForNode`).
+fn script_families(c: char) -> &'static [&'static str] {
+    match c as u32 {
+        0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF65..=0xFF9F => {
+            &["meiryo", "yu gothic", "ms pgothic"]
         }
+        0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF
+        | 0x20000..=0x2FFFF
+        | 0x3000..=0x303F
+        | 0xFF00..=0xFF64 => &["microsoft yahei", "simsun"],
+        0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF => &["malgun gothic", "gulim"],
+        0x0E00..=0x0E7F => &["tahoma", "leelawadee ui"],
+        0x0900..=0x097F => &["nirmala ui", "mangal"],
+        0x1F000..=0x1FAFF => &["segoe ui emoji"],
+        0x2190..=0x2BFF => &["segoe ui symbol"],
+        _ => &[],
     }
+}
+
+/// Picks a fallback face for each character no listed font has, as Blink does for each character on its own:
+/// the standard font, then the script's families, then Windows' fallback,
+/// each at the font's weight and style. Returns the chain index of each such character's face.
+fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<char, usize> {
+    let (weight, italic) = chain.spec;
+    let covers =
+        |fonts: &Fonts, face: FaceId, c: char| fonts.get(face).font().charmap().map(c).is_some();
+    let mut chosen = HashMap::new();
+    for c in text.chars().filter(|c| !continues_cluster(*c)) {
+        if chosen.contains_key(&c)
+            || chain.instances[..chain.listed]
+                .iter()
+                .any(|instance| covers(fonts, instance.face, c))
+        {
+            continue;
+        }
+        let mut found = None;
+        for family in [STANDARD].iter().chain(script_families(c)) {
+            if let Some(face) = fonts.family(family, weight, italic)
+                && covers(fonts, face, c)
+            {
+                found = Some(face);
+                break;
+            }
+        }
+        let Some(face) = found.or_else(|| fonts.fallback(c, weight, italic)) else {
+            continue;
+        };
+        let index = match chain.instances.iter().position(|known| known.face == face) {
+            Some(index) => index,
+            None => {
+                chain.instances.push(instance(fonts, face, weight, None));
+                chain.instances.len() - 1
+            }
+        };
+        chosen.insert(c, index);
+    }
+    chosen
+}
+
+/// CJK and fullwidth punctuation, which takes the font of the text around it.
+fn common_cjk(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x303F | 0xFF00..=0xFF0F | 0xFF1A..=0xFF20)
+}
+
+fn words(run: &str) -> Vec<&str> {
+    run.split_inclusive(' ')
+        .flat_map(|word| match word.strip_suffix(' ') {
+            Some(rest) => [rest, " "],
+            None => [word, ""],
+        })
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
+/// The text's words and spaces in visual order. Blink shapes each word and each space on its own, so no kerning or
+/// ligature crosses a space, and the bidi algorithm reverses the words of a right-to-left run.
+fn visual_segments(text: &str) -> Vec<&str> {
+    let bidi = unicode_bidi::BidiInfo::new(text, Some(unicode_bidi::Level::ltr()));
+    let Some(paragraph) = bidi.paragraphs.first().filter(|_| bidi.has_rtl()) else {
+        return words(text);
+    };
+    let (levels, runs) = bidi.visual_runs(paragraph, paragraph.range.clone());
+    let mut segments = Vec::new();
+    for run in runs {
+        let mut run_words = words(&text[run.clone()]);
+        if levels[run.start].is_rtl() {
+            run_words.reverse();
+        }
+        segments.extend(run_words);
+    }
+    segments
+}
+
+/// Shapes `text`, a run per stretch of characters that the same font draws.
+pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> Layout {
+    let chosen = add_fallbacks(fonts, chain, text);
     let fonts = &*fonts;
     let charmaps: Vec<_> = chain
         .instances
         .iter()
         .map(|instance| fonts.get(instance.face).font().charmap())
         .collect();
-    // Blink shapes each word and each space on its own, so no kerning or ligature crosses a space.
     let mut pieces: Vec<(usize, &str)> = Vec::new();
-    for segment in text
-        .split_inclusive(' ')
-        .flat_map(|word| match word.strip_suffix(' ') {
-            Some(rest) => [rest, " "],
-            None => [word, ""],
-        })
-    {
+    for segment in visual_segments(text) {
         let mut start = 0;
         let mut current = None;
         for (at, c) in segment.char_indices() {
-            let index = if continues_cluster(c) && current.is_some() {
+            let keeps = current.is_some_and(|index: usize| {
+                continues_cluster(c)
+                    || common_cjk(c) && index >= chain.listed && charmaps[index].map(c).is_some()
+            });
+            let index = if keeps {
                 current
             } else {
                 // A character no font has draws as the first font's missing glyph, as Edge does.
                 Some(
-                    chain
-                        .order(c)
-                        .find(|index| charmaps[*index].map(c).is_some())
+                    charmaps[..chain.listed]
+                        .iter()
+                        .position(|charmap| charmap.map(c).is_some())
+                        .or_else(|| chosen.get(&c).copied())
                         .unwrap_or(0),
                 )
             };
@@ -245,7 +312,7 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             continue;
         };
         let face = fonts.get(instance.face);
-        let Ok(font) = harfrust::FontRef::new(&face.data) else {
+        let Ok(font) = harfrust::FontRef::from_index(&face.data, face.index) else {
             continue;
         };
         let variations: Vec<Variation> = instance
@@ -264,8 +331,8 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             .build();
         let mut buffer = UnicodeBuffer::new();
         buffer.push_str(piece);
+        // A right-to-left script shapes right to left, and its glyphs come out in visual order.
         buffer.guess_segment_properties();
-        buffer.set_direction(harfrust::Direction::LeftToRight);
         // Blink shapes at 16.16 fixed point, so advances keep their fractions.
         let scale = (size as f64 * 65536.0).round() as i32;
         let shaped = shaper.shape(buffer, harfrust::ShapeOptions::new().scale(Some(scale)));

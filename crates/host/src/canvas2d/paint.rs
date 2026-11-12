@@ -74,8 +74,12 @@ pub struct Surface<'a> {
     pub height: u16,
 }
 
-/// Skia's glyph mask gamma for Edge on Windows, fitted to Edge's canvas text (`spikes/canvas2d`).
-const MASK_GAMMA: f32 = 2.3;
+/// A run's covered box on the surface and its coverage, which the caller blends in.
+type Coverage = ((u16, u16, u16, u16), Vec<u8>);
+
+/// Skia's glyph mask gamma for Edge on Windows, Windows' display gamma, fitted to Edge's canvas text
+/// (`spikes/canvas2d`).
+const MASK_GAMMA: f32 = 2.2;
 const MASK_CONTRAST: f32 = 1.0;
 
 /// The renderer the canvases share, reused between draws.
@@ -84,6 +88,8 @@ pub struct Painter {
     resources: Resources,
     /// The coverage table for each paint luminance, Skia's 8 levels.
     tables: [[u8; 256]; 8],
+    #[cfg(windows)]
+    glyphs: super::dwrite::Rasterizer,
 }
 
 impl Default for Painter {
@@ -92,6 +98,8 @@ impl Default for Painter {
             context: RenderContext::new(1, 1),
             resources: Resources::new(),
             tables: std::array::from_fn(|level| mask_gamma_table(level as u32)),
+            #[cfg(windows)]
+            glyphs: super::dwrite::Rasterizer::default(),
         }
     }
 }
@@ -438,11 +446,27 @@ impl Painter {
         level: usize,
     ) {
         let face = fonts.get(run.instance.face);
-        // Skia positions horizontal glyphs at quarter pixels on a whole-pixel baseline, and hints only them.
-        let snapped = translation(style.transform).filter(|_| x_scale == 1.0);
+        // Under a transform that only moves and scales, Skia positions glyphs at quarter pixels on a whole-pixel
+        // baseline, and hints them only when unscaled.
+        let [a, b, c, d, e, f] = style.transform;
+        let snapped = (b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0).then_some((a * x_scale, d));
         let place = |gx: f64, gy: f64| match snapped {
-            Some((tx, ty)) => (((tx + x + gx) * 4.0).round() / 4.0, (ty + y).round() + gy),
+            Some(_) => (
+                ((e + a * (x + gx * x_scale)) * 4.0).round() / 4.0,
+                (f + d * y).round() + d * gy,
+            ),
             None => (x + gx * x_scale, y + gy),
+        };
+        let (glyph_x_scale, glyph_y_scale) = snapped.unwrap_or((x_scale, 1.0));
+        let upright = snapped == Some((1.0, 1.0));
+        let matrix = match snapped {
+            Some((sx, sy)) => (!upright).then_some([sx as f32, 0.0, 0.0, sy as f32]),
+            None => Some([
+                (a * x_scale) as f32,
+                (b * x_scale) as f32,
+                c as f32,
+                d as f32,
+            ]),
         };
         let glyphs: Vec<vello_cpu::Glyph> = run
             .glyphs
@@ -473,10 +497,10 @@ impl Painter {
         for (glyph, &(id, ..)) in glyphs.iter().zip(&run.glyphs) {
             if let Some(b) = metrics.bounds(GlyphId::new(id)) {
                 ink = ink.union(Rect::new(
-                    glyph.x as f64 + b.x_min as f64 * x_scale,
-                    glyph.y as f64 - b.y_max as f64,
-                    glyph.x as f64 + b.x_max as f64 * x_scale,
-                    glyph.y as f64 - b.y_min as f64,
+                    glyph.x as f64 + b.x_min as f64 * glyph_x_scale,
+                    glyph.y as f64 - b.y_max as f64 * glyph_y_scale,
+                    glyph.x as f64 + b.x_max as f64 * glyph_x_scale,
+                    glyph.y as f64 - b.y_min as f64 * glyph_y_scale,
                 ));
             }
         }
@@ -489,6 +513,23 @@ impl Painter {
         } else {
             style.transform
         };
+        #[cfg(windows)]
+        if !face.color && stroke.is_none() && self.glyphs.available() {
+            let placed: Vec<(f64, f64)> = glyphs.iter().map(|g| (g.x as f64, g.y as f64)).collect();
+            if let Some((area, coverage)) = self.dwrite_coverage(
+                surface,
+                fonts,
+                run,
+                size,
+                style,
+                &placed,
+                snapped.is_some(),
+                matrix,
+            ) {
+                self.blend_coverage(surface, area, &coverage, style, level);
+            }
+            return;
+        }
         let Some((bx, by, bw, bh)) = device_box(user_to_device, ink, surface.width, surface.height)
         else {
             return;
@@ -502,8 +543,9 @@ impl Painter {
             _ => color([1.0; 4]),
         };
         self.context.set_paint(glyph_paint);
-        let font = peniko::FontData::new(peniko::Blob::new(face.data.clone()), 0);
-        let glyph_transform = (x_scale != 1.0).then(|| Affine::scale_non_uniform(x_scale, 1.0));
+        let font = peniko::FontData::new(peniko::Blob::new(face.data.clone()), face.index);
+        let glyph_transform = (glyph_x_scale != 1.0 || glyph_y_scale != 1.0)
+            .then(|| Affine::scale_non_uniform(glyph_x_scale, glyph_y_scale));
         if let Some(s) = stroke {
             let join = match s.join {
                 LineJoin::Miter => Join::Miter,
@@ -520,7 +562,7 @@ impl Painter {
             .context
             .glyph_run(&mut self.resources, &font)
             .font_size(size)
-            .hint(snapped.is_some())
+            .hint(upright)
             .normalized_coords(&run.instance.coords);
         if let Some(transform) = glyph_transform {
             builder = builder.glyph_transform(transform);
@@ -543,6 +585,25 @@ impl Painter {
             );
             return;
         }
+        let coverage: Vec<u8> = glyph_pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| p[3])
+            .collect();
+        self.blend_coverage(surface, area, &coverage, style, level);
+    }
+
+    /// Blends the paint over the surface's box through glyph `coverage`, corrected by Skia's mask gamma.
+    fn blend_coverage(
+        &mut self,
+        surface: &mut Surface,
+        area: (u16, u16, u16, u16),
+        coverage: &[u8],
+        style: &Style,
+        level: usize,
+    ) {
+        let (bx, by, bw, bh) = area;
         let table = self.tables[level];
         match &style.paint {
             Paint::Color { rgba } => {
@@ -552,7 +613,7 @@ impl Painter {
                     surface,
                     area,
                     |i| {
-                        let coverage = table[glyph_pixels[i * 4 + 3] as usize] as f32 / 255.0;
+                        let coverage = table[coverage[i] as usize] as f32 / 255.0;
                         paint.map(|c| (c * coverage).round() as u8)
                     },
                     style.alpha,
@@ -576,7 +637,7 @@ impl Painter {
                     surface,
                     area,
                     |i| {
-                        let coverage = table[glyph_pixels[i * 4 + 3] as usize] as u32;
+                        let coverage = table[coverage[i] as usize] as u32;
                         let p = &paint_pixels[i * 4..][..4];
                         [0, 1, 2, 3].map(|c| div255(p[c] as u32 * coverage) as u8)
                     },
@@ -584,6 +645,107 @@ impl Painter {
                 );
             }
         }
+    }
+
+    /// Glyph coverage from DirectWrite for a run's fill, in the box its glyph masks cover on the surface. `placed`
+    /// holds device positions when `snapped`, else user positions under the style's transform, and `matrix` scales,
+    /// rotates or skews each glyph.
+    #[cfg(windows)]
+    #[allow(clippy::too_many_arguments)]
+    fn dwrite_coverage(
+        &mut self,
+        surface: &Surface,
+        fonts: &Fonts,
+        run: &Run,
+        size: f32,
+        style: &Style,
+        placed: &[(f64, f64)],
+        snapped: bool,
+        matrix: Option<[f32; 4]>,
+    ) -> Option<Coverage> {
+        let face = fonts.get(run.instance.face);
+        let [a, b, c, d, e, f] = style.transform;
+        let device = |(x, y): (f64, f64)| {
+            if snapped {
+                (x, y)
+            } else {
+                (a * x + c * y + e, b * x + d * y + f)
+            }
+        };
+        let instance = &run.instance;
+        let mut pieces = Vec::with_capacity(run.glyphs.len());
+        for (&(id, ..), &point) in run.glyphs.iter().zip(placed) {
+            let (dx, dy) = device(point);
+            let (ix, iy) = (dx.floor(), dy.floor());
+            let offset = ((dx - ix) as f32, (dy - iy) as f32);
+            let glyph = id as u16;
+            if let Some(mask) = self.glyphs.glyph(
+                instance.face,
+                face,
+                instance.weight,
+                instance.synthetic_bold,
+                size,
+                glyph,
+                offset,
+                matrix,
+            ) {
+                pieces.push((
+                    glyph,
+                    offset,
+                    ix as i32 + mask.left,
+                    iy as i32 + mask.top,
+                    mask.width as i32,
+                    mask.height as i32,
+                ));
+            }
+        }
+        let x0 = pieces.iter().map(|p| p.2).min()?.max(0);
+        let y0 = pieces.iter().map(|p| p.3).min()?.max(0);
+        let x1 = pieces
+            .iter()
+            .map(|p| p.2 + p.4)
+            .max()?
+            .min(surface.width as i32);
+        let y1 = pieces
+            .iter()
+            .map(|p| p.3 + p.5)
+            .max()?
+            .min(surface.height as i32);
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+        let mut coverage = vec![0u8; bw * bh];
+        for &(glyph, offset, left, top, width, height) in &pieces {
+            let Some(mask) = self.glyphs.glyph(
+                instance.face,
+                face,
+                instance.weight,
+                instance.synthetic_bold,
+                size,
+                glyph,
+                offset,
+                matrix,
+            ) else {
+                continue;
+            };
+            for row in 0..height {
+                let y = top + row - y0;
+                if y < 0 || y >= bh as i32 {
+                    continue;
+                }
+                for column in 0..width {
+                    let x = left + column - x0;
+                    if x < 0 || x >= bw as i32 {
+                        continue;
+                    }
+                    let a = mask.alpha[(row * width + column) as usize] as u32;
+                    let target = &mut coverage[y as usize * bw + x as usize];
+                    *target = (*target as u32 + a - div255(*target as u32 * a)) as u8;
+                }
+            }
+        }
+        Some(((x0 as u16, y0 as u16, bw as u16, bh as u16), coverage))
     }
 }
 

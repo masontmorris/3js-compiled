@@ -7,7 +7,7 @@ import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
 import { EVENT_HANDLERS } from './dom-methods.js';
-import { CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, TextMetrics, setCanvasHost } from './canvas2d.js';
+import { CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, TextMetrics, setCanvasHost } from './canvas2d.js';
 import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
 import { MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry, updateIntersections } from './observers.js';
@@ -239,7 +239,7 @@ Object.assign(window, {
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
   MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
-  AbortController, AbortSignal, CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, TextMetrics,
+  AbortController, AbortSignal, CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, TextMetrics,
   DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
   XMLHttpRequest, ProgressEvent,
   AudioContext: audio.AudioContext, OfflineAudioContext: audio.OfflineAudioContext, BaseAudioContext: audio.BaseAudioContext,

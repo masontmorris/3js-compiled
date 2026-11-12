@@ -7,6 +7,8 @@
 //!
 //!   cargo run --release -- <spike dir> <fonts dir>
 
+mod dw;
+
 use anyhow::{Context, Result, bail};
 use harfrust::{ShaperData, ShaperInstance, UnicodeBuffer, Variation};
 use serde_json::Value;
@@ -26,6 +28,8 @@ struct Font {
 enum Pipeline {
     TinySkia,
     Vello,
+    /// DirectWrite glyph masks, composited by tiny-skia.
+    DWrite,
 }
 #[derive(Clone, Copy, Debug)]
 struct Variant {
@@ -197,6 +201,14 @@ impl Canvas for TinySkia {
         let paint = Self::paint(draw.paint)?;
         let (origin_x, origin_y) = origin(draw, run, variant);
         let mut mask = tiny_skia::Mask::new(self.0.width(), self.0.height()).context("mask")?;
+        if variant.pipeline == Pipeline::DWrite {
+            let (w, h) = (self.0.width(), self.0.height());
+            dw::coverage(mask.data_mut(), w, h, &draw.font.data, draw.font.weight, draw.size, run, origin_x, origin_y, variant)?;
+            preblend(mask.data_mut(), draw.paint, variant);
+            let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32).context("rect")?;
+            self.0.fill_rect(rect, &paint, tiny_skia::Transform::identity(), Some(&mask));
+            return Ok(());
+        }
         for &(id, gx, gy) in &run.glyphs {
             let glyph = outlines.get(GlyphId::new(id)).context("glyph")?;
             let mut pen = Paths(tiny_skia::PathBuilder::new());
@@ -452,23 +464,32 @@ fn main() -> Result<()> {
     let recorded: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("cases.json"))?)?;
     let gamma = std::env::var("SPIKE_GAMMA").ok().map(|g| g.parse()).transpose()?;
     let contrast = std::env::var("SPIKE_CONTRAST").ok().map(|c| c.parse()).transpose()?.unwrap_or(0.0);
+    if let Ok(only) = std::env::var("SPIKE_ONLY") {
+        let pipeline = match only.as_str() { "dwrite" => Pipeline::DWrite, "vello" => Pipeline::Vello, _ => Pipeline::TinySkia };
+        return run_variants(&dir, &fonts, &recorded, &[Variant { pipeline, snap: true, hint: pipeline == Pipeline::Vello, gamma, contrast }]);
+    }
     let variants = [
         Variant { pipeline: Pipeline::TinySkia, snap: true, hint: false, gamma, contrast },
         Variant { pipeline: Pipeline::TinySkia, snap: true, hint: true, gamma, contrast },
         Variant { pipeline: Pipeline::Vello, snap: true, hint: false, gamma, contrast },
         Variant { pipeline: Pipeline::Vello, snap: true, hint: true, gamma, contrast },
     ];
+    run_variants(&dir, &fonts, &recorded, &variants)
+}
+
+fn run_variants(dir: &Path, fonts: &BTreeMap<&str, Font>, recorded: &Value, variants: &[Variant]) -> Result<()> {
     let mut widths = Vec::new();
     println!("variant\tcase\tmean\tdiffering\tsigned");
-    for variant in variants {
-        let name = format!("{:?}{}{}{}", variant.pipeline, if variant.snap { "-snap" } else { "" }, if variant.hint { "-hint" } else { "" }, variant.gamma.map_or(String::new(), |g| format!("-g{g}-c{}", variant.contrast))).to_lowercase();
+    for &variant in variants {
+        let dw = std::env::var("SPIKE_DW").unwrap_or_default();
+        let name = format!("{:?}{}{}{}{}", variant.pipeline, if variant.pipeline == Pipeline::DWrite { format!("-{dw}") } else { String::new() }, if variant.snap { "-snap" } else { "" }, if variant.hint { "-hint" } else { "" }, variant.gamma.map_or(String::new(), |g| format!("-g{g}-c{}", variant.contrast))).to_lowercase();
         std::fs::create_dir_all(dir.join(&name))?;
         let (mut total, mut total_differing, mut text_pixels) = (0.0, 0.0, 0.0);
         for case in recorded["cases"].as_array().context("cases")? {
             let case_name = case["name"].as_str().context("name")?;
             let (width, height) = (case["width"].as_u64().context("width")? as u32, case["height"].as_u64().context("height")? as u32);
             let mut canvas: Box<dyn Canvas> = match variant.pipeline {
-                Pipeline::TinySkia => Box::new(TinySkia(tiny_skia::Pixmap::new(width, height).context("pixmap")?)),
+                Pipeline::TinySkia | Pipeline::DWrite => Box::new(TinySkia(tiny_skia::Pixmap::new(width, height).context("pixmap")?)),
                 Pipeline::Vello => Box::new(Vello::new(width as u16, height as u16)),
             };
             for op in case["ops"].as_array().context("ops")? {
