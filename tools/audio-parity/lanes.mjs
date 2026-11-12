@@ -45,6 +45,7 @@ const lanes = {
   async lane6() {
     const key = down => ({ type: 'key', code: 'KeyA', down });
     await runHost('examples/audio/howler.js', '', at('lane6'), { frames: fps, steps: [key(true), key(false), { type: 'wait', frames: 8 * fps }] });
+    node('tools/audio-parity/edge-page.mjs', 'howler.js', at('lane6', 'edge.log'), '--until', 'H done', '--key-on', 'H press a key');
   },
   // Lane 7: three.js's AudioListener, PositionalAudio, AudioAnalyser on the moving cube, in the host and in Edge.
   async lane7() {

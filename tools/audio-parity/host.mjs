@@ -24,14 +24,14 @@ const repo = resolve('.');
 
 // Runs the host on `entry` in `out` and answers host.log once it exits. `steps` run after `frames` frames, then the
 // host closes.
-export function runHost(entry, hash, out, { exe = hostExe, frames: count = frames, steps = [], args: extra = [], audioOut = true } = {}) {
+export function runHost(entry, hash, out, { exe = hostExe, frames: count = frames, steps = [], args: extra = [], audioOut = true, timeoutMs = 300_000 } = {}) {
   mkdirSync(out, { recursive: true });
   const script = join(out, 'steps.json');
   writeFileSync(script, JSON.stringify([{ type: 'wait', frames: count }, ...steps, { type: 'close' }]));
   const args = ['--entry', join(repo, entry), '--hash', hash, '--script', script, '--audio-device', device, ...(audioOut ? ['--audio-out', join(out, 'out.wav')] : []), ...extra];
   return new Promise((done, fail) => {
     const child = spawn(exe, args, { cwd: out, stdio: ['ignore', 'ignore', 'inherit'] });
-    const timer = setTimeout(() => { child.kill(); fail(new Error(`host.mjs: the host did not exit within 5 minutes (pid ${child.pid})`)); }, 300_000);
+    const timer = setTimeout(() => { child.kill(); fail(new Error(`host.mjs: the host did not exit within ${timeoutMs / 1000} s (pid ${child.pid})`)); }, timeoutMs);
     child.on('exit', code => { clearTimeout(timer); code === 0 ? done(readFileSync(join(out, 'host.log'), 'utf8')) : fail(new Error(`host exited with ${code}`)); });
   });
 }
