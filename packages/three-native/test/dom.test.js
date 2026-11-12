@@ -170,8 +170,8 @@ test('the router turns a click into pointer, mouse and click events on the canva
   assert.deepEqual(order, [
     'pointerover(-1,0,10,true)', 'pointerenter(-1,0,10,true)', 'mouseover(0,0,10,true)', 'mouseenter(0,0,10,true)',
     'pointermove(-1,0,10,true)', 'mousemove(0,0,10,true)', 'pointerdown(0,1,10,true)', 'mousedown(0,1,10,true)',
-    'gotpointercapture(-1,0,10,true)', 'pointerup(0,0,10,true)', 'mouseup(0,0,10,true)', 'click(0,0,10,true)',
-    'lostpointercapture(-1,0,10,true)',
+    'gotpointercapture(-1,0,10,true)', 'pointerup(0,0,10,true)', 'lostpointercapture(0,0,10,true)', 'mouseup(0,0,10,true)',
+    'click(0,0,10,true)',
   ]);
 });
 

@@ -86,8 +86,9 @@ export class MouseEvent extends UIEvent {
   getModifierState(key) { return KeyboardEvent.prototype.getModifierState.call(this, key); }
 }
 export class PointerEvent extends MouseEvent {
-  get offsetX() { return this.clientX - (this.target?.getBoundingClientRect?.().left ?? 0); }
-  get offsetY() { return this.clientY - (this.target?.getBoundingClientRect?.().top ?? 0); }
+  // A pointer event's offset is exact, except a click's, which Edge rounds as it does a mouse event's.
+  get offsetX() { return this[EXACT] ? super.offsetX : this.clientX - (this.target?.getBoundingClientRect?.().left ?? 0); }
+  get offsetY() { return this[EXACT] ? super.offsetY : this.clientY - (this.target?.getBoundingClientRect?.().top ?? 0); }
   constructor(type, init = {}) {
     super(type, init);
     assign(this, init, { pointerId: 0, width: 1, height: 1, pressure: 0, tangentialPressure: 0, tiltX: 0, tiltY: 0, twist: 0, altitudeAngle: Math.PI / 2, azimuthAngle: 0, pointerType: '', isPrimary: false });
@@ -359,12 +360,13 @@ export class InputRouter {
   fire(target, Class, type, init) {
     return target.dispatchEvent(trusted(new Class(type, init)));
   }
-  // Fires lostpointercapture and gotpointercapture when capture changed since the last pointer event.
-  processCapture() {
+  // Fires lostpointercapture and gotpointercapture when capture changed since the last pointer event, with that
+  // event's fields, or the current pointer's.
+  processCapture(fields = this.pointerInit({ button: -1 }, {})) {
     if (this.pendingCapture === this.captureTarget) return;
     const old = this.captureTarget;
     this.captureTarget = this.pendingCapture;
-    const init = { ...this.pointerInit({ button: -1 }, {}), cancelable: false };
+    const init = { ...fields, cancelable: false };
     if (old) this.fire(old.isConnected ? old : this.document, PointerEvent, 'lostpointercapture', init);
     if (this.captureTarget) this.fire(this.captureTarget, PointerEvent, 'gotpointercapture', init);
   }
@@ -424,6 +426,11 @@ export class InputRouter {
     const init = this.pointerInit({ button, movementX, movementY }, modifiers);
     const proceed = this.fire(target, PointerEvent, first ? 'pointerdown' : last ? 'pointerup' : 'pointermove', init);
     if (first && !proceed) this.suppressMouse = true;
+    // The last button's release ends capture right after pointerup, as the Pointer Events spec says.
+    if (last) {
+      this.pendingCapture = null;
+      this.processCapture(init);
+    }
     // Pressing another button between this button's press and release cancels its click, and its mouseup then
     // counts no click, as in Edge.
     const clicked = fact.type !== 'pointerup' || this.lastPressed === fact.button;
@@ -444,16 +451,14 @@ export class InputRouter {
       this.pressed.delete(fact.button);
       const common = downTarget?.contains?.(target) ? downTarget : target.contains?.(downTarget) ? target : null;
       if (common && clicked) {
-        const click = { ...init, button: fact.button, detail, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 };
+        const click = { ...this.mouseInit(init, {}), ...POINTER, button: fact.button, detail, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 };
         this.fire(common, PointerEvent, fact.button === 0 ? 'click' : 'auxclick', click);
         if (fact.button === 0 && detail === 2) this.fire(common, MouseEvent, 'dblclick', mouse);
       }
-      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 });
+      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...this.mouseInit(init, {}), ...POINTER, button: 2, detail: 0, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 });
       if (last) {
         this.lastPressed = undefined;
         this.suppressMouse = false;
-        this.pendingCapture = null;
-        this.processCapture();
       }
     }
   }
