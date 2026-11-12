@@ -154,7 +154,11 @@ impl<'a> Game<'a> {
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(platform::Loader::new())),
-            extensions: vec![host_ext::init(), platform::extension::init(), canvas2d::extension::init()],
+            extensions: vec![
+                host_ext::init(),
+                platform::extension::init(),
+                canvas2d::extension::init(),
+            ],
             ..Default::default()
         });
         let mut storage = Vec::new();

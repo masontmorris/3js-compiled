@@ -24,9 +24,19 @@ pub struct Stop {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Paint {
-    Color { rgba: [f32; 4] },
-    Linear { from: [f64; 2], to: [f64; 2], stops: Vec<Stop> },
-    Radial { from: [f64; 3], to: [f64; 3], stops: Vec<Stop> },
+    Color {
+        rgba: [f32; 4],
+    },
+    Linear {
+        from: [f64; 2],
+        to: [f64; 2],
+        stops: Vec<Stop>,
+    },
+    Radial {
+        from: [f64; 3],
+        to: [f64; 3],
+        stops: Vec<Stop>,
+    },
 }
 
 /// The drawing state a fill uses.
@@ -97,7 +107,9 @@ fn mask_gamma_table(level: u32) -> [u8; 256] {
             return (255.0 * a).round() as u8;
         }
         let out = (lin_src * a + (1.0 - a) * lin_dst).powf(1.0 / MASK_GAMMA);
-        (255.0 * (out - dst) / (src - dst)).round().clamp(0.0, 255.0) as u8
+        (255.0 * (out - dst) / (src - dst))
+            .round()
+            .clamp(0.0, 255.0) as u8
     })
 }
 
@@ -115,7 +127,10 @@ fn color([r, g, b, a]: [f32; 4]) -> AlphaColor<Srgb> {
 }
 
 fn gradient(kind: Gradient, stops: &[Stop]) -> Gradient {
-    let stops: Vec<(f32, AlphaColor<Srgb>)> = stops.iter().map(|stop| (stop.offset, color(stop.rgba))).collect();
+    let stops: Vec<(f32, AlphaColor<Srgb>)> = stops
+        .iter()
+        .map(|stop| (stop.offset, color(stop.rgba)))
+        .collect();
     let mut gradient = kind.with_stops(stops.as_slice());
     gradient.extend = Extend::Pad;
     gradient.interpolation_alpha_space = peniko::InterpolationAlphaSpace::Unpremultiplied;
@@ -128,21 +143,37 @@ fn affine(transform: [f64; 6]) -> Affine {
 
 /// Whether the transform only moves, so pixel snapping and the fast paths apply.
 fn translation(transform: [f64; 6]) -> Option<(f64, f64)> {
-    (transform[0] == 1.0 && transform[1] == 0.0 && transform[2] == 0.0 && transform[3] == 1.0).then_some((transform[4], transform[5]))
+    (transform[0] == 1.0 && transform[1] == 0.0 && transform[2] == 0.0 && transform[3] == 1.0)
+        .then_some((transform[4], transform[5]))
 }
 
 /// The pixel box a user-space rectangle covers under a transform, clipped to the surface: x, y, width, height.
-fn device_box(transform: [f64; 6], rect: Rect, width: u16, height: u16) -> Option<(u16, u16, u16, u16)> {
+fn device_box(
+    transform: [f64; 6],
+    rect: Rect,
+    width: u16,
+    height: u16,
+) -> Option<(u16, u16, u16, u16)> {
     let bounds = affine(transform).transform_rect_bbox(rect);
     let x0 = bounds.x0.floor().max(0.0);
     let y0 = bounds.y0.floor().max(0.0);
     let x1 = bounds.x1.ceil().min(width as f64);
     let y1 = bounds.y1.ceil().min(height as f64);
-    (x1 > x0 && y1 > y0 && x1.is_finite() && y1.is_finite()).then(|| (x0 as u16, y0 as u16, (x1 - x0) as u16, (y1 - y0) as u16))
+    (x1 > x0 && y1 > y0 && x1.is_finite() && y1.is_finite()).then_some((
+        x0 as u16,
+        y0 as u16,
+        (x1 - x0) as u16,
+        (y1 - y0) as u16,
+    ))
 }
 
 /// Blends premultiplied `source` pixels, `alpha` times, over the surface's box at (x, y).
-fn blend(surface: &mut Surface, (x, y, w, h): (u16, u16, u16, u16), source: impl Fn(usize) -> [u8; 4], alpha: f32) {
+fn blend(
+    surface: &mut Surface,
+    (x, y, w, h): (u16, u16, u16, u16),
+    source: impl Fn(usize) -> [u8; 4],
+    alpha: f32,
+) {
     let alpha = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
     for row in 0..h as usize {
         let start = ((y as usize + row) * surface.width as usize + x as usize) * 4;
@@ -173,9 +204,17 @@ impl Painter {
     fn set_paint(&mut self, paint: &Paint) {
         match paint {
             Paint::Color { rgba } => self.context.set_paint(color(*rgba)),
-            Paint::Linear { from, to, stops } => self.context.set_paint(gradient(Gradient::new_linear((from[0], from[1]), (to[0], to[1])), stops)),
+            Paint::Linear { from, to, stops } => self.context.set_paint(gradient(
+                Gradient::new_linear((from[0], from[1]), (to[0], to[1])),
+                stops,
+            )),
             Paint::Radial { from, to, stops } => self.context.set_paint(gradient(
-                Gradient::new_two_point_radial((from[0], from[1]), from[2] as f32, (to[0], to[1]), to[2] as f32),
+                Gradient::new_two_point_radial(
+                    (from[0], from[1]),
+                    from[2] as f32,
+                    (to[0], to[1]),
+                    to[2] as f32,
+                ),
                 stops,
             )),
         }
@@ -184,13 +223,15 @@ impl Painter {
     /// Renders what the context holds over the surface.
     fn finish(&mut self, surface: &mut Surface) {
         self.context.flush();
-        let target = PixmapMut::new(surface.width, surface.height, surface.data).expect("the surface holds width * height pixels");
+        let target = PixmapMut::new(surface.width, surface.height, surface.data)
+            .expect("the surface holds width * height pixels");
         let settings = vello_cpu::RasterizerSettings {
             render_mode: RenderMode::OptimizeSpeed,
             composite_mode: vello_cpu::CompositeMode::SrcOver,
             ..Default::default()
         };
-        self.context.render_with(target, &mut self.resources, settings);
+        self.context
+            .render_with(target, &mut self.resources, settings);
     }
 
     /// Renders what the context holds, alone, into a new layer of the given size.
@@ -203,12 +244,21 @@ impl Painter {
 
     pub fn fill_rect(&mut self, surface: &mut Surface, style: &Style, rect: Rect) {
         let rect = Rect::from_points((rect.x0, rect.y0), (rect.x1, rect.y1));
-        if let (Paint::Color { rgba }, Some((tx, ty))) = (&style.paint, translation(style.transform)) {
+        if let (Paint::Color { rgba }, Some((tx, ty))) =
+            (&style.paint, translation(style.transform))
+        {
             let moved = rect + vello_cpu::kurbo::Vec2::new(tx, ty);
-            if [moved.x0, moved.y0, moved.x1, moved.y1].iter().all(|v| v.fract() == 0.0) {
-                let Some(area) = device_box(style.transform, rect, surface.width, surface.height) else { return };
+            if [moved.x0, moved.y0, moved.x1, moved.y1]
+                .iter()
+                .all(|v| v.fract() == 0.0)
+            {
+                let Some(area) = device_box(style.transform, rect, surface.width, surface.height)
+                else {
+                    return;
+                };
                 let a = rgba[3].clamp(0.0, 1.0);
-                let premultiplied = [rgba[0] * a, rgba[1] * a, rgba[2] * a, a].map(|c| (c * 255.0).round() as u8);
+                let premultiplied =
+                    [rgba[0] * a, rgba[1] * a, rgba[2] * a, a].map(|c| (c * 255.0).round() as u8);
                 blend(surface, area, |_| premultiplied, style.alpha);
                 return;
             }
@@ -228,9 +278,12 @@ impl Painter {
 
     pub fn clear_rect(&mut self, surface: &mut Surface, transform: [f64; 6], rect: Rect) {
         let rect = Rect::from_points((rect.x0, rect.y0), (rect.x1, rect.y1));
-        let Some((x, y, w, h)) = device_box(transform, rect, surface.width, surface.height) else { return };
+        let Some((x, y, w, h)) = device_box(transform, rect, surface.width, surface.height) else {
+            return;
+        };
         self.begin(w, h);
-        self.context.set_transform(Affine::translate((-(x as f64), -(y as f64))) * affine(transform));
+        self.context
+            .set_transform(Affine::translate((-(x as f64), -(y as f64))) * affine(transform));
         self.context.set_paint(color([1.0; 4]));
         self.context.fill_rect(&rect);
         let coverage = self.layer(w, h);
@@ -249,17 +302,35 @@ impl Painter {
     /// Draws the `source` rectangle of an image into the `dest` rectangle. `pixels` are RGBA8, premultiplied when
     /// `premultiplied` says so, and the source rectangle is in whole pixels inside the image.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_image(&mut self, surface: &mut Surface, style: &Style, pixels: &[u8], width: u16, premultiplied: bool, source: (u16, u16, u16, u16), dest: Rect, smoothing: bool) {
+    pub fn draw_image(
+        &mut self,
+        surface: &mut Surface,
+        style: &Style,
+        pixels: &[u8],
+        width: u16,
+        premultiplied: bool,
+        source: (u16, u16, u16, u16),
+        dest: Rect,
+        smoothing: bool,
+    ) {
         let (sx, sy, sw, sh) = source;
         let mut data = Vec::with_capacity(sw as usize * sh as usize);
         for row in sy as usize..(sy + sh) as usize {
-            for pixel in pixels[(row * width as usize + sx as usize) * 4..][..sw as usize * 4].chunks_exact(4) {
-                let [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            for &[r, g, b, a] in pixels[(row * width as usize + sx as usize) * 4..]
+                [..sw as usize * 4]
+                .as_chunks::<4>()
+                .0
+            {
                 data.push(if premultiplied {
                     vello_cpu::color::PremulRgba8 { r, g, b, a }
                 } else {
                     let m = |c: u8| div255(c as u32 * a as u32) as u8;
-                    vello_cpu::color::PremulRgba8 { r: m(r), g: m(g), b: m(b), a }
+                    vello_cpu::color::PremulRgba8 {
+                        r: m(r),
+                        g: m(g),
+                        b: m(b),
+                        a,
+                    }
                 });
             }
         }
@@ -268,14 +339,21 @@ impl Painter {
             sampler: ImageSampler {
                 x_extend: Extend::Pad,
                 y_extend: Extend::Pad,
-                quality: if smoothing { ImageQuality::Medium } else { ImageQuality::Low },
+                quality: if smoothing {
+                    ImageQuality::Medium
+                } else {
+                    ImageQuality::Low
+                },
                 alpha: style.alpha,
             },
         };
         self.begin(surface.width, surface.height);
         self.context.set_transform(affine(style.transform));
         self.context.set_paint(image);
-        self.context.set_paint_transform(Affine::translate((dest.x0, dest.y0)) * Affine::scale_non_uniform(dest.width() / sw as f64, dest.height() / sh as f64));
+        self.context.set_paint_transform(
+            Affine::translate((dest.x0, dest.y0))
+                * Affine::scale_non_uniform(dest.width() / sw as f64, dest.height() / sh as f64),
+        );
         self.context.fill_rect(&dest);
         self.finish(surface);
     }
@@ -283,15 +361,46 @@ impl Painter {
     /// Draws laid-out text with its pen start at (x, y) on the alphabetic baseline, filled or stroked, and
     /// squeezed horizontally by `x_scale` to fit a maximum width.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_text(&mut self, surface: &mut Surface, fonts: &Fonts, layout: &Layout, size: f32, (x, y): (f64, f64), x_scale: f64, style: &Style, stroke: Option<StrokeStyle>) {
+    pub fn draw_text(
+        &mut self,
+        surface: &mut Surface,
+        fonts: &Fonts,
+        layout: &Layout,
+        size: f32,
+        (x, y): (f64, f64),
+        x_scale: f64,
+        style: &Style,
+        stroke: Option<StrokeStyle>,
+    ) {
         let level = luminance_level(&style.paint);
         for run in &layout.runs {
-            self.draw_run(surface, fonts, run, size, (x, y), x_scale, style, stroke, level);
+            self.draw_run(
+                surface,
+                fonts,
+                run,
+                size,
+                (x, y),
+                x_scale,
+                style,
+                stroke,
+                level,
+            );
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_run(&mut self, surface: &mut Surface, fonts: &Fonts, run: &Run, size: f32, (x, y): (f64, f64), x_scale: f64, style: &Style, stroke: Option<StrokeStyle>, level: usize) {
+    fn draw_run(
+        &mut self,
+        surface: &mut Surface,
+        fonts: &Fonts,
+        run: &Run,
+        size: f32,
+        (x, y): (f64, f64),
+        x_scale: f64,
+        style: &Style,
+        stroke: Option<StrokeStyle>,
+        level: usize,
+    ) {
         let face = fonts.get(run.instance.face);
         // Skia positions horizontal glyphs at quarter pixels on a whole-pixel baseline, and hints only them.
         let snapped = translation(style.transform).filter(|_| x_scale == 1.0);
@@ -304,15 +413,32 @@ impl Painter {
             .iter()
             .map(|&(id, gx, gy)| {
                 let (px, py) = place(gx, gy);
-                vello_cpu::Glyph { id, x: px as f32, y: py as f32 }
+                vello_cpu::Glyph {
+                    id,
+                    x: px as f32,
+                    y: py as f32,
+                }
             })
             .collect();
         let Some(first) = glyphs.first() else { return };
         let last = glyphs.last().expect("a run with a first glyph has a last");
-        let margin = size as f64 + stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0) + 2.0;
-        let ink = Rect::new(first.x as f64 - margin, first.y as f64 - 1.5 * margin, last.x as f64 + margin * 1.5, last.y as f64 + margin);
-        let user_to_device = if snapped.is_some() { [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] } else { style.transform };
-        let Some((bx, by, bw, bh)) = device_box(user_to_device, ink, surface.width, surface.height) else { return };
+        let margin =
+            size as f64 + stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0) + 2.0;
+        let ink = Rect::new(
+            first.x as f64 - margin,
+            first.y as f64 - 1.5 * margin,
+            last.x as f64 + margin * 1.5,
+            last.y as f64 + margin,
+        );
+        let user_to_device = if snapped.is_some() {
+            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        } else {
+            style.transform
+        };
+        let Some((bx, by, bw, bh)) = device_box(user_to_device, ink, surface.width, surface.height)
+        else {
+            return;
+        };
         let to_layer = Affine::translate((-(bx as f64), -(by as f64))) * affine(user_to_device);
 
         self.begin(bw, bh);
@@ -330,9 +456,18 @@ impl Painter {
                 LineJoin::Round => Join::Round,
                 LineJoin::Bevel => Join::Bevel,
             };
-            self.context.set_stroke(Stroke::new(s.width).with_join(join).with_miter_limit(s.miter_limit));
+            self.context.set_stroke(
+                Stroke::new(s.width)
+                    .with_join(join)
+                    .with_miter_limit(s.miter_limit),
+            );
         }
-        let mut builder = self.context.glyph_run(&mut self.resources, &font).font_size(size).hint(snapped.is_some()).normalized_coords(&run.instance.coords);
+        let mut builder = self
+            .context
+            .glyph_run(&mut self.resources, &font)
+            .font_size(size)
+            .hint(snapped.is_some())
+            .normalized_coords(&run.instance.coords);
         if let Some(transform) = glyph_transform {
             builder = builder.glyph_transform(transform);
         }
@@ -346,7 +481,12 @@ impl Painter {
         let area = (bx, by, bw, bh);
 
         if face.color {
-            blend(surface, area, |i| glyph_pixels[i * 4..][..4].try_into().expect("4 bytes"), style.alpha);
+            blend(
+                surface,
+                area,
+                |i| glyph_pixels[i * 4..][..4].try_into().expect("4 bytes"),
+                style.alpha,
+            );
             return;
         }
         let table = self.tables[level];
@@ -354,24 +494,40 @@ impl Painter {
             Paint::Color { rgba } => {
                 let a = rgba[3].clamp(0.0, 1.0);
                 let paint = [rgba[0] * a, rgba[1] * a, rgba[2] * a, a].map(|c| c * 255.0);
-                blend(surface, area, |i| {
-                    let coverage = table[glyph_pixels[i * 4 + 3] as usize] as f32 / 255.0;
-                    paint.map(|c| (c * coverage).round() as u8)
-                }, style.alpha);
+                blend(
+                    surface,
+                    area,
+                    |i| {
+                        let coverage = table[glyph_pixels[i * 4 + 3] as usize] as f32 / 255.0;
+                        paint.map(|c| (c * coverage).round() as u8)
+                    },
+                    style.alpha,
+                );
             }
             paint => {
                 self.begin(bw, bh);
-                self.context.set_transform(Affine::translate((-(bx as f64), -(by as f64))));
+                self.context
+                    .set_transform(Affine::translate((-(bx as f64), -(by as f64))));
                 self.context.set_paint_transform(affine(style.transform));
                 self.set_paint(paint);
-                self.context.fill_rect(&Rect::new(bx as f64, by as f64, (bx + bw) as f64, (by + bh) as f64));
+                self.context.fill_rect(&Rect::new(
+                    bx as f64,
+                    by as f64,
+                    (bx + bw) as f64,
+                    (by + bh) as f64,
+                ));
                 let paint_layer = self.layer(bw, bh);
                 let paint_pixels = paint_layer.data_as_u8_slice();
-                blend(surface, area, |i| {
-                    let coverage = table[glyph_pixels[i * 4 + 3] as usize] as u32;
-                    let p = &paint_pixels[i * 4..][..4];
-                    [0, 1, 2, 3].map(|c| div255(p[c] as u32 * coverage) as u8)
-                }, style.alpha);
+                blend(
+                    surface,
+                    area,
+                    |i| {
+                        let coverage = table[glyph_pixels[i * 4 + 3] as usize] as u32;
+                        let p = &paint_pixels[i * 4..][..4];
+                        [0, 1, 2, 3].map(|c| div255(p[c] as u32 * coverage) as u8)
+                    },
+                    style.alpha,
+                );
             }
         }
     }
@@ -382,7 +538,11 @@ mod tests {
     use super::*;
 
     fn surface(data: &mut [u8], width: u16, height: u16) -> Surface<'_> {
-        Surface { data, width, height }
+        Surface {
+            data,
+            width,
+            height,
+        }
     }
     const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
@@ -394,17 +554,41 @@ mod tests {
             assert!(table.windows(2).all(|pair| pair[0] <= pair[1]), "{table:?}");
         }
         // White on black: Edge shows a quarter-covered pixel at about 140 of 255 (spikes/canvas2d).
-        assert!((135..=150).contains(&painter.tables[7][64]), "{}", painter.tables[7][64]);
+        assert!(
+            (135..=150).contains(&painter.tables[7][64]),
+            "{}",
+            painter.tables[7][64]
+        );
     }
 
     #[test]
     fn a_rectangle_blends_over_the_pixels_with_global_alpha() {
         let mut painter = Painter::default();
         let mut pixels = vec![0u8; 4 * 4 * 4];
-        let red = Style { paint: Paint::Color { rgba: [1.0, 0.0, 0.0, 1.0] }, alpha: 1.0, transform: IDENTITY };
-        painter.fill_rect(&mut surface(&mut pixels, 4, 4), &red, Rect::new(0.0, 0.0, 4.0, 4.0));
-        let blue = Style { paint: Paint::Color { rgba: [0.0, 0.0, 1.0, 1.0] }, alpha: 0.5, transform: IDENTITY };
-        painter.fill_rect(&mut surface(&mut pixels, 4, 4), &blue, Rect::new(1.0, 1.0, 2.0, 2.0));
+        let red = Style {
+            paint: Paint::Color {
+                rgba: [1.0, 0.0, 0.0, 1.0],
+            },
+            alpha: 1.0,
+            transform: IDENTITY,
+        };
+        painter.fill_rect(
+            &mut surface(&mut pixels, 4, 4),
+            &red,
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+        );
+        let blue = Style {
+            paint: Paint::Color {
+                rgba: [0.0, 0.0, 1.0, 1.0],
+            },
+            alpha: 0.5,
+            transform: IDENTITY,
+        };
+        painter.fill_rect(
+            &mut surface(&mut pixels, 4, 4),
+            &blue,
+            Rect::new(1.0, 1.0, 2.0, 2.0),
+        );
         assert_eq!(&pixels[0..4], &[255, 0, 0, 255]);
         assert_eq!(&pixels[(4 + 1) * 4..][..4], &[127, 0, 128, 255]);
         assert_eq!(&pixels[(3 * 4 + 3) * 4..][..4], &[255, 0, 0, 255]);
@@ -414,11 +598,22 @@ mod tests {
     fn a_fractional_rectangle_covers_its_edge_pixels_in_part() {
         let mut painter = Painter::default();
         let mut pixels = vec![0u8; 4 * 4];
-        let white = Style { paint: Paint::Color { rgba: [1.0; 4] }, alpha: 1.0, transform: IDENTITY };
-        painter.fill_rect(&mut surface(&mut pixels, 4, 1), &white, Rect::new(0.5, 0.0, 2.5, 1.0));
-        let alphas: Vec<u8> = pixels.chunks_exact(4).map(|p| p[3]).collect();
+        let white = Style {
+            paint: Paint::Color { rgba: [1.0; 4] },
+            alpha: 1.0,
+            transform: IDENTITY,
+        };
+        painter.fill_rect(
+            &mut surface(&mut pixels, 4, 1),
+            &white,
+            Rect::new(0.5, 0.0, 2.5, 1.0),
+        );
+        let alphas: Vec<u8> = pixels.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
         assert_eq!(alphas[1], 255);
-        assert!((120..=135).contains(&alphas[0]) && (120..=135).contains(&alphas[2]), "{alphas:?}");
+        assert!(
+            (120..=135).contains(&alphas[0]) && (120..=135).contains(&alphas[2]),
+            "{alphas:?}"
+        );
         assert_eq!(alphas[3], 0);
     }
 
@@ -426,7 +621,11 @@ mod tests {
     fn clearing_a_rectangle_leaves_transparent_pixels_under_a_transform() {
         let mut painter = Painter::default();
         let mut pixels = vec![255u8; 8 * 8 * 4];
-        painter.clear_rect(&mut surface(&mut pixels, 8, 8), [2.0, 0.0, 0.0, 2.0, 2.0, 2.0], Rect::new(0.0, 0.0, 2.0, 2.0));
+        painter.clear_rect(
+            &mut surface(&mut pixels, 8, 8),
+            [2.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+        );
         assert_eq!(&pixels[(2 * 8 + 2) * 4..][..4], &[0, 0, 0, 0]);
         assert_eq!(&pixels[(5 * 8 + 5) * 4..][..4], &[0, 0, 0, 0]);
         assert_eq!(&pixels[(6 * 8 + 6) * 4..][..4], &[255, 255, 255, 255]);
@@ -436,10 +635,31 @@ mod tests {
     fn a_linear_gradient_runs_between_its_stops() {
         let mut painter = Painter::default();
         let mut pixels = vec![0u8; 16 * 4];
-        let stops = vec![Stop { offset: 0.0, rgba: [0.0, 0.0, 0.0, 1.0] }, Stop { offset: 1.0, rgba: [1.0, 1.0, 1.0, 1.0] }];
-        let style = Style { paint: Paint::Linear { from: [0.0, 0.0], to: [0.0, 16.0], stops }, alpha: 1.0, transform: IDENTITY };
-        painter.fill_rect(&mut surface(&mut pixels, 1, 16), &style, Rect::new(0.0, 0.0, 1.0, 16.0));
-        let reds: Vec<u8> = pixels.chunks_exact(4).map(|p| p[0]).collect();
+        let stops = vec![
+            Stop {
+                offset: 0.0,
+                rgba: [0.0, 0.0, 0.0, 1.0],
+            },
+            Stop {
+                offset: 1.0,
+                rgba: [1.0, 1.0, 1.0, 1.0],
+            },
+        ];
+        let style = Style {
+            paint: Paint::Linear {
+                from: [0.0, 0.0],
+                to: [0.0, 16.0],
+                stops,
+            },
+            alpha: 1.0,
+            transform: IDENTITY,
+        };
+        painter.fill_rect(
+            &mut surface(&mut pixels, 1, 16),
+            &style,
+            Rect::new(0.0, 0.0, 1.0, 16.0),
+        );
+        let reds: Vec<u8> = pixels.as_chunks::<4>().0.iter().map(|p| p[0]).collect();
         assert!(reds.windows(2).all(|pair| pair[0] < pair[1]), "{reds:?}");
         assert!(reds[0] < 16 && reds[15] > 239, "{reds:?}");
     }

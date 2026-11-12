@@ -67,7 +67,13 @@ fn options() -> Result<Options> {
                 }
             }
             "--novsync" => vsync = false,
-            "--headless" => headless = Some(args.next().context("--headless needs a frame count")?.parse()?),
+            "--headless" => {
+                headless = Some(
+                    args.next()
+                        .context("--headless needs a frame count")?
+                        .parse()?,
+                )
+            }
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -195,11 +201,24 @@ fn finish(
 /// Runs the entry module's script with no window, GPU or input until its top level finishes, for at most 30 seconds,
 /// then `frames` more frames, for tests of the platform shims.
 fn headless(options: &Options, frames: u32) -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
     let _entered = runtime.enter();
     let log: Log = Rc::new(RefCell::new(File::create("host.log")?));
-    let page = Page { hash: options.hash.clone(), ..Page::default() };
-    let mut game = Game::open(&options.entry, log, &runtime, options.scene.as_deref(), (1280, 720), None, &page)?;
+    let page = Page {
+        hash: options.hash.clone(),
+        ..Page::default()
+    };
+    let mut game = Game::open(
+        &options.entry,
+        log,
+        &runtime,
+        options.scene.as_deref(),
+        (1280, 720),
+        None,
+        &page,
+    )?;
     let start = Instant::now();
     while !game.evaluated() {
         if start.elapsed() > Duration::from_secs(30) {
