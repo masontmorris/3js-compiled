@@ -8,14 +8,15 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
-use web_audio_api::node::{
+use threejsc_audio::decode::decode_audio_data;
+use threejsc_audio::web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
+use threejsc_audio::web_audio_api::node::{
     AudioBufferSourceNode, AudioBufferSourceOptions, AudioNode, AudioScheduledSourceNode,
     ConstantSourceNode, ConstantSourceOptions, DistanceModelType, GainNode, GainOptions,
     OscillatorNode, OscillatorOptions, OscillatorType, PannerNode, PannerOptions, PanningModelType,
     StereoPannerNode, StereoPannerOptions,
 };
-use web_audio_api::{AudioBuffer, AudioParam};
+use threejsc_audio::web_audio_api::{AudioBuffer, AudioParam};
 
 enum Node {
     Oscillator(OscillatorNode),
@@ -315,16 +316,9 @@ fn render(spec: &Value) -> Vec<Vec<f32>> {
 }
 
 fn decode(case: &Value) -> (f32, Vec<Vec<f32>>) {
-    let rate = case["sampleRate"].as_f64().unwrap() as f32;
-    let ctx = OfflineAudioContext::new(2, 128, rate);
-    let file = std::fs::File::open(clips_dir().join(case["file"].as_str().unwrap())).unwrap();
-    let decoded = ctx.decode_audio_data_sync(file).unwrap();
-    (
-        decoded.sample_rate(),
-        (0..decoded.number_of_channels())
-            .map(|c| decoded.get_channel_data(c).to_vec())
-            .collect(),
-    )
+    let bytes = std::fs::read(clips_dir().join(case["file"].as_str().unwrap())).unwrap();
+    let decoded = decode_audio_data(bytes, case["sampleRate"].as_f64().unwrap() as f32).unwrap();
+    (decoded.sample_rate, decoded.channels)
 }
 
 fn clips_dir() -> PathBuf {

@@ -2946,6 +2946,7 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "serde_json",
+ "symphonia 0.6.1",
  "web-audio-api",
 ]
 
