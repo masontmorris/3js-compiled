@@ -10,6 +10,9 @@ pub struct RenderReport<'a> {
     pub samples: &'a [f32],
     /// The number of channels in `samples`.
     pub channels: usize,
+    /// The context frame of the callback's first sample. While the context is suspended or starting, the
+    /// callback hands the device silence and the frame does not advance.
+    pub frame: u64,
     /// The time the callback took to render, in nanoseconds.
     pub render_ns: u64,
     /// The time the callback's frames last at the context's sample rate, in nanoseconds.

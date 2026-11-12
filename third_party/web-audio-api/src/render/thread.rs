@@ -422,6 +422,7 @@ impl RenderThread {
         let render_start = Instant::now();
         let frames = output_buffer.len() / self.number_of_channels;
         let observer = self.stats.observer();
+        let frame = self.frames_played.load(Ordering::Relaxed);
         self.quantum_ns.clear();
         self.timed = observer.is_some();
 
@@ -454,6 +455,7 @@ impl RenderThread {
             observer.0.rendered(&RenderReport {
                 samples: &self.observed,
                 channels: self.number_of_channels,
+                frame,
                 render_ns: render_duration_ns,
                 budget_ns: callback_budget_ns,
                 quantum_ns: &self.quantum_ns,

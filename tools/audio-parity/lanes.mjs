@@ -1,7 +1,9 @@
 // Collects the raw data for E7's live lanes in one GPU job: host runs with --audio-out into the Steam Streaming
 // Speakers virtual device, Edge runs muted, and a WASAPI loopback recording of the virtual device during the lifecycle
 // scenarios. analyze.mjs turns it into each lane's verdict and plot. Run it under the GPU lease after
-// `npm run build:audio`, `npm run build:scenes` and `npm run build:platform`.
+// `npm run build:audio`, `npm run build:scenes` and `npm run build:platform`, and after building the host and the
+// loopback tool in one cargo call, since cargo_fresh.py cleans the workspace's binaries before each build:
+// `cargo build --release -p threejsc-host -p threejsc-audio --features threejsc-audio/output --bins --examples`.
 //   node tools/audio-parity/lanes.mjs <out dir> [--base-host <exe>] [--only lane1,lane5,...]
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';

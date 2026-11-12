@@ -22,6 +22,9 @@ const MAX_QUANTA_PER_CALLBACK: usize = 64;
 struct Row {
     context: u32,
     callback: u64,
+    /// The context frame of the callback's first sample, and the WAV frame it lands on.
+    context_frame: u64,
+    wav_frame: u64,
     quantum: u32,
     quantum_ns: u64,
     callback_render_ns: u64,
@@ -70,7 +73,7 @@ impl Recorder {
         let mut csv = BufWriter::new(File::create(csv)?);
         writeln!(
             csv,
-            "context,callback,quantum,quantum_us,callback_render_us,callback_budget_us,gap_us,underrun"
+            "context,callback,context_frame,wav_frame,quantum,quantum_us,callback_render_us,callback_budget_us,gap_us,underrun"
         )?;
         let writer = {
             let shared = Arc::clone(&shared);
@@ -101,7 +104,7 @@ impl Recorder {
         Box::new(Observer {
             context: self.next_context,
             shared: Arc::clone(&self.shared),
-            samples: Mutex::new((samples_tx, rows_tx, 0, None)),
+            samples: Mutex::new((samples_tx, rows_tx, 0, 0, None)),
         })
     }
 
@@ -117,7 +120,8 @@ impl Recorder {
     }
 }
 
-type Rings = (Producer<f32>, Producer<Row>, u64, Option<Instant>);
+/// The rings, the callback count, the WAV frames written so far and the previous callback's time.
+type Rings = (Producer<f32>, Producer<Row>, u64, u64, Option<Instant>);
 
 struct Observer {
     context: u32,
@@ -131,7 +135,9 @@ impl RenderObserver for Observer {
         let Ok(mut rings) = self.samples.try_lock() else {
             return;
         };
-        let (samples, rows, callback, last) = &mut *rings;
+        let (samples, rows, callback, written, last) = &mut *rings;
+        let wav_frame = *written;
+        *written += (report.samples.len() / report.channels.max(1)) as u64;
         let now = Instant::now();
         let gap_ns = last.map_or(0, |t| now.duration_since(t).as_nanos() as u64);
         *last = Some(now);
@@ -156,6 +162,8 @@ impl RenderObserver for Observer {
             let row = Row {
                 context: self.context,
                 callback: *callback,
+                context_frame: report.frame,
+                wav_frame,
                 quantum: quantum as u32,
                 quantum_ns,
                 callback_render_ns: report.render_ns,
@@ -196,9 +204,11 @@ fn write_loop(
                 summary.quanta += 1;
                 writeln!(
                     csv,
-                    "{},{},{},{:.3},{:.3},{:.3},{:.3},{}",
+                    "{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{}",
                     row.context,
                     row.callback,
+                    row.context_frame,
+                    row.wav_frame,
                     row.quantum,
                     row.quantum_ns as f64 / 1e3,
                     row.callback_render_ns as f64 / 1e3,
