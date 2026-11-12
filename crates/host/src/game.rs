@@ -515,23 +515,30 @@ mod tests {
     fn heavy_frames_leave_loaders_their_share_of_each_frame() -> Result<()> {
         // Eight loops that yield through zero-delay timers and work 1 ms, while each frame
         // callback works 10 or 16 ms, so the render thread has caught up before each turn starts.
-        // Edge runs about 4 loader ticks a frame: 856 ticks in 214 frames with 10 ms of frame
-        // work, and 584 in 150 with 16 ms (C:\3jsc\swarm\e3-r17v\lane-v\kit\out\edge\game-slowload*).
-        for (scene, edge_frames, edge_ticks) in
-            [("slowload10", 214.0, 856.0), ("slowload16", 150.0, 584.0)]
-        {
+        // Edge runs a median of 4 loader ticks a frame, a mean of 3.8 to 4.0 and at most 8 or 9
+        // (C:\3jsc\swarm\e3-r18\kit\out\superseded\f5351f3\edge\p1 and p2, game-slowload*), where a turn
+        // that runs one timer once the frame is due gives 1. The checks count ticks in the frames
+        // the run got, since other work on the PC stalls frames and ticks alike: at least 3 ticks
+        // in the median frame, and a mean of no more than Edge's 8, so timers do not take the frames.
+        for scene in ["slowload10", "slowload16"] {
             let log = run_rendered(
                 &format!("timer-game-rendered-{scene}"),
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-game.js"),
                 Some(scene),
                 std::time::Duration::from_millis(6),
             )?;
-            let frames: f64 = result(&log, &format!("{scene} frames inside the window")).parse()?;
-            let ticks: f64 = result(&log, &format!("{scene} loader ticks")).parse()?;
-            assert!(frames >= 0.95 * edge_frames, "{scene}: {frames} frames");
+            let per_frame = result(&log, &format!("{scene} loader ticks per frame"));
+            let stat = |name: &str| -> Result<f64> {
+                let field = per_frame
+                    .split(' ')
+                    .find_map(|field| field.strip_prefix(&format!("{name}=")))
+                    .with_context(|| format!("no {name} in {per_frame}"))?;
+                Ok(field.parse()?)
+            };
+            let (median, mean) = (stat("p50")?, stat("mean")?);
             assert!(
-                ticks >= 0.8 * edge_ticks,
-                "{scene}: {ticks} loader ticks in {frames} frames"
+                (3.0..=8.0).contains(&median) && mean <= 8.0,
+                "{scene}: loader ticks per frame {per_frame}"
             );
         }
         Ok(())
