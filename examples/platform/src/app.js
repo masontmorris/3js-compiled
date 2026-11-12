@@ -2,8 +2,10 @@
 // sees as one `E` line, so a run in Edge and a run in the host compare line by line. The scene, from `?scene=` in
 // a browser or `--scene` in the host, picks how the texture loads and what else the page checks:
 // `texture` loads it with TextureLoader, `blob` with fetch, a blob URL and createImageBitmap, `storage` counts runs
-// in localStorage, and `missing` calls a DOM method the stand-in lacks on every frame.
+// in localStorage, `missing` calls a DOM method the stand-in lacks on every frame, and `gltf` also loads a glTF
+// file through GLTFLoader, which fetches it with an AbortSignal.
 import * as THREE from 'three/webgpu';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
 const native = typeof globalThis.submitGpuCommands === 'function';
@@ -93,6 +95,23 @@ texture.colorSpace = THREE.SRGBColorSpace;
 material.map = texture;
 material.needsUpdate = true;
 console.log(`E texture ${scene} ${texture.image.width}x${texture.image.height}`);
+
+if (scene === 'gltf') {
+  const gltf = await new GLTFLoader().loadAsync(new URL('../scenes/assets/tetrahedron.glb', location.href).href);
+  gltf.scene.scale.setScalar(180);
+  gltf.scene.rotation.set(0.6, 0.8, 0);
+  gltf.scene.position.z = -0.5;
+  world.add(gltf.scene, new THREE.AmbientLight(0xffffff, 1.5));
+  const light = new THREE.DirectionalLight(0xffffff, 2);
+  light.position.set(1, 2, 3);
+  world.add(light);
+  camera.near = -1000;
+  camera.far = 1000;
+  camera.updateProjectionMatrix();
+  let meshes = 0;
+  gltf.scene.traverse(object => { if (object.isMesh) meshes++; });
+  console.log(`E gltf meshes=${meshes}`);
+}
 
 if (scene === 'storage') {
   const runs = Number(localStorage.getItem('e5-runs') ?? 0) + 1;
