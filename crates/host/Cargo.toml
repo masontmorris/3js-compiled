@@ -9,6 +9,7 @@ name = "host"
 path = "src/main.rs"
 
 [dependencies]
+threejsc-gpu = { path = "../gpu" }
 anyhow = "1"
 deno_core = "0.413.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
