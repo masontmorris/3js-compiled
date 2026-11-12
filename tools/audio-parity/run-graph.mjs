@@ -5,7 +5,7 @@ export function signal(name, channel, i, sampleRate, state) {
   if (name === 'mix') {
     const t = i / sampleRate;
     const phase = channel * 0.7;
-    return 0.25 * (Math.sin(2 * Math.PI * 220 * t + phase) + Math.sin(2 * Math.PI * 1330 * t + phase) + Math.sin(2 * Math.PI * 4100 * t + phase));
+    return 0.15 * (Math.sin(2 * Math.PI * 220 * t + phase) + Math.sin(2 * Math.PI * 1330 * t + phase) + Math.sin(2 * Math.PI * 4100 * t + phase));
   }
   if (name === 'noise') {
     state.x ^= state.x << 13;
