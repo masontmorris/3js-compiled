@@ -691,8 +691,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     // clamp offset to buffer boundaries
                     self.offset = self.offset.max(0.).min(buffer_duration);
 
-                    if is_looping && computed_playback_rate >= 0. && self.offset > actual_loop_end {
-                        self.offset = actual_loop_end;
+                    // Chromium moves a playhead at or past the loop end to the loop start
+                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
+                    {
+                        self.offset = actual_loop_start;
                     }
 
                     if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start
@@ -1913,6 +1915,31 @@ mod tests {
 
             assert_float_eq!(channel[..], expected[..], abs_all <= error);
         });
+    }
+
+    #[test]
+    fn test_loop_offset_past_loop_end_starts_at_loop_start() {
+        let sample_rate = 48_000.;
+        let length = 64;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let ramp: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let mut buffer = context.create_buffer(1, ramp.len(), sample_rate);
+        buffer.copy_to_channel(&ramp, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.set_loop_start(10. / sample_rate as f64);
+        src.set_loop_end(30. / sample_rate as f64);
+        src.start_at_with_offset(0., 50. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let expected: Vec<f32> = (0..length).map(|i| (10 + i % 20) as f32).collect();
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-4);
     }
 
     #[test]
