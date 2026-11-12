@@ -59,7 +59,6 @@ pub struct Summary {
     pub quanta: u64,
     pub underruns: u64,
     pub dropped: u64,
-    pub skipped_contexts: Vec<u32>,
 }
 
 impl Recorder {
@@ -177,11 +176,24 @@ impl RenderObserver for Observer {
     }
 }
 
+/// A gap this long between callbacks is a paused stream, from suspend() or a device change, not a late callback.
+const PAUSE_NS: u64 = 100_000_000;
+
 // A callback underruns when it took longer than the audio it rendered lasts, or when it started more than twice its
 // own length after the previous one, so the device ran dry between them.
 fn underrun(row: &Row) -> bool {
     row.callback_render_ns > row.callback_budget_ns
-        || (row.gap_ns > 0 && row.gap_ns > 2 * row.callback_budget_ns.max(1))
+        || (row.gap_ns > 2 * row.callback_budget_ns.max(1) && row.gap_ns < PAUSE_NS)
+}
+
+// Each context is its own device stream, so each gets its own file: `out.wav` for the first, `out-2.wav` for the
+// second, and so on.
+fn context_path(base: &Path, context: u32) -> PathBuf {
+    if context == 1 {
+        return base.to_path_buf();
+    }
+    let stem = base.file_stem().unwrap_or_default().to_string_lossy();
+    base.with_file_name(format!("{stem}-{context}.wav"))
 }
 
 fn write_loop(
@@ -190,8 +202,7 @@ fn write_loop(
     mut csv: BufWriter<File>,
 ) -> std::io::Result<Summary> {
     let mut summary = Summary::default();
-    let mut wav: Option<(hound::WavWriter<BufWriter<File>>, usize)> = None;
-    let mut wav_path = wav_path;
+    let mut wavs: Vec<(u32, hound::WavWriter<BufWriter<File>>)> = Vec::new();
     loop {
         let stopping = shared.stop.load(Ordering::Acquire);
         let mut streams = shared.streams.lock().unwrap();
@@ -224,33 +235,28 @@ fn write_loop(
             let Ok(chunk) = stream.samples.read_chunk(available) else {
                 continue;
             };
-            if wav.is_none()
-                && let Some(path) = wav_path.take()
-            {
-                let spec = hound::WavSpec {
-                    channels: stream.channels as u16,
-                    sample_rate: stream.sample_rate as u32,
-                    bits_per_sample: 32,
-                    sample_format: hound::SampleFormat::Float,
-                };
-                wav = Some((
-                    hound::WavWriter::create(path, spec).map_err(std::io::Error::other)?,
-                    stream.channels,
-                ));
-            }
-            match &mut wav {
-                Some((writer, channels)) if *channels == stream.channels => {
-                    let (first, second) = chunk.as_slices();
-                    for &sample in first.iter().chain(second) {
-                        writer.write_sample(sample).map_err(std::io::Error::other)?;
-                    }
-                    summary.frames += (available / stream.channels.max(1)) as u64;
+            if let Some(base) = &wav_path {
+                if !wavs.iter().any(|(context, _)| *context == stream.context) {
+                    let spec = hound::WavSpec {
+                        channels: stream.channels as u16,
+                        sample_rate: stream.sample_rate as u32,
+                        bits_per_sample: 32,
+                        sample_format: hound::SampleFormat::Float,
+                    };
+                    let writer = hound::WavWriter::create(context_path(base, stream.context), spec)
+                        .map_err(std::io::Error::other)?;
+                    wavs.push((stream.context, writer));
                 }
-                Some(_) if !summary.skipped_contexts.contains(&stream.context) => {
-                    summary.skipped_contexts.push(stream.context)
+                let (_, writer) = wavs
+                    .iter_mut()
+                    .find(|(context, _)| *context == stream.context)
+                    .unwrap();
+                let (first, second) = chunk.as_slices();
+                for &sample in first.iter().chain(second) {
+                    writer.write_sample(sample).map_err(std::io::Error::other)?;
                 }
-                _ => {}
             }
+            summary.frames += (available / stream.channels.max(1)) as u64;
             chunk.commit_all();
         }
         drop(streams);
@@ -260,7 +266,7 @@ fn write_loop(
         std::thread::sleep(Duration::from_millis(10));
     }
     csv.flush()?;
-    if let Some((writer, _)) = wav {
+    for (_, writer) in wavs {
         writer.finalize().map_err(std::io::Error::other)?;
     }
     summary.dropped = shared.dropped.load(Ordering::Relaxed);

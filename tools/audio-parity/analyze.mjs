@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
-import { align, plot } from './compare.mjs';
+import { plot } from './compare.mjs';
 import { readWav } from './wav.mjs';
 
 const [dir, edgeDir] = process.argv.slice(2);
@@ -20,12 +20,22 @@ function csv(path) {
   return rows.map(row => Object.fromEntries(row.split(',').map((v, i) => [keys[i], Number(v)])));
 }
 
-// The WAV frame where context frame `frame` landed, from audio.csv's callback rows.
-function wavFrame(rows, frame) {
-  const starts = rows.filter(r => r.quantum === 0);
-  let best = null;
-  for (const row of starts) if (row.context_frame <= frame && (!best || row.context_frame >= best.context_frame)) best = row;
-  return best ? best.wav_frame + (frame - best.context_frame) : null;
+// The WAV frame where context frame `frame` of `context` landed. A callback's row gives the context's frame count when
+// it began, and its first samples can come from a quantum the callback before rendered, so the first sample's frame is
+// 0 to 127 frames earlier. Over the running callbacks near `frame`, context frame minus WAV frame is one constant, and
+// each callback bounds it to a 128-frame range; their intersection pins it.
+function wavFrame(rows, frame, context = rows[0]?.context) {
+  const starts = rows.filter(r => r.quantum === 0 && r.context === context);
+  const running = starts.filter((r, i) => i + 1 < starts.length && starts[i + 1].context_frame > r.context_frame);
+  const near = running.filter(r => Math.abs(r.context_frame - frame) < 48000);
+  let lo = -Infinity;
+  let hi = Infinity;
+  for (const r of near) {
+    lo = Math.max(lo, r.context_frame - r.wav_frame - 127);
+    hi = Math.min(hi, r.context_frame - r.wav_frame);
+  }
+  if (!(lo <= hi)) return null;
+  return frame - hi;
 }
 
 function underruns(rows) { return rows.filter(r => r.quantum === 0 && r.underrun === 1).length; }
@@ -93,14 +103,14 @@ function lane5() {
   const capture = readWav(at('lane5', 'out.wav'));
   const results = records.filter(r => r.name).map(r => {
     const start = wavFrame(rows, r.startFrame);
-    const offline = readWav(at('graphs', `${r.name}.wav`));
-    const segment = { sampleRate: capture.sampleRate, channels: [capture.channels[0].subarray(start, start + r.length)] };
-    const reference = { sampleRate: offline.sampleRate, channels: [offline.channels[0]] };
-    const lag = align(Float64Array.from(reference.channels[0]), Float64Array.from(capture.channels[0].subarray(start - 256, start + r.length + 256)), 512) - 256;
+    const offline = readWav(at('graphs', `${r.name}.wav`)).channels[0];
     let sum = 0;
-    for (let i = 0; i < r.length; i++) sum += (segment.channels[0][i] - reference.channels[0][i]) ** 2;
-    return { name: r.name, wavStart: start, alignLagFrames: lag, diffDb: db(Math.sqrt(sum / r.length)) };
+    for (let i = 0; i < r.length; i++) sum += (capture.channels[0][start + i] - offline[i]) ** 2;
+    return { name: r.name, wavStart: start, diffDb: db(Math.sqrt(sum / r.length)) };
   });
+  // The capture has no gap when every running callback continues the WAV where the one before left it.
+  const ctx = rows.filter(r => r.quantum === 0);
+  const breaks = ctx.slice(1).filter((r, i) => r.context_frame > ctx[i].context_frame && r.wav_frame - ctx[i].wav_frame !== ctx[1].wav_frame - ctx[0].wav_frame && r.gap_us > 2 * r.callback_budget_us);
   const first = records[0];
   const last = records.at(-1);
   const latency = first.baseLatency + last.outputLatency;
@@ -108,9 +118,9 @@ function lane5() {
   const blocked = records.find(r => r.name === worst.name);
   plot(at('e7-realtime.png'), readWav(at('graphs', `${worst.name}.wav`)), { sampleRate: capture.sampleRate, channels: [capture.channels[0].subarray(worst.wavStart, worst.wavStart + blocked.length)] }, 0);
   verdicts.lane5 = {
-    pass: results.every(r => r.diffDb <= -60 && r.alignLagFrames === 0) && underruns(rows) === 0 && latency <= 0.05,
-    underruns: underruns(rows), baseLatency: first.baseLatency, outputLatency: last.outputLatency, latency,
-    worst, gaps: results.filter(r => r.alignLagFrames !== 0), failing: results.filter(r => r.diffDb > -60),
+    pass: results.every(r => r.diffDb <= -60) && underruns(rows) === 0 && breaks.length === 0 && latency <= 0.05,
+    underruns: underruns(rows), lateCallbacks: breaks.length, baseLatency: first.baseLatency, outputLatency: last.outputLatency, latency,
+    worst, failing: results.filter(r => r.diffDb > -60),
     quantumRenderUs: percentile(rows.map(r => r.quantum_us), [0.5, 0.99, 1]),
   };
 }
@@ -125,12 +135,14 @@ function lane6() {
   const edge = lines(read(at('lane6', 'edge.log')), 'H ');
   const order = list => list.map(l => l.replace(/^(play-call #\d+) [\d.]+$/, '$1'));
   const rows = csv(at('lane6', 'audio.csv'));
-  const capture = readWav(at('lane6', 'out.wav'));
+  // Howler closes its first context on unlock and plays every sound on the next one, which has its own capture file.
+  const context = Math.max(...rows.map(r => r.context));
+  const capture = readWav(at('lane6', context === 1 ? 'out.wav' : `out-${context}.wav`));
   const rate = capture.sampleRate;
   const loud = i => capture.channels.some(c => Math.abs(c[i]) > 0.01);
   const onsets = host.filter(l => l.startsWith('play-call')).map(l => {
     const [, id, time] = l.split(' ');
-    const expected = wavFrame(rows, Math.round(Number(time) * rate));
+    const expected = wavFrame(rows, Math.round(Number(time) * rate), context);
     let i = Math.max(0, expected - Math.round(0.05 * rate));
     while (i < capture.channels[0].length && !loud(i)) i++;
     return { id, time: Number(time), expectedWav: expected, onsetWav: i, deltaMs: ((i - expected) / rate) * 1000 };

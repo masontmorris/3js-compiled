@@ -7,7 +7,9 @@ import { build, shiftOps } from '../../tools/audio-parity/run-graph.mjs';
 
 const ctx = new AudioContext();
 console.log(`REALTIME ${JSON.stringify({ sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency, outputLatency: ctx.outputLatency })}`);
-const graphs = referenceGraphs().filter(g => g.lane === 'graph' && g.sampleRate === ctx.sampleRate);
+// A ramp with no event before it starts from the moment it is called, which a real-time run makes about 0.7 s before
+// the graph's second, so it cannot match its offline render and is left out.
+const graphs = referenceGraphs().filter(g => g.lane === 'graph' && g.sampleRate === ctx.sampleRate && !g.name.includes('no-anchor'));
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let second = Math.ceil(ctx.currentTime) + 1;
 for (const spec of graphs) {

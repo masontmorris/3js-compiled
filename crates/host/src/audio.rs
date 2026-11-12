@@ -165,7 +165,6 @@ struct ContextSpec {
 struct ContextInfo {
     id: Id,
     sample_rate: f32,
-    base_latency: f64,
 }
 
 #[op2]
@@ -183,7 +182,6 @@ fn op_audio_context(
         return Ok(ContextInfo {
             id,
             sample_rate: rate,
-            base_latency: 0.,
         });
     }
     let hint = match spec.latency_hint {
@@ -191,21 +189,18 @@ fn op_audio_context(
         Some(Value::String(s)) => s,
         _ => "interactive".into(),
     };
-    let OnlineInfo {
-        id,
-        sample_rate,
-        base_latency,
-    } = audio(state).online(spec.sample_rate, &hint)?;
-    Ok(ContextInfo {
-        id,
-        sample_rate,
-        base_latency,
-    })
+    let OnlineInfo { id, sample_rate } = audio(state).online(spec.sample_rate, &hint)?;
+    Ok(ContextInfo { id, sample_rate })
 }
 
 #[op2(fast)]
 fn op_audio_current_time(state: &mut OpState, id: u32) -> f64 {
     audio(state).graph.current_time(id)
+}
+
+#[op2(fast)]
+fn op_audio_base_latency(state: &mut OpState, id: u32) -> f64 {
+    audio(state).graph.base_latency(id)
 }
 
 #[op2(fast)]
@@ -531,6 +526,7 @@ deno_core::extension!(
     ops = [
         op_audio_context,
         op_audio_current_time,
+        op_audio_base_latency,
         op_audio_output_latency,
         op_audio_destination,
         op_audio_listener,

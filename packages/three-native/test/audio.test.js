@@ -45,9 +45,10 @@ function fakeHost() {
     context: spec => {
       const id = next++;
       if (spec.kind === 'online') clocks.set(id, { held: 0, since: performance.now(), running: true });
-      return { id, sampleRate: spec.sampleRate ?? 48000, baseLatency: 0.01 };
+      return { id, sampleRate: spec.sampleRate ?? 48000 };
     },
     currentTime: time,
+    baseLatency: () => 0.01,
     outputLatency: () => 0.02,
     destination: () => next++,
     listener: () => { const id = next++; kinds.set(id, 'Listener'); return id; },
@@ -101,7 +102,7 @@ async function run(name) {
   return JSON.parse(JSON.stringify(log));
 }
 
-for (const name of ['param-errors', 'node-errors', 'statechange-timing', 'statechange-races', 'suspend-resume-close', 'offline-render', 'audio-element', 'xhr']) {
+for (const name of ['context-start', 'param-errors', 'node-errors', 'statechange-timing', 'statechange-races', 'suspend-resume-close', 'offline-render', 'audio-element', 'xhr']) {
   test(`${name} logs what Edge logs`, async () => {
     install();
     assert.deepEqual(await run(name), edge[name]);

@@ -64,6 +64,7 @@ audio.setAudioHost({
     return ops.op_audio_context(spec);
   },
   currentTime: id => ops.op_audio_current_time(id),
+  baseLatency: id => ops.op_audio_base_latency(id),
   outputLatency: id => ops.op_audio_output_latency(id),
   destination: id => ops.op_audio_destination(id),
   listener: id => ops.op_audio_listener(id),

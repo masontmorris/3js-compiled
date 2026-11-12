@@ -56,6 +56,10 @@ if (!main) {
     writeWav(join(out, `${name}.wav`), channels, Number(rate), { float: true });
   }
   console.log(`${rows.length} renders in ${join(out, 'report.json')}`);
+} else if (mode === 'page') {
+  const [entry, out] = rest;
+  await runHost(entry, '', resolve(out));
+  console.log(`host.log in ${resolve(out)}`);
 } else if (mode === 'scenarios') {
   const [out] = rest;
   const log = await runHost('examples/audio/scenarios.js', new URLSearchParams({ filter }).toString(), resolve(out));

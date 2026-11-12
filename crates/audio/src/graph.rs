@@ -160,7 +160,6 @@ pub struct Output {
 pub struct OnlineInfo {
     pub id: Id,
     pub sample_rate: f32,
-    pub base_latency: f64,
 }
 
 pub struct Graph {
@@ -226,7 +225,6 @@ impl Graph {
         let info = OnlineInfo {
             id,
             sample_rate: context.sample_rate(),
-            base_latency: context.base_latency(),
         };
         let context = Arc::new(context);
         if let Some(on_online) = &mut output.on_online {
@@ -263,6 +261,13 @@ impl Graph {
             Some(Context::Offline(c)) => c.current_time(),
             Some(Context::Rendered(rate, length)) => *length as f64 / f64::from(*rate),
             Some(Context::Rendering) | None => 0.,
+        }
+    }
+
+    pub fn base_latency(&self, id: Id) -> f64 {
+        match self.contexts.get(&id) {
+            Some(Context::Online(c)) => c.base_latency(),
+            _ => 0.,
         }
     }
 

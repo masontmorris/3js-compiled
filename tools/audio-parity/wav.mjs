@@ -41,7 +41,9 @@ export function decodeWav(bytes) {
     const size = bytes.readUInt32LE(offset + 4);
     const body = offset + 8;
     if (id === 'fmt ') {
-      format = { tag: bytes.readUInt16LE(body), channels: bytes.readUInt16LE(body + 2), sampleRate: bytes.readUInt32LE(body + 4), bits: bytes.readUInt16LE(body + 14) };
+      // WAVE_FORMAT_EXTENSIBLE, which hound writes for more than two channels, keeps the real tag in its subformat.
+      const tag = bytes.readUInt16LE(body);
+      format = { tag: tag === 0xfffe ? bytes.readUInt16LE(body + 24) : tag, channels: bytes.readUInt16LE(body + 2), sampleRate: bytes.readUInt32LE(body + 4), bits: bytes.readUInt16LE(body + 14) };
     } else if (id === 'data') {
       const width = format.bits / 8;
       const frames = Math.floor(size / (width * format.channels));

@@ -738,10 +738,10 @@ export class AudioContext extends BaseAudioContext {
     if (options.sinkId !== undefined && options.sinkId !== '') throw unsupported('AudioContext', 'sinkId');
     const info = host.context({ kind: 'online', sampleRate: options.sampleRate ?? null, latencyHint: typeof options.latencyHint === 'number' ? options.latencyHint : String(options.latencyHint ?? 'interactive') });
     super(info, 'running');
-    this.baseLatency = info.baseLatency;
     // Edge fires the first statechange once the audio thread runs, after any lifecycle call made in the same turn.
     setTimeout(() => this.settled().then(() => this.notifyStatechange()), 0);
   }
+  get baseLatency() { return host.baseLatency(this.id); }
   get outputLatency() { return host.outputLatency(this.id); }
   getOutputTimestamp() { return { contextTime: this.currentTime, performanceTime: performance.now() }; }
   suspend() {

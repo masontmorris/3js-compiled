@@ -33,7 +33,7 @@ Nothing opens an audio device until a page creates an `AudioContext`. Each conte
 
 - With no `--audio-device`, the host plays to the default output and follows it: a thread checks the default device every 200 ms and moves each context to a new default.
 - `--audio-device <name>` plays to the output with that name, as Windows lists it, such as `Speakers (Steam Streaming Speakers)`. A name that matches no output fails the `AudioContext` constructor and logs the outputs. The host never falls back to another device. `none` renders with no device at all, which the host's tests use.
-- `--audio-out <file.wav>` writes what each context hands the device, as 32-bit float, in the order the contexts ran.
+- `--audio-out <file.wav>` writes what each context hands the device, as 32-bit float, one file per context: `file.wav` for the first, `file-2.wav` for the second, and so on, since each context is its own device stream.
 - `audio.csv` in the working directory has one row per 128-frame render quantum: the context, the device callback, its first context frame and the WAV frame it lands on, the quantum's render time, the callback's render time and its budget, the time since the previous callback, and `underrun`. A callback underruns when it took longer than the audio it rendered lasts, or when it started more than twice its own length after the previous one.
 
 ## HRTF

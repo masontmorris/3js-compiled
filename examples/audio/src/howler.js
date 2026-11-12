@@ -40,10 +40,7 @@ await new Promise(resolve => (sound.state() === 'loaded' ? resolve() : sound.onc
 log(`unlocked before key ${Howler._audioUnlocked}`);
 // The driver presses a key once the page logs this line.
 log('press a key');
-await new Promise(resolve => {
-  const check = () => (Howler._audioUnlocked ? resolve() : setTimeout(check, 10));
-  check();
-});
+await new Promise(resolve => sound.once('unlock', resolve));
 watchContext();
 log(`codecs mp3 ${Howler.codecs('mp3')} ogg ${Howler.codecs('ogg')} opus ${Howler.codecs('opus')}`);
 

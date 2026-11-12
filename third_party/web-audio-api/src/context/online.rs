@@ -307,12 +307,16 @@ impl AudioContext {
     /// This represents the number of seconds of processing latency incurred by
     /// the `AudioContext` passing the audio from the `AudioDestinationNode`
     /// to the audio subsystem.
-    // We don't do any buffering between rendering the audio and sending
-    // it to the audio subsystem, so this value is zero. (see Gecko)
-    #[allow(clippy::unused_self)]
+    // Chromium reports the length of the system-level callback the context renders
+    // into, so this is the average callback length so far, or zero before the
+    // first callback.
     #[must_use]
     pub fn base_latency(&self) -> f64 {
-        0.
+        let stats = self.stats.snapshot();
+        if stats.callback_count == 0 {
+            return 0.;
+        }
+        stats.callback_budget_ns_total as f64 / stats.callback_count as f64 / 1e9
     }
 
     /// The estimation in seconds of audio output latency, i.e., the interval
