@@ -11,8 +11,9 @@ let scene = 'basic-cube';
 let output = 'target/parity';
 let host = process.env.THREEJSC_HOST ?? 'C:/3jsc/target/debug/host.exe';
 let browserOnly = false;
-// The host frames to draw before its capture, past the frame where the scene is ready, as in Edge.
-let wait = 5;
+// The host frames to draw before its capture. By default the host waits 3 frames past the frame where the scene says
+// it is ready, which Edge waits for too, so a scene that settles late, such as compute at frame 62, is still in both.
+let wait = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--scene') scene = args[++i];
   else if (args[i] === '--out') output = args[++i];
@@ -50,11 +51,12 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   page.on('console', message => {
-    if (/^(before )?frame d/.test(message.text())) console.log(`Edge console: ${message.text()}`);
+    if (/^(before )?frame \d/.test(message.text())) console.log(`Edge console: ${message.text()}`);
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/examples/scenes/index.html?scene=${scene}`);
   await page.waitForFunction(() => globalThis.__sceneReady || globalThis.__sceneError, null, { timeout: 60000 });
   const error = await page.evaluate(() => globalThis.__sceneError ?? null);
+  wait ??= await page.evaluate(() => globalThis.__scene.context.readyFrame) + 3;
   if (error || errors.length) throw new Error(`Browser scene failed: ${error ?? errors.join('; ')}`);
   await page.screenshot({ path: webPath });
   console.log(`Web capture: ${webPath}`);
