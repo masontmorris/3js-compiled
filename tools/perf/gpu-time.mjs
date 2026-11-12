@@ -1,17 +1,23 @@
-// Compares the GPU time of a scene's frames in Edge and in the native host, from three's timestamp queries. Runs
-// alternate Edge and native. Each run draws --warmup frames and then --frames measured frames at --width x --height,
-// with Edge in a window. --vsync on (the default) paces both sides to the display. --vsync off runs both uncapped, Edge
-// with vsync and its frame rate limit off and the host with --vsync off, which keeps the GPU's clocks up. A frame's
-// GPU time is the sum of its render passes' timestamp spans, which
-// renderer.resolveTimestampsAsync() reports for the last frame each resolution covers, so each side samples the
-// measured frames its resolutions reach. Edge runs with --enable-webgpu-developer-features, which turns off its
-// 100-microsecond timestamp quantization. nvidia-smi records the graphics and memory clocks every 500 ms, and the runs
-// count only when both sides' median graphics clocks are within 5 percent. The rule then fails when the native median
-// exceeds Edge's by more than --margin (default 0.1). CPU load does not drive a GPU duration, so the tool records each
-// run's background load, the machine's total less the run's own processes, only for the record.
-// Usage, from the repository root, under the GPU lease:
+// Compares the GPU time of a scene's post-processing chain in Edge and in the native host, from three's timestamp
+// queries. Runs alternate Edge and native and pair up in that order. Each run draws --warmup frames and then --frames
+// measured frames at --width x --height, with Edge in a window. --vsync off runs both uncapped, Edge with vsync and its
+// frame rate limit off and the host with --vsync off, which keeps the GPU's clocks up; --vsync on (the default) paces
+// both to the display, where the driver lowers the lighter side's clocks.
+// renderer.resolveTimestampsAsync() reports the passes of the last frame each resolution covers. A frame's chain time
+// sums its render passes from render call --chain-from (2) on, which leaves out the scene pass that RenderPipeline's
+// pass() draws first, and its whole time sums every render pass; the rule uses the chain. three resolves again only
+// once its last map of the result buffer resolves. Uncapped, Edge's map took about 350 ms (lane P: 5 resolutions 111
+// frames apart over 1.4 s), while the host answers a map two frames after it, so a 600-frame run has about 5 Edge
+// samples and 300 native ones. Edge runs with
+// --enable-webgpu-developer-features, which turns off its 100-microsecond timestamp quantization.
+// nvidia-smi records the graphics and memory clocks every 50 ms. tools/perf/gpu-time-rule.mjs judges each pair: it
+// counts unless native's median graphics clock is more than 5 percent above Edge's or a side has under 10 clock
+// samples, and the rule fails when the native chain median of the counted runs exceeds Edge's by more than --margin
+// (0.1). CPU load does not drive a GPU duration, so each run's background load, the machine's total less the run's own
+// processes, is only recorded.
+// Usage, from the repository root, under the GPU lease and C:\3jsc\tools\quiet_run.py:
 //   node tools/perf/gpu-time.mjs [--scene post] [--runs 3] [--warmup 120] [--frames 600] [--width 1920] [--height 1080]
-//     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1] [--vsync on]
+//     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1] [--vsync on] [--chain-from 2]
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -20,11 +26,12 @@ import { extname, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
+import { frameTimes, judge } from './gpu-time-rule.mjs';
 
-const options = { scene: 'post', runs: 3, warmup: 120, frames: 600, width: 1920, height: 1080, host: 'C:/3jsc/target/release/host.exe', out: 'target/gpu-time', margin: 0.1, vsync: 'on' };
+const options = { scene: 'post', runs: 3, warmup: 120, frames: 600, width: 1920, height: 1080, host: 'C:/3jsc/target/release/host.exe', out: 'target/gpu-time', margin: 0.1, vsync: 'on', chainFrom: 2 };
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i += 2) {
-  const key = args[i].replace(/^--/, '');
+  const key = args[i].replace(/^--/, '').replace(/-(\w)/g, (_, letter) => letter.toUpperCase());
   if (!(key in options) || args[i + 1] === undefined) throw new Error(`Unknown or incomplete argument: ${args[i]}`);
   options[key] = typeof options[key] === 'number' ? Number(args[i + 1]) : args[i + 1];
 }
@@ -38,9 +45,9 @@ const callTimeout = 60000;
 // Rejects when `promise` takes longer than a DevTools call may, naming the step.
 const call = (step, promise) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${step} passed 60 s`)), callTimeout).unref())]);
 
-// The page script: it keeps the GPU time of each measured frame, numbered as three numbers frames, and the wall-clock
-// window from the first measured sample to the end, and prints them once a resolution reaches past the measured frames.
-// The CPU load and the GPU's states count over that window, which leaves out the page's load and warm-up.
+// The page script: it keeps the timestamp entries of each measured frame, numbered as three numbers frames, and the
+// wall-clock window from the first measured sample to the end, and prints them once a resolution reaches past the
+// measured frames. The CPU load and the GPU's clocks count over that window, which leaves out the page's load and warm-up.
 const script = native => `globalThis.__gpuTime = {
   first: ${options.warmup}, last: ${options.warmup + options.frames}, samples: new Map(), done: false,
   record(ms, frame) {
@@ -53,13 +60,15 @@ const script = native => `globalThis.__gpuTime = {
       return;
     }
     this.from ??= Date.now();
-    this.samples.set(frame, ms);
+    const pool = globalThis.__scene?.renderer.backend.timestampQueryPool?.render;
+    const suffix = ':f' + frame;
+    this.samples.set(frame, [...(pool?.timestamps ?? [])].filter(([uid]) => uid.endsWith(suffix)));
   },
 };`;
 
-// GPU graphics and memory clocks every 500 ms, stamped on arrival.
+// GPU graphics and memory clocks every 50 ms, stamped on arrival.
 const gpuSamples = [];
-const smi = spawn('nvidia-smi', ['--query-gpu=clocks.gr,clocks.mem', '--format=csv', '-lms', '500'], { stdio: ['ignore', 'pipe', 'ignore'] });
+const smi = spawn('nvidia-smi', ['--query-gpu=clocks.gr,clocks.mem', '--format=csv', '-lms', '50'], { stdio: ['ignore', 'pipe', 'ignore'] });
 smi.on('error', () => {});
 createInterface({ input: smi.stdout }).on('line', line => {
   const [graphics, memory] = [...line.matchAll(/(\d+) MHz/g)].map(match => Number(match[1]));
@@ -127,8 +136,14 @@ const server = createServer(async (request, response) => {
 await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
 
 const summary = (side, run, samples, from, to, pids, extra = {}) => {
-  const times = samples.map(([, ms]) => ms);
-  return { side, run, samples: times.length, p50: quantile(times, 0.5), p95: quantile(times, 0.95), min: Math.min(...times), max: Math.max(...times), gpu: gpuDuring(from, to), cpu: cpuDuring(from, to, pids), ...extra };
+  const frames = samples.map(([, entries]) => frameTimes(entries, options.chainFrom));
+  const chain = frames.map(frame => frame.chain);
+  const whole = frames.map(frame => frame.whole);
+  return {
+    side, run, samples: frames.length, passesPerFrame: [...new Set(frames.map(frame => frame.passes))],
+    chainP50: quantile(chain, 0.5), chainP95: quantile(chain, 0.95), wholeP50: quantile(whole, 0.5), wholeP95: quantile(whole, 0.95),
+    gpu: gpuDuring(from, to), cpu: cpuDuring(from, to, pids), ...extra,
+  };
 };
 // The PIDs of the Edge that uses `profile`.
 const edgePids = profile => {
@@ -227,14 +242,8 @@ try {
   processes.kill();
   server.close();
 }
-const ofSide = side => results.filter(result => result.side === side);
-const medianOf = (side, value) => quantile(ofSide(side).map(value), 0.5);
-const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, vsync: options.vsync, edgeP50: medianOf('edge', result => result.p50), nativeP50: medianOf('native', result => result.p50) };
-verdict.limit = verdict.edgeP50 * (1 + options.margin);
-// The runs count only when the GPU ran at about the same graphics clock for both sides.
-verdict.graphicsClock = { edge: medianOf('edge', result => result.gpu.graphicsMedian), native: medianOf('native', result => result.gpu.graphicsMedian) };
-verdict.clocksMatch = Math.abs(verdict.graphicsClock.edge - verdict.graphicsClock.native) <= 0.05 * Math.max(verdict.graphicsClock.edge, verdict.graphicsClock.native);
-verdict.pass = verdict.clocksMatch && verdict.nativeP50 <= verdict.limit;
-const outcome = !verdict.clocksMatch ? 'INCONCLUSIVE, the graphics clocks differ by more than 5%' : verdict.pass ? 'PASS' : 'FAIL';
-console.log(`GPU time p50 over ${options.runs} runs each: Edge ${verdict.edgeP50.toFixed(3)} ms, native ${verdict.nativeP50.toFixed(3)} ms, limit ${verdict.limit.toFixed(3)} ms; median graphics clock Edge ${verdict.graphicsClock.edge} MHz, native ${verdict.graphicsClock.native} MHz: ${outcome}`);
+const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, vsync: options.vsync, ...judge(results, options.margin) };
+for (const pair of verdict.pairs) console.log(`pair ${pair.run}: ${pair.counted ? 'counted' : `not counted, ${pair.reason}`}`);
+const ms = value => value === null ? 'none' : `${value.toFixed(4)} ms`;
+console.log(`Chain GPU time p50 over ${verdict.counted} counted pairs: Edge ${ms(verdict.edge.chainP50)}, native ${ms(verdict.native.chainP50)}, limit ${ms(verdict.limit)}: ${verdict.outcome}; whole frame Edge ${ms(verdict.edge.wholeP50)}, native ${ms(verdict.native.wholeP50)}`);
 await writeFile(resolve(out, 'gpu-time.json'), JSON.stringify({ options, results, verdict }, null, 2));
