@@ -56,8 +56,14 @@ function show(source, x, y) {
   return { texture, place };
 }
 
-if (!SCENES[scene]) throw new Error(`no scene ${scene}`);
-const update = (await SCENES[scene]({ show, log })) ?? (() => {});
+let update = () => {};
+try {
+  if (!SCENES[scene]) throw new Error(`no scene ${scene}`);
+  update = (await SCENES[scene]({ show, log, assets: new URL('../platform/assets/', location.href) })) ?? update;
+} catch (error) {
+  globalThis.__sceneError = String(error?.stack ?? error);
+  console.error(globalThis.__sceneError);
+}
 log(`scene ${scene} ready`);
 
 let frame = 0;

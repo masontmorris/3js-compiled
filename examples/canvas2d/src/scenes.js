@@ -1,5 +1,6 @@
 // The canvas 2D example's scenes. Each draws its 2D canvases, shows them with `show(canvas, x, y)` and logs `R`
-// lines with `log`, and may return a function to run every frame.
+// lines with `log`, and may return a function to run every frame. `assets` is the URL of the platform example's
+// assets folder.
 import { FOLIO_CANVASES } from './folio-canvases.js';
 
 const round = value => Math.round(value * 1000) / 1000;
@@ -106,9 +107,9 @@ export const SCENES = {
     });
     show(element, 20, 20);
   },
-  async image({ show, log }) {
+  async image({ show, log, assets }) {
     const image = new Image();
-    image.src = new URL('../../platform/assets/alpha.png', import.meta.url).href;
+    image.src = new URL('alpha.png', assets).href;
     await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
     const element = textCanvas(600, 300, context => {
       context.drawImage(image, 20, 20, 256, 256);
