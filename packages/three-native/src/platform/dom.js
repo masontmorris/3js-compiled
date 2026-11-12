@@ -3,6 +3,8 @@
 import { EventTarget, Event, FocusEvent, MouseEvent, trusted, defineHandlers, INPUT } from './events.js';
 import { DOM_METHODS, EVENT_HANDLERS, CSS_PROPERTIES } from './dom-methods.js';
 import { DOMRect } from './geometry.js';
+import { platformError } from './errors.js';
+import { queueAttribute, queueCharacterData, queueChildList } from './observers.js';
 
 const ATTRIBUTES = Symbol('attributes');
 const CHILDREN = Symbol('children');
@@ -10,6 +12,15 @@ const STYLE = Symbol('style');
 const CLASSES = Symbol('classes');
 const DATASET = Symbol('dataset');
 const MARKUP = Symbol('markup');
+const NAMESPACE = Symbol('namespace');
+const PREFIX = Symbol('prefix');
+const QUALIFIED = Symbol('qualifiedName');
+const WRITE_STYLE = Symbol('writeStyle');
+const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink';
+const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
+const XMLNS_NAMESPACE = 'http://www.w3.org/2000/xmlns/';
 
 // The host's log, set by the platform, for methods and features the stand-in lacks.
 let log = message => globalThis.console?.warn(message);
@@ -32,8 +43,8 @@ export class DOMTokenList {
   #write(tokens) { this.#element.setAttribute(this.#attribute, tokens.join(' ')); }
   #check(token) {
     token = String(token);
-    if (!token) throw new DOMException("Failed to execute on 'DOMTokenList': The token provided must not be empty.", 'SyntaxError');
-    if (/[ \t\n\f\r]/.test(token)) throw new DOMException(`Failed to execute on 'DOMTokenList': The token provided ('${token}') contains HTML space characters, which are not valid in tokens.`, 'InvalidCharacterError');
+    if (!token) throw platformError("Failed to execute on 'DOMTokenList': The token provided must not be empty.", 'SyntaxError');
+    if (/[ \t\n\f\r]/.test(token)) throw platformError(`Failed to execute on 'DOMTokenList': The token provided ('${token}') contains HTML space characters, which are not valid in tokens.`, 'InvalidCharacterError');
     return token;
   }
   get length() { return this.#tokens().length; }
@@ -97,7 +108,7 @@ export class CSSStyleDeclaration {
     });
   }
   // Writes the declaration's text to the owner's style attribute.
-  [MARKUP]() { this[OWNER]?.[ATTRIBUTES].set('style', this.cssText); }
+  [MARKUP]() { this[OWNER]?.[WRITE_STYLE](this.cssText); }
   // Replaces the declarations with those parsed from `text`, without touching the attribute.
   [STYLE](text) {
     this[DECLARATIONS].clear();
@@ -139,7 +150,7 @@ export class CSSStyleDeclaration {
 // descendant, child and sibling combinators, in comma-separated lists. Each list compiles once and is cached.
 const selectorCache = new Map();
 function invalidSelector(selector) {
-  return new DOMException(`Failed to execute 'querySelector' on 'Document': '${selector}' is not a valid selector.`, 'SyntaxError');
+  return platformError(`Failed to execute 'querySelector' on 'Document': '${selector}' is not a valid selector.`, 'SyntaxError');
 }
 function parseCompound(text, selector) {
   const tests = [];
@@ -150,7 +161,7 @@ function parseCompound(text, selector) {
     if (!match) throw invalidSelector(selector);
     rest = rest.slice(match[0].length);
     const [, tag, id, className, attribute, operator, double, single, bare, insensitive, functional, argument, pseudo] = match;
-    if (tag && tag !== '*') { const name = tag.toLowerCase(); tests.push(element => element.localName === name); }
+    if (tag && tag !== '*') tests.push(element => element[NAMESPACE] === HTML_NAMESPACE ? element.localName.toLowerCase() === tag.toLowerCase() : element.localName === tag);
     else if (id) tests.push(element => element.id === id);
     else if (className) tests.push(element => element.classList.contains(className));
     else if (attribute) {
@@ -234,6 +245,88 @@ function* descendants(root) {
   }
 }
 
+// DOM's insert, remove and replace steps. A fragment moves its children in order, leaves itself empty, and queues one
+// record on itself and one on the parent; every other move queues a removal and an insertion. The records name the
+// added and removed nodes with the siblings they sat between, as Edge queues them.
+function convertNodes(parent, items) {
+  if (!items.length) return null;
+  if (items.length === 1) return items[0] instanceof Node ? items[0] : parent.ownerDocument.createTextNode(String(items[0]));
+  const fragment = parent.ownerDocument.createDocumentFragment();
+  for (const item of items) fragment.appendChild(item instanceof Node ? item : parent.ownerDocument.createTextNode(String(item)));
+  return fragment;
+}
+function detach(node) {
+  const parent = node.parentNode;
+  if (!parent) return null;
+  const siblings = parent[CHILDREN];
+  const index = siblings.indexOf(node);
+  if (index < 0) { node.parentNode = null; return null; }
+  const previous = siblings[index - 1] ?? null;
+  const next = siblings[index + 1] ?? null;
+  siblings.splice(index, 1);
+  node.parentNode = null;
+  parent.ownerDocument?.[INPUT]?.removed(node);
+  if (parent.nodeType === 1) parent[MARKUP] = undefined;
+  return { parent, previous, next };
+}
+function removeNode(node) {
+  const removed = detach(node);
+  if (removed) queueChildList(removed.parent, [], [node], removed.previous, removed.next);
+}
+function insertNode(parent, node, reference) {
+  const nodes = node.nodeType === 11 ? [...node[CHILDREN]] : [node];
+  if (!nodes.length) return;
+  const previous = reference ? reference.previousSibling : parent.lastChild;
+  if (node.nodeType === 11) {
+    for (const child of nodes) child.parentNode = null;
+    node[CHILDREN].length = 0;
+    queueChildList(node, [], nodes, null, null);
+  }
+  for (const child of nodes) {
+    if (child.parentNode) removeNode(child);
+    const index = reference ? parent[CHILDREN].indexOf(reference) : parent[CHILDREN].length;
+    parent[CHILDREN].splice(index, 0, child);
+    child.parentNode = parent;
+  }
+  queueChildList(parent, nodes, [], previous, reference ?? null);
+  if (parent.nodeType === 1) parent[MARKUP] = undefined;
+}
+function replaceNode(parent, old, node) {
+  const reference = old.nextSibling === node ? node.nextSibling : old.nextSibling;
+  const previous = old.previousSibling;
+  const nodes = node ? (node.nodeType === 11 ? [...node[CHILDREN]] : [node]) : [];
+  detach(old);
+  if (node?.nodeType === 11) {
+    for (const child of nodes) child.parentNode = null;
+    node[CHILDREN].length = 0;
+    queueChildList(node, [], nodes, null, null);
+  }
+  for (const child of nodes) {
+    if (child.parentNode) removeNode(child);
+    const index = reference ? parent[CHILDREN].indexOf(reference) : parent[CHILDREN].length;
+    parent[CHILDREN].splice(index, 0, child);
+    child.parentNode = parent;
+  }
+  queueChildList(parent, nodes, [old], previous, reference ?? null);
+}
+function replaceAll(parent, node) {
+  const added = node ? (node.nodeType === 11 ? [...node[CHILDREN]] : [node]) : [];
+  const removed = [...parent[CHILDREN]];
+  queueChildList(parent, added, removed, null, null);
+  for (const child of removed) {
+    child.parentNode = null;
+    parent.ownerDocument?.[INPUT]?.removed(child);
+  }
+  parent[CHILDREN].length = 0;
+  if (parent.nodeType === 1) parent[MARKUP] = undefined;
+  if (node?.nodeType === 11) node[CHILDREN].length = 0;
+  for (const child of added) {
+    if (child.parentNode) removeNode(child);
+    parent[CHILDREN].push(child);
+    child.parentNode = parent;
+  }
+}
+
 export class Node extends EventTarget {
   static ELEMENT_NODE = 1;
   static TEXT_NODE = 3;
@@ -273,51 +366,52 @@ export class Node extends EventTarget {
     for (let node = other; node; node = node.parentNode) if (node === this) return true;
     return false;
   }
-  #adopt(node) {
+  appendChild(node) {
     if (!(node instanceof Node)) throw new TypeError("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
-    if (node.contains(this)) throw new DOMException("Failed to execute 'appendChild' on 'Node': The new child element contains the parent.", 'HierarchyRequestError');
-    return node.nodeType === 11 ? node[CHILDREN].splice(0) : [node];
-  }
-  insertBefore(node, reference) {
-    if (reference && reference.parentNode !== this) throw new DOMException("Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.", 'NotFoundError');
-    for (const child of this.#adopt(node)) {
-      child.parentNode?.removeChild(child);
-      const index = reference ? this[CHILDREN].indexOf(reference) : this[CHILDREN].length;
-      this[CHILDREN].splice(index, 0, child);
-      child.parentNode = this;
-    }
-    if (this.nodeType === 1) this[MARKUP] = undefined;
+    if (node.contains(this)) throw platformError("Failed to execute 'appendChild' on 'Node': The new child element contains the parent.", 'HierarchyRequestError');
+    insertNode(this, node, null);
     return node;
   }
-  appendChild(node) { return this.insertBefore(node, null); }
+  insertBefore(node, reference) {
+    if (!(node instanceof Node)) throw new TypeError("Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+    if (reference !== null && reference !== undefined && reference.parentNode !== this) throw platformError("Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.", 'NotFoundError');
+    if (node.contains(this)) throw platformError("Failed to execute 'insertBefore' on 'Node': The new child element contains the parent.", 'HierarchyRequestError');
+    insertNode(this, node, reference ?? null);
+    return node;
+  }
   removeChild(node) {
+    if (!(node instanceof Node) || node.parentNode !== this) throw platformError("Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.", 'NotFoundError');
     const index = this[CHILDREN].indexOf(node);
-    if (index < 0) throw new DOMException("Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.", 'NotFoundError');
+    const previous = this[CHILDREN][index - 1] ?? null;
+    const next = this[CHILDREN][index + 1] ?? null;
     this[CHILDREN].splice(index, 1);
     node.parentNode = null;
     this.ownerDocument?.[INPUT]?.removed(node);
+    queueChildList(this, [], [node], previous, next);
+    if (this.nodeType === 1) this[MARKUP] = undefined;
     return node;
   }
   replaceChild(node, old) {
-    this.insertBefore(node, old);
-    return this.removeChild(old);
+    if (!(node instanceof Node)) throw new TypeError("Failed to execute 'replaceChild' on 'Node': parameter 1 is not of type 'Node'.");
+    if (old?.parentNode !== this) throw platformError("Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.", 'NotFoundError');
+    if (node.contains(this)) throw platformError("Failed to execute 'replaceChild' on 'Node': The new child element contains the parent.", 'HierarchyRequestError');
+    replaceNode(this, old, node);
+    return old;
   }
   remove() { this.parentNode?.removeChild(this); }
-  #nodes(items) { return items.map(item => item instanceof Node ? item : this.ownerDocument.createTextNode(String(item))); }
-  append(...items) { for (const node of this.#nodes(items)) this.appendChild(node); }
-  prepend(...items) { const first = this.firstChild; for (const node of this.#nodes(items)) this.insertBefore(node, first); }
-  replaceChildren(...items) { for (const child of this.childNodes) this.removeChild(child); this.append(...items); }
-  before(...items) { for (const node of this.#nodes(items)) this.parentNode?.insertBefore(node, this); }
-  after(...items) { const next = this.nextSibling; for (const node of this.#nodes(items)) this.parentNode?.insertBefore(node, next); }
-  replaceWith(...items) { const parent = this.parentNode; if (!parent) return; this.before(...items); parent.removeChild(this); }
+  append(...items) { const node = convertNodes(this, items); if (node) insertNode(this, node, null); }
+  prepend(...items) { const node = convertNodes(this, items); if (node) insertNode(this, node, this.firstChild); }
+  replaceChildren(...items) { replaceAll(this, convertNodes(this, items)); }
+  before(...items) { const node = convertNodes(this, items); if (this.parentNode && node) insertNode(this.parentNode, node, this); }
+  after(...items) { const node = convertNodes(this, items); if (this.parentNode && node) insertNode(this.parentNode, node, this.nextSibling); }
+  replaceWith(...items) { if (this.parentNode) replaceNode(this.parentNode, this, convertNodes(this, items)); }
   get textContent() { return this[CHILDREN].map(child => child.textContent).join(''); }
   set textContent(value) {
-    for (const child of this.childNodes) this.removeChild(child);
-    if (value !== null && value !== '') this.appendChild(this.ownerDocument.createTextNode(String(value)));
+    const text = value === null || value === undefined ? '' : String(value);
+    replaceAll(this, text === '' ? null : this.ownerDocument.createTextNode(text));
   }
   cloneNode(deep = false) {
-    const copy = this.nodeType === 3 ? this.ownerDocument.createTextNode(this.data) : this.nodeType === 11 ? this.ownerDocument.createDocumentFragment() : this.ownerDocument.createElement(this.localName);
-    for (const [name, value] of this[ATTRIBUTES] ?? []) copy.setAttribute(name, value);
+    const copy = this.nodeType === 3 ? this.ownerDocument.createTextNode(this.data) : this.ownerDocument.createDocumentFragment();
     if (deep) for (const child of this[CHILDREN]) copy.appendChild(child.cloneNode(true));
     return copy;
   }
@@ -326,13 +420,16 @@ export class Node extends EventTarget {
 for (const [name, value] of Object.entries({ ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 })) Object.defineProperty(Node.prototype, name, { value });
 
 export class Text extends Node {
-  constructor(document, data) { super(document); this.data = String(data); }
+  constructor(document, data) { super(document); this._data = String(data); }
+  get data() { return this._data; }
+  set data(value) { const old = this._data; this._data = String(value ?? ''); queueCharacterData(this, old); }
   get nodeType() { return 3; }
   get nodeName() { return '#text'; }
-  get textContent() { return this.data; }
-  set textContent(value) { this.data = String(value ?? ''); }
-  get nodeValue() { return this.data; }
-  get length() { return this.data.length; }
+  get textContent() { return this._data; }
+  set textContent(value) { this.data = value; }
+  get nodeValue() { return this._data; }
+  set nodeValue(value) { this.data = value; }
+  get length() { return this._data.length; }
 }
 
 export class DocumentFragment extends Node {
@@ -390,37 +487,120 @@ function fills(element) {
   return { x: 0, y: 0, width: full ? window.innerWidth : 0, height: full ? window.innerHeight : 0 };
 }
 
+// Attributes as Edge keeps them: one per namespace and local name, with the prefix and qualified name it was given.
+// getAttribute() and setAttribute() lower-case only on HTML elements, and getAttribute compares qualified names.
+const attributeKey = (namespace, localName) => `${namespace ?? ''}\n${localName}`;
+function setAttributeValue(element, namespace, prefix, localName, qualifiedName, value, parseStyle = true) {
+  const key = attributeKey(namespace, localName);
+  const attributes = element[ATTRIBUTES];
+  const old = attributes.get(key);
+  attributes.set(key, { namespace: namespace ?? null, prefix: prefix ?? null, localName, qualifiedName, value: String(value) });
+  if (namespace === null && localName === 'style' && parseStyle) element.style[STYLE](value);
+  queueAttribute(element, localName, namespace ?? null, old ? old.value : null);
+}
+function removeAttributeValue(element, namespace, localName) {
+  const key = attributeKey(namespace, localName);
+  const attributes = element[ATTRIBUTES];
+  const old = attributes.get(key);
+  if (!old) return;
+  attributes.delete(key);
+  if (namespace === null && localName === 'style') element.style[STYLE]('');
+  queueAttribute(element, localName, namespace ?? null, old.value);
+}
+// DOM's "validate and extract" for setAttributeNS, with Edge's NamespaceError for each invalid prefix.
+function validateAndExtract(namespace, qualifiedName, operation) {
+  namespace = namespace === null || namespace === undefined || namespace === '' ? null : String(namespace);
+  qualifiedName = String(qualifiedName);
+  const colon = qualifiedName.indexOf(':');
+  const prefix = colon < 0 ? null : qualifiedName.slice(0, colon);
+  const localName = colon < 0 ? qualifiedName : qualifiedName.slice(colon + 1);
+  const bad = (prefix !== null && namespace === null)
+    || (prefix === 'xml' && namespace !== XML_NAMESPACE)
+    || ((qualifiedName === 'xmlns' || prefix === 'xmlns') && namespace !== XMLNS_NAMESPACE);
+  if (bad) throw platformError(`Failed to execute '${operation}' on 'Element': '${namespace ?? ''}' is an invalid namespace for attributes.`, 'NamespaceError');
+  return { namespace, prefix, localName, qualifiedName };
+}
+
+// SVG elements by local name, each with the class name Edge reports for its interface.
+const SVG_CLASSES = new Map();
+function svgClass(localName) {
+  let Class = SVG_CLASSES.get(localName);
+  if (!Class) {
+    Class = class extends Element {};
+    const name = localName === 'svg' ? 'SVGSVGElement' : `SVG${localName.slice(0, 1).toUpperCase()}${localName.slice(1)}Element`;
+    Object.defineProperty(Class, 'name', { value: name });
+    SVG_CLASSES.set(localName, Class);
+  }
+  return Class;
+}
+
 export class Element extends Node {
-  constructor(document, localName) {
+  constructor(document, localName = '', namespace = HTML_NAMESPACE, prefix = null, qualifiedName = localName) {
     super(document);
-    this.localName = String(localName).toLowerCase();
+    this.localName = String(localName);
+    this[NAMESPACE] = namespace;
+    this[PREFIX] = prefix;
+    this[QUALIFIED] = String(qualifiedName);
     this[ATTRIBUTES] = new Map();
   }
   get nodeType() { return 1; }
-  get tagName() { return this.localName.toUpperCase(); }
+  get tagName() {
+    return this[NAMESPACE] === HTML_NAMESPACE && this.ownerDocument?.contentType === 'text/html'
+      ? this[QUALIFIED].toUpperCase() : this[QUALIFIED];
+  }
   get nodeName() { return this.tagName; }
-  get namespaceURI() { return 'http://www.w3.org/1999/xhtml'; }
-  getAttribute(name) { return this[ATTRIBUTES].get(String(name).toLowerCase()) ?? null; }
+  get namespaceURI() { return this[NAMESPACE]; }
+  get prefix() { return this[PREFIX]; }
+  getAttribute(name) {
+    name = this[NAMESPACE] === HTML_NAMESPACE ? String(name).toLowerCase() : String(name);
+    for (const attribute of this[ATTRIBUTES].values()) if (attribute.qualifiedName === name) return attribute.value;
+    return null;
+  }
   setAttribute(name, value) {
-    name = String(name).toLowerCase();
-    if (name === 'style') this.style[STYLE](value);
-    this[ATTRIBUTES].set(name, String(value));
+    name = String(name);
+    if (this[NAMESPACE] === HTML_NAMESPACE) name = name.toLowerCase();
+    setAttributeValue(this, null, null, name, name, value);
   }
   removeAttribute(name) {
-    name = String(name).toLowerCase();
-    if (name === 'style') this[STYLE]?.[STYLE]('');
-    this[ATTRIBUTES].delete(name);
+    name = String(name);
+    if (this[NAMESPACE] === HTML_NAMESPACE) name = name.toLowerCase();
+    for (const attribute of this[ATTRIBUTES].values()) {
+      if (attribute.qualifiedName === name) { removeAttributeValue(this, attribute.namespace, attribute.localName); return; }
+    }
   }
-  hasAttribute(name) { return this[ATTRIBUTES].has(String(name).toLowerCase()); }
+  hasAttribute(name) {
+    name = this[NAMESPACE] === HTML_NAMESPACE ? String(name).toLowerCase() : String(name);
+    for (const attribute of this[ATTRIBUTES].values()) if (attribute.qualifiedName === name) return true;
+    return false;
+  }
+  getAttributeNS(namespace, localName) {
+    namespace = namespace === null || namespace === undefined || namespace === '' ? null : String(namespace);
+    return this[ATTRIBUTES].get(attributeKey(namespace, String(localName)))?.value ?? null;
+  }
+  setAttributeNS(namespace, qualifiedName, value) {
+    if (arguments.length < 3) throw new TypeError("Failed to execute 'setAttributeNS' on 'Element': 3 arguments required, but only 2 present.");
+    const { namespace: ns, prefix, localName, qualifiedName: qname } = validateAndExtract(namespace, qualifiedName, 'setAttributeNS');
+    const existing = this[ATTRIBUTES].get(attributeKey(ns, localName));
+    setAttributeValue(this, ns, existing ? existing.prefix : prefix, localName, existing ? existing.qualifiedName : qname, value);
+  }
+  removeAttributeNS(namespace, localName) {
+    namespace = namespace === null || namespace === undefined || namespace === '' ? null : String(namespace);
+    removeAttributeValue(this, namespace, String(localName));
+  }
+  hasAttributeNS(namespace, localName) {
+    namespace = namespace === null || namespace === undefined || namespace === '' ? null : String(namespace);
+    return this[ATTRIBUTES].has(attributeKey(namespace, String(localName)));
+  }
   hasAttributes() { return this[ATTRIBUTES].size > 0; }
-  getAttributeNames() { return [...this[ATTRIBUTES].keys()]; }
+  getAttributeNames() { return [...this[ATTRIBUTES].values()].map(attribute => attribute.qualifiedName); }
   toggleAttribute(name, force) {
     const want = force === undefined ? !this.hasAttribute(name) : !!force;
     if (want && !this.hasAttribute(name)) this.setAttribute(name, '');
     if (!want) this.removeAttribute(name);
     return want;
   }
-  get attributes() { return [...this[ATTRIBUTES]].map(([name, value]) => ({ name, value })); }
+  get attributes() { return [...this[ATTRIBUTES].values()].map(({ qualifiedName, value }) => ({ name: qualifiedName, value })); }
+  [WRITE_STYLE](text) { setAttributeValue(this, null, null, 'style', 'style', text, false); }
   get id() { return this.getAttribute('id') ?? ''; }
   set id(value) { this.setAttribute('id', value); }
   get className() { return this.getAttribute('class') ?? ''; }
@@ -476,8 +656,9 @@ export class Element extends Node {
     }
   }
   get outerHTML() {
-    const attributes = [...this[ATTRIBUTES]].map(([name, value]) => ` ${name}="${value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`).join('');
-    return VOID.has(this.localName) ? `<${this.localName}${attributes}>` : `<${this.localName}${attributes}>${this.innerHTML}</${this.localName}>`;
+    const attributes = [...this[ATTRIBUTES].values()].map(({ qualifiedName, value }) => ` ${qualifiedName}="${value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`).join('');
+    const tag = this[NAMESPACE] === HTML_NAMESPACE ? this[QUALIFIED].toLowerCase() : this[QUALIFIED];
+    return VOID.has(this.localName) ? `<${tag}${attributes}>` : `<${tag}${attributes}>${this.innerHTML}</${tag}>`;
   }
   get innerText() { return this.textContent; }
   set innerText(value) { this.textContent = value; }
@@ -513,11 +694,17 @@ export class Element extends Node {
   blur() { if (this.ownerDocument?.activeElement === this) this.ownerDocument.setFocus(null); }
   get isContentEditable() { return this.closest('[contenteditable]:not([contenteditable="false"])') !== null; }
   setPointerCapture(pointerId) {
-    if (!this.isConnected) throw new DOMException("Failed to execute 'setPointerCapture' on 'Element': InvalidStateError", 'InvalidStateError');
+    if (!this.isConnected) throw platformError("Failed to execute 'setPointerCapture' on 'Element': InvalidStateError", 'InvalidStateError');
     this.ownerDocument[INPUT]?.capture(this, pointerId);
   }
   releasePointerCapture(pointerId) { this.ownerDocument[INPUT]?.release(this, pointerId); }
   hasPointerCapture(pointerId) { return this.ownerDocument[INPUT]?.captured(pointerId) === this; }
+  cloneNode(deep = false) {
+    const copy = this.ownerDocument.createElementNS(this[NAMESPACE], this[QUALIFIED]);
+    for (const attribute of this[ATTRIBUTES].values()) setAttributeValue(copy, attribute.namespace, attribute.prefix, attribute.localName, attribute.qualifiedName, attribute.value);
+    if (deep) for (const child of this[CHILDREN]) copy.appendChild(child.cloneNode(true));
+    return copy;
+  }
 }
 
 export class HTMLElement extends Element {
@@ -602,12 +789,23 @@ export class Document extends Node {
   get location() { return globalThis.location; }
   createElement(name) {
     const localName = String(name).toLowerCase();
-    if (!/^[a-z][a-z0-9-]*$/.test(localName)) throw new DOMException(`Failed to execute 'createElement' on 'Document': The tag name provided ('${name}') is not a valid name.`, 'InvalidCharacterError');
+    if (!/^[a-z][a-z0-9-]*$/.test(localName)) throw platformError(`Failed to execute 'createElement' on 'Document': The tag name provided ('${name}') is not a valid name.`, 'InvalidCharacterError');
     const Class = ELEMENT_CLASSES.get(localName) ?? HTMLElement;
-    const element = new Class(this, localName);
-    return element;
+    return new Class(this, localName, HTML_NAMESPACE, null, localName);
   }
-  createElementNS(_, name) { return this.createElement(String(name).split(':').at(-1)); }
+  createElementNS(namespace, qualifiedName) {
+    if (arguments.length < 2) throw new TypeError("Failed to execute 'createElementNS' on 'Document': 2 arguments required, but only 1 present.");
+    namespace = namespace === null || namespace === undefined || namespace === '' ? null : String(namespace);
+    qualifiedName = String(qualifiedName);
+    const colon = qualifiedName.indexOf(':');
+    const prefix = colon < 0 ? null : qualifiedName.slice(0, colon);
+    const localName = colon < 0 ? qualifiedName : qualifiedName.slice(colon + 1);
+    if (prefix !== null && namespace === null) throw platformError("Failed to execute 'createElementNS' on 'Document': The namespace is invalid.", 'NamespaceError');
+    const Class = namespace === SVG_NAMESPACE ? svgClass(localName)
+      : namespace === HTML_NAMESPACE ? (ELEMENT_CLASSES.get(localName.toLowerCase()) ?? HTMLElement)
+      : Element;
+    return new Class(this, localName, namespace, prefix, qualifiedName);
+  }
   createTextNode(data) { return new Text(this, data); }
   createDocumentFragment() { return new DocumentFragment(this); }
   createEvent(type) { return new Event('', {}); }

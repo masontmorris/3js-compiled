@@ -4,6 +4,7 @@
 // every copy of NativeBackend in a bundle can upload it.
 import { Event } from './events.js';
 import { HTMLElement, ELEMENT_CLASSES, logOnce } from './dom.js';
+import { platformError } from './errors.js';
 
 export const PIXELS = Symbol.for('threejsc.pixels');
 
@@ -491,13 +492,13 @@ export class HTMLImageElement extends HTMLElement {
         if (generation !== this.generation) return;
         this.complete = true;
         this.dispatchEvent(new Event('error'));
-        throw new DOMException('The source image cannot be decoded.', 'EncodingError');
+        throw platformError('The source image cannot be decoded.', 'EncodingError');
       },
     );
     this.loaded.catch(() => {});
   }
   decode() {
-    if (!this.loaded) return Promise.reject(new DOMException('The source image cannot be decoded.', 'EncodingError'));
+    if (!this.loaded) return Promise.reject(platformError('The source image cannot be decoded.', 'EncodingError'));
     return this.loaded.then(() => undefined);
   }
 }
@@ -520,11 +521,11 @@ export async function createImageBitmap(source, ...rest) {
   const options = (typeof rest.at(-1) === 'object' && rest.at(-1) !== null ? rest.pop() : undefined) ?? {};
   let pixels;
   if (source instanceof Blob) {
-    try { pixels = await host.decode(source[BYTES], options.colorSpaceConversion !== 'none'); } catch { throw new DOMException('The source image could not be decoded.', 'InvalidStateError'); }
+    try { pixels = await host.decode(source[BYTES], options.colorSpaceConversion !== 'none'); } catch { throw platformError('The source image could not be decoded.', 'InvalidStateError'); }
   } else if (source?.[PIXELS]) {
     pixels = source[PIXELS];
   } else if (source instanceof HTMLImageElement || source instanceof ImageBitmap) {
-    throw new DOMException("Failed to execute 'createImageBitmap' on 'Window': The image element contains no image data.", 'InvalidStateError');
+    throw platformError("Failed to execute 'createImageBitmap' on 'Window': The image element contains no image data.", 'InvalidStateError');
   } else if (source?.data && source.width && source.height) {
     pixels = { width: source.width, height: source.height, data: new Uint8Array(source.data.buffer, source.data.byteOffset, source.data.byteLength) };
   } else {
