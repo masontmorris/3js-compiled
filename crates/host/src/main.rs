@@ -304,7 +304,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         &runtime,
         options.scene.as_deref(),
         css,
-        Some(&target.adapter_limits()),
+        Some((&target.adapter_limits(), target.adapter_features())),
         &page,
     )?;
     let mut gamepads = Gamepads::new(

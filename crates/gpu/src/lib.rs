@@ -105,3 +105,43 @@ pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
 mod executor;
 mod pipeline;
 pub use executor::{Executor, Response, Trailer};
+
+/// WebGPU's feature names, in the order the specification lists them.
+const WEBGPU_FEATURES: [&str; 21] = [
+    "core-features-and-limits",
+    "depth-clip-control",
+    "depth32float-stencil8",
+    "texture-compression-bc",
+    "texture-compression-bc-sliced-3d",
+    "texture-compression-etc2",
+    "texture-compression-astc",
+    "texture-compression-astc-sliced-3d",
+    "timestamp-query",
+    "indirect-first-instance",
+    "shader-f16",
+    "rg11b10ufloat-renderable",
+    "bgra8unorm-storage",
+    "float32-filterable",
+    "float32-blendable",
+    "clip-distances",
+    "dual-source-blending",
+    "subgroups",
+    "texture-formats-tier1",
+    "texture-formats-tier2",
+    "primitive-index",
+];
+
+/// The WebGPU features a device from an adapter with `adapter` features can be given, as a browser's `GPUAdapter`
+/// reports them: those whose names wgpu parses and the adapter has, and WebGPU's core features, which every wgpu
+/// device has. A `REQUEST_DEVICE` that names any other feature fails.
+pub fn webgpu_features(adapter: wgpu::Features) -> Vec<&'static str> {
+    WEBGPU_FEATURES
+        .into_iter()
+        .filter(|name| {
+            *name == "core-features-and-limits"
+                || name
+                    .parse::<wgpu::Features>()
+                    .is_ok_and(|feature| adapter.contains(feature))
+        })
+        .collect()
+}

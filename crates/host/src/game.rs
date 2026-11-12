@@ -149,7 +149,7 @@ impl<'a> Game<'a> {
         runtime: &'a tokio::runtime::Runtime,
         scene: Option<&str>,
         (width, height): (u32, u32),
-        adapter: Option<&wgpu::Limits>,
+        adapter: Option<(&wgpu::Limits, wgpu::Features)>,
         page: &Page,
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
@@ -193,8 +193,12 @@ impl<'a> Game<'a> {
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
         let scene = serde_json::to_string(&scene)?;
-        // NativeBackend checks a device's requested limits against the adapter's, as requestDevice() does.
-        let limits = serde_json::to_string(&adapter)?;
+        // NativeBackend checks a device's requested limits and features against the adapter's, as requestDevice()
+        // does.
+        let limits = serde_json::to_string(&adapter.map(|(limits, _)| limits))?;
+        let features = serde_json::to_string(
+            &adapter.map(|(_, features)| threejsc_gpu::webgpu_features(features)),
+        )?;
         let mut href = specifier.clone();
         href.set_fragment((!page.hash.is_empty()).then_some(page.hash.trim_start_matches('#')));
         let config = serde_json::json!({
@@ -208,7 +212,7 @@ impl<'a> Game<'a> {
         js.execute_script(
             "host:scene",
             format!(
-                "globalThis.__sceneName = {scene}; globalThis.__gpuAdapterLimits = {limits}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height}; globalThis.__hostConfig = {config};"
+                "globalThis.__sceneName = {scene}; globalThis.__gpuAdapterLimits = {limits}; globalThis.__gpuAdapterFeatures = {features}; globalThis.innerWidth = {width}; globalThis.innerHeight = {height}; globalThis.__hostConfig = {config};"
             ),
         )?;
         runtime

@@ -655,7 +655,11 @@ globalThis.__gpuFrameEnd = () => {
 // A device has the features its descriptor requires and the limits deviceLimits() gives for them, as a
 // browser's requestDevice() gives. The executor's device gets the same. `supported` holds the adapter's limits.
 export class RecordingDevice {
-  constructor({ features = [], limits = {} } = {}, output = stream(), supported = null) {
+  constructor({ features = [], limits = {} } = {}, output = stream(), supported = null, supportedFeatures = null) {
+    // As requestDevice() does, a request for a feature the adapter lacks throws a TypeError, so a device has exactly
+    // the features it reports.
+    const missing = supportedFeatures && features.find(feature => !supportedFeatures.includes(feature));
+    if (missing) throw new TypeError(`requestDevice() failed: the adapter does not support the feature "${missing}"`);
     const granted = deviceLimits(limits, supported);
     this.output = output;
     this.handles = output.handles;
@@ -1191,10 +1195,11 @@ function assertSurfaceFree() {
 }
 
 export class NativeBackend extends WebGPUBackend {
-  constructor(parameters = {}, capabilities = {}) {
+  // `requested` holds the features and limits the game asks for. WebGPUBackend's own `capabilities` stays.
+  constructor(parameters = {}, requested = {}) {
     assertSurfaceFree();
     super({ outputType: UnsignedByteType, ...parameters, context: new RecordingCanvasContext(parameters.canvas) });
-    this.capabilities = capabilities;
+    this.requested = requested;
     this.recordingDevice = null;
     this.isNativeBackend = true;
   }
@@ -1207,9 +1212,11 @@ export class NativeBackend extends WebGPUBackend {
     // that error in place of this one.
     renderer._getFallback = null;
     assertSurfaceFree();
-    const { features, limits } = this.capabilities;
-    // The host sets __gpuAdapterLimits to its adapter's limits before the game loads.
-    const device = new RecordingDevice({ features, limits: { ...this.parameters.requiredLimits, ...limits } }, host, globalThis.__gpuAdapterLimits);
+    // The host sets __gpuAdapterLimits and __gpuAdapterFeatures to its adapter's before the game loads. As three does
+    // in a browser, a game that names no features asks for every feature the adapter has.
+    const { features = globalThis.__gpuAdapterFeatures ?? [], limits } = this.requested;
+    const device = new RecordingDevice({ features, limits: { ...this.parameters.requiredLimits, ...limits } }, host,
+      globalThis.__gpuAdapterLimits, globalThis.__gpuAdapterFeatures);
     host.device = this.recordingDevice = this.parameters.device = device;
     const dispose = renderer.dispose;
     renderer.dispose = function () {
