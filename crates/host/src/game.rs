@@ -1107,4 +1107,16 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn fragments_observers_exceptions_and_namespaced_attributes_match_edge() -> Result<()> {
+        let log = run_until_green(
+            "observers",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/observers.js"),
+            None,
+        )?;
+        assert_eq!(result(&log, "fields that differ"), "0", "{log}");
+        assert!(!log.contains("Uncaught"), "{log}");
+        Ok(())
+    }
 }
