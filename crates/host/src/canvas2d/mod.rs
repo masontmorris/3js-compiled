@@ -166,13 +166,13 @@ fn op_canvas2d_text(
 ) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let Canvas2d { fonts, painter } = state.borrow_mut::<Canvas2d>();
-    let chain = text::chain(fonts, &draw.font);
-    let Some(primary) = chain.primary() else {
+    let mut chain = text::chain(fonts, &draw.font);
+    let Some(primary) = chain.primary().cloned() else {
         return Ok(());
     };
     let size = text::used_size(draw.font.size);
-    let layout = text::layout(fonts, &chain, &draw.text, size);
-    let metrics = text::font_metrics(fonts, primary, size);
+    let layout = text::layout(fonts, &mut chain, &draw.text, size);
+    let metrics = text::font_metrics(fonts, &primary, size);
     let x_scale = match draw.max_width {
         Some(max) if layout.width > max && layout.width > 0.0 => max.max(0.0) / layout.width,
         _ => 1.0,
@@ -229,9 +229,9 @@ pub struct Metrics {
 }
 
 fn measure(fonts: &mut Fonts, measure: &Measure) -> Metrics {
-    let chain = text::chain(fonts, &measure.font);
+    let mut chain = text::chain(fonts, &measure.font);
     let size = text::used_size(measure.font.size);
-    let Some(primary) = chain.primary() else {
+    let Some(primary) = chain.primary().cloned() else {
         return Metrics {
             width: 0.0,
             actual_bounding_box_left: 0.0,
@@ -247,8 +247,8 @@ fn measure(fonts: &mut Fonts, measure: &Measure) -> Metrics {
             ideographic_baseline: 0.0,
         };
     };
-    let layout = text::layout(fonts, &chain, &measure.text, size);
-    let font = text::font_metrics(fonts, primary, size);
+    let layout = text::layout(fonts, &mut chain, &measure.text, size);
+    let font = text::font_metrics(fonts, &primary, size);
     let shift = text::baseline_shift(&font, &measure.baseline);
     let dx = align_offset(&measure.align, layout.width);
     let [left, top, right, bottom] = text::ink_bounds(fonts, &layout, size).unwrap_or([0.0; 4]);

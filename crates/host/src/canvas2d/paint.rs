@@ -6,6 +6,10 @@
 use super::fonts::Fonts;
 use super::text::{Layout, Run};
 use serde::Deserialize;
+use skrifa::{
+    GlyphId, MetadataProvider,
+    instance::{LocationRef, NormalizedCoord, Size},
+};
 use std::sync::Arc;
 use vello_cpu::{
     Pixmap, PixmapMut, RenderContext, RenderMode, Resources,
@@ -167,6 +171,19 @@ fn device_box(
     ))
 }
 
+/// Sets every pixel of the surface's box to `pixel`.
+fn fill_area(surface: &mut Surface, (x, y, w, h): (u16, u16, u16, u16), pixel: [u8; 4]) {
+    for row in y as usize..(y + h) as usize {
+        let start = (row * surface.width as usize + x as usize) * 4;
+        for target in surface.data[start..start + w as usize * 4]
+            .as_chunks_mut::<4>()
+            .0
+        {
+            *target = pixel;
+        }
+    }
+}
+
 /// Blends premultiplied `source` pixels, `alpha` times, over the surface's box at (x, y).
 fn blend(
     surface: &mut Surface,
@@ -259,7 +276,11 @@ impl Painter {
                 let a = rgba[3].clamp(0.0, 1.0);
                 let premultiplied =
                     [rgba[0] * a, rgba[1] * a, rgba[2] * a, a].map(|c| (c * 255.0).round() as u8);
-                blend(surface, area, |_| premultiplied, style.alpha);
+                if premultiplied[3] == 255 && style.alpha >= 1.0 {
+                    fill_area(surface, area, premultiplied);
+                } else {
+                    blend(surface, area, |_| premultiplied, style.alpha);
+                }
                 return;
             }
         }
@@ -281,6 +302,14 @@ impl Painter {
         let Some((x, y, w, h)) = device_box(transform, rect, surface.width, surface.height) else {
             return;
         };
+        if let Some((tx, ty)) = translation(transform)
+            && [rect.x0 + tx, rect.y0 + ty, rect.x1 + tx, rect.y1 + ty]
+                .iter()
+                .all(|v| v.fract() == 0.0)
+        {
+            fill_area(surface, (x, y, w, h), [0; 4]);
+            return;
+        }
         self.begin(w, h);
         self.context
             .set_transform(Affine::translate((-(x as f64), -(y as f64))) * affine(transform));
@@ -429,14 +458,32 @@ impl Painter {
             .collect();
         let Some(first) = glyphs.first() else { return };
         let last = glyphs.last().expect("a run with a first glyph has a last");
-        let margin =
-            size as f64 + stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0) + 2.0;
-        let ink = Rect::new(
-            first.x as f64 - margin,
-            first.y as f64 - 1.5 * margin,
-            last.x as f64 + margin * 1.5,
-            last.y as f64 + margin,
-        );
+        // The layer covers the glyphs' outlines, two pixels more for hinting and anti-aliasing, and the stroke. A
+        // color glyph can paint past its outline, so it gets a margin of the font size.
+        let coords: Vec<_> = run
+            .instance
+            .coords
+            .iter()
+            .map(|bits| NormalizedCoord::from_bits(*bits))
+            .collect();
+        let metrics = face
+            .font()
+            .glyph_metrics(Size::new(size), LocationRef::new(&coords));
+        let mut ink = Rect::new(first.x as f64, first.y as f64, last.x as f64, last.y as f64);
+        for (glyph, &(id, ..)) in glyphs.iter().zip(&run.glyphs) {
+            if let Some(b) = metrics.bounds(GlyphId::new(id)) {
+                ink = ink.union(Rect::new(
+                    glyph.x as f64 + b.x_min as f64 * x_scale,
+                    glyph.y as f64 - b.y_max as f64,
+                    glyph.x as f64 + b.x_max as f64 * x_scale,
+                    glyph.y as f64 - b.y_min as f64,
+                ));
+            }
+        }
+        let margin = 2.0
+            + stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0)
+            + if face.color { size as f64 } else { 0.0 };
+        let ink = ink.inflate(margin, margin);
         let user_to_device = if snapped.is_some() {
             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         } else {

@@ -80,13 +80,15 @@ fn instance(fonts: &Fonts, face: FaceId, weight: f32) -> Instance {
     }
 }
 
-/// The fonts a text draws with: the font list's available faces, or the standard font when none is, then the
-/// fallback fonts, with the emoji font last.
+/// The fonts a text draws with: the font list's available faces, or the standard font when none is, then, once a
+/// character needs them, the fallback fonts, with the emoji font last.
 pub struct Chain {
     pub instances: Vec<Instance>,
     /// How many of the instances come from the font list, or are the standard font in its place.
     listed: usize,
     emoji: Option<usize>,
+    spec: (f32, bool),
+    fallback: bool,
 }
 
 impl Chain {
@@ -101,6 +103,37 @@ impl Chain {
         (0..self.listed)
             .chain(emoji)
             .chain((self.listed..self.instances.len()).filter(move |index| Some(*index) != emoji))
+    }
+
+    /// Adds the fallback fonts, which load from disk the first time any text needs them.
+    fn add_fallback(&mut self, fonts: &mut Fonts) {
+        if self.fallback {
+            return;
+        }
+        self.fallback = true;
+        let (weight, italic) = self.spec;
+        let bold = weight >= 600.0;
+        let faces: Vec<FaceId> = FALLBACK
+            .iter()
+            .filter_map(|name| fonts.system(name, bold, italic))
+            .collect();
+        for face in faces {
+            if !self.instances.iter().any(|known| known.face == face) {
+                self.instances.push(instance(fonts, face, weight));
+            }
+        }
+        if let Some(face) = fonts.system(EMOJI, false, false) {
+            self.emoji = Some(
+                self.instances
+                    .iter()
+                    .position(|known| known.face == face)
+                    .unwrap_or_else(|| {
+                        self.instances.push(instance(fonts, face, weight));
+                        self.instances.len() - 1
+                    }),
+            )
+            .filter(|index| *index >= self.listed);
+        }
     }
 }
 
@@ -117,29 +150,18 @@ pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
     if faces.is_empty() {
         faces.extend(fonts.system(STANDARD, bold, spec.italic));
     }
-    let listed = faces.len();
-    for name in FALLBACK {
-        faces.extend(fonts.system(name, bold, spec.italic));
-    }
-    let emoji = fonts.system(EMOJI, false, false);
-    faces.extend(emoji);
     let mut instances: Vec<Instance> = Vec::new();
-    let mut kept = 0;
-    for (index, face) in faces.into_iter().enumerate() {
+    for face in faces {
         if !instances.iter().any(|known| known.face == face) {
             instances.push(instance(fonts, face, spec.weight));
-            if index < listed {
-                kept += 1;
-            }
         }
     }
-    let emoji = emoji
-        .and_then(|face| instances.iter().position(|known| known.face == face))
-        .filter(|index| *index >= kept);
     Chain {
+        listed: instances.len(),
         instances,
-        listed: kept,
-        emoji,
+        emoji: None,
+        spec: (spec.weight, spec.italic),
+        fallback: false,
     }
 }
 
@@ -161,7 +183,21 @@ fn continues_cluster(c: char) -> bool {
 }
 
 /// Shapes `text` left to right, a run per stretch of characters that the same font draws.
-pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
+pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> Layout {
+    if !chain.fallback {
+        let listed: Vec<_> = chain
+            .instances
+            .iter()
+            .map(|instance| fonts.get(instance.face).font().charmap())
+            .collect();
+        let missing = text.chars().any(|c| {
+            !continues_cluster(c) && !listed.iter().any(|charmap| charmap.map(c).is_some())
+        });
+        if missing {
+            chain.add_fallback(fonts);
+        }
+    }
+    let fonts = &*fonts;
     let charmaps: Vec<_> = chain
         .instances
         .iter()
