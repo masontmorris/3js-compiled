@@ -48,28 +48,39 @@ setHost({
 
 // Media queries over the window's size and pixel ratio, with Edge's answers for a desktop with a mouse.
 const evaluateMedia = query => evaluate(query, { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio });
+// A list's `matches` reads the window as it is. A list with a change listener is watched, which keeps it alive as a
+// listener does in Edge, and gets a change event when its result flips on a resize.
+const watched = new Map();
 class MediaQueryList extends events.EventTarget {
   constructor(media) {
     super();
     this.media = String(media);
-    this.matches = evaluateMedia(this.media);
-    mediaLists.add(new WeakRef(this));
+  }
+  get matches() { return evaluateMedia(this.media); }
+  addEventListener(type, callback, options) {
+    super.addEventListener(type, callback, options);
+    if (String(type) === 'change' && !watched.has(this)) watched.set(this, this.matches);
   }
   addListener(callback) { this.addEventListener('change', callback); }
   removeListener(callback) { this.removeEventListener('change', callback); }
 }
 events.defineHandlers(MediaQueryList.prototype, ['change']);
+const handler = Object.getOwnPropertyDescriptor(MediaQueryList.prototype, 'onchange');
+Object.defineProperty(MediaQueryList.prototype, 'onchange', {
+  ...handler,
+  set(value) {
+    handler.set.call(this, value);
+    if (!watched.has(this)) watched.set(this, this.matches);
+  },
+});
 class MediaQueryListEvent extends events.Event {
   constructor(type, init = {}) { super(type, init); this.media = init.media ?? ''; this.matches = !!init.matches; }
 }
-const mediaLists = new Set();
 function updateMedia() {
-  for (const ref of mediaLists) {
-    const list = ref.deref();
-    if (!list) { mediaLists.delete(ref); continue; }
-    const matches = evaluateMedia(list.media);
-    if (matches === list.matches) continue;
-    list.matches = matches;
+  for (const [list, last] of watched) {
+    const matches = list.matches;
+    if (matches === last) continue;
+    watched.set(list, matches);
     list.dispatchEvent(new MediaQueryListEvent('change', { media: list.media, matches }));
   }
 }
