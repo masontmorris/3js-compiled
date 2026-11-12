@@ -7,16 +7,17 @@ The host runs browser game code on shims that behave as headless Edge does for w
 `dom.js` is an inert element tree. Nothing lays out or paints.
 
 - `document` has `documentElement`, `head`, `body`, `activeElement`, `hasFocus()`, `createElement`, `createElementNS`, `createTextNode`, `getElementById`, `querySelector` and `querySelectorAll`. `readyState` is `complete` and `visibilityState` is `visible`.
+- Inline `style` and the `style` attribute reflect each other as in Edge: `setAttribute('style', ...)` parses into `element.style`, and changing `element.style` writes its text back to the attribute. Every CSS property Edge 157 knows, in camel case or hyphenated (from `tools/platform/dom-methods.mjs`), reads `''` while unset; other names read `undefined`. Values are kept as given, not checked as CSS.
 - Elements keep attributes, `id`, `className`, `classList`, inline `style`, `dataset`, children, `textContent`, `focus()`, `blur()`, `tabIndex`, and pointer capture.
 - Selectors cover type, universal, id, class and attribute selectors, `:not()`, `:is()`, `:where()`, a few structural pseudo-classes, and the descendant, child and sibling combinators, in comma-separated lists.
-- Nothing has layout, with one exception. An element whose inline style has `position: fixed` or `absolute` and fixes each axis with `left`, `right`, `top`, `bottom`, `inset`, `width` or `height` in px, %, vw or vh measures that box against the window in `getBoundingClientRect()`, `offsetWidth`, `offsetHeight`, `clientWidth` and `clientHeight`, as Edge does. Borders, padding and positioned ancestors are ignored. Otherwise a canvas, the body and the root element fill the window, and every other element has an empty box, where Edge would lay it out.
+- Nothing has layout, with one exception. An element whose inline style has `position: fixed` or `absolute` and fixes each axis with `left`, `right`, `top`, `bottom`, `inset`, `width` or `height` in px, %, vw or vh measures that box against the window in `getBoundingClientRect()`, which returns a `DOMRect`, `offsetWidth`, `offsetHeight`, `clientWidth` and `clientHeight`, as Edge does. Borders, padding and positioned ancestors are ignored. Otherwise a canvas, the body and the root element fill the window, and every other element has an empty box, where Edge would lay it out.
 - A canvas has `width` and `height` with Edge's defaults of 300 and 150. `getContext('2d')` returns the canvas 2D context below. Other context types return `null` and log that they are not implemented.
 - Setting `innerHTML` stores the string and leaves the element with no children, and logs once that markup is not parsed.
 - A method Edge's DOM defines on an element or the document that the stand-in lacks logs `DOM method not implemented: <Interface>.<method>` once and returns `undefined`. `tools/platform/dom-methods.mjs` lists those methods from Edge into `dom-methods.js`. Any other missing property reads as `undefined`, as in Edge.
 
 ## Events
 
-`events.js` has `Event`, `CustomEvent`, `ErrorEvent`, `UIEvent`, `FocusEvent`, `KeyboardEvent`, `MouseEvent`, `PointerEvent` and `WheelEvent`, and `EventTarget` with capture, target and bubble phases, every event handler attribute Edge 157 defines on elements, the document and the window (from `tools/platform/dom-methods.mjs`), `once`, `passive`, `signal`, `stopImmediatePropagation()` and event handler attributes such as `onclick`. The window is an `EventTarget`.
+`events.js` has `Event`, `CustomEvent`, `ErrorEvent`, `PromiseRejectionEvent`, `UIEvent`, `FocusEvent`, `KeyboardEvent`, `MouseEvent`, `PointerEvent` and `WheelEvent`, and `EventTarget` with capture, target and bubble phases, every event handler attribute Edge 157 defines on elements, the document and the window (from `tools/platform/dom-methods.mjs`), `once`, `passive`, `signal`, `stopImmediatePropagation()` and event handler attributes such as `onclick`. The window is an `EventTarget`.
 
 The input router turns each host input fact into the events Edge fires for it:
 
@@ -53,6 +54,14 @@ The input router turns each host input fact into the events Edge fires for it:
 `devicePixelRatio` is the window's display scale. `innerWidth` and `innerHeight` are the window's size in CSS pixels. A resize fires one `resize` at the window and then `change` at each `MediaQueryList` with a change listener whose result changed. A list's `matches` reads the window as it is, so a `resize` listener already sees the new answer, and its `media` is serialized as Edge does, for example `(min-aspect-ratio: 3 / 2)`. `matchMedia` evaluates width, height, aspect ratio, orientation and resolution in their plain, `min-`, `max-` and range forms, and answers Edge's defaults for a desktop with a mouse, a light color scheme and no reduced motion, including the boolean forms. `navigator.userAgent` is Edge's on Windows.
 
 `window.open()` opens an `http:` or `https:` URL in the system's default browser, refuses any other URL and logs it, and returns `null`, as Edge does for a `noopener` open.
+
+`DOMRect`, `DOMRectReadOnly`, `DOMPoint`, `DOMPointReadOnly`, `DOMMatrix` and `DOMMatrixReadOnly` construct, combine, invert, transform points and serialize as in Edge 157. A `DOMMatrix` built from a CSS transform string throws that parsing a transform list is not implemented natively.
+
+`btoa()` and `atob()` encode Latin-1 strings to and from base64, with Edge's errors for a character outside Latin-1, text that is not base64 and a missing argument.
+
+A promise rejected with no handler fires a trusted, cancelable `unhandledrejection` at the window, and logs `Uncaught (in promise)` with the reason unless a listener cancels it. The game keeps running either way, as in Edge. `rejectionhandled` is not implemented.
+
+`WebAssembly.compileStreaming()` and `instantiateStreaming()` take a `Response` or a promise of one, as from `fetch()`, with Edge's error for a MIME type other than `application/wasm` and a `CompileError` for bytes that are not a module. The whole body goes to the compiler at once.
 
 `crypto.getRandomValues()` and `crypto.randomUUID()` read the operating system's random source, with Edge's errors for a non-integer array and for more than 65,536 bytes. `crypto.subtle` is not implemented.
 

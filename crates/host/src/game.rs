@@ -1087,4 +1087,36 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn wasm_streams_and_unhandled_rejections_keep_the_host_running_as_in_edge() -> Result<()> {
+        let log = run_until_green(
+            "engine-gaps",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/engine-gaps.js"),
+            None,
+        )?;
+        assert_eq!(result(&log, "instantiateStreaming"), "module,instance true");
+        assert_eq!(result(&log, "compileStreaming"), "true");
+        assert_eq!(
+            result(&log, "wrong type"),
+            "TypeError TypeError: Failed to execute 'compile' on 'WebAssembly': Incorrect response MIME type. Expected 'application/wasm'."
+        );
+        assert_eq!(result(&log, "bad bytes"), "CompileError");
+        assert_eq!(
+            result(&log, "rejections"),
+            "PromiseRejectionEvent unhandledrejection Error: not handled true true true | PromiseRejectionEvent unhandledrejection Error: prevented true true true"
+        );
+        assert_eq!(result(&log, "frames after the rejections"), "10");
+        assert_eq!(
+            log.matches("Uncaught (in promise) Error: not handled")
+                .count(),
+            1,
+            "{log}"
+        );
+        assert!(
+            !log.contains("Uncaught (in promise) Error: prevented"),
+            "{log}"
+        );
+        Ok(())
+    }
 }

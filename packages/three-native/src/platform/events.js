@@ -50,6 +50,9 @@ export class CustomEvent extends Event {
 export class ErrorEvent extends Event {
   constructor(type, init = {}) { super(type, init); assign(this, init, { message: '', filename: '', lineno: 0, colno: 0, error: null }); }
 }
+export class PromiseRejectionEvent extends Event {
+  constructor(type, init = {}) { super(type, init); assign(this, init, { promise: undefined, reason: undefined }); }
+}
 export class UIEvent extends Event {
   constructor(type, init = {}) { super(type, init); assign(this, init, { view: null, detail: 0, which: 0 }); }
 }
