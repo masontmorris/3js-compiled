@@ -18,7 +18,8 @@ test('DOMRect and DOMRectReadOnly derive their edges and serialize as in Edge', 
   rect.x = 5;
   assert.deepEqual([rect.x, rect.right], [5, 8]);
   const readOnly = new DOMRectReadOnly(1, 2, 3, 4);
-  readOnly.x = 9;
+  // A module is strict, where assigning to a getter-only accessor throws; Reflect.set reports the refusal instead.
+  assert.equal(Reflect.set(readOnly, 'x', 9), false);
   assert.equal(readOnly.x, 1);
   assert.equal(JSON.stringify(DOMRect.fromRect({ x: 1, width: 2 })), '{"x":1,"y":0,"width":2,"height":0,"top":0,"right":3,"bottom":0,"left":1}');
 });

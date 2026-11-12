@@ -166,3 +166,46 @@ export function openWindow(url, open, log) {
   else log(`window.open: refused ${url}; only http and https URLs open, in the default browser`);
   return null;
 }
+
+// btoa and atob as Edge has them: binary strings of Latin-1 characters to and from forgiving base64, with Edge's
+// errors for characters outside Latin-1, text that is not base64 and a missing argument.
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const required = (name, count) => {
+  if (count === 0) throw new TypeError(`Failed to execute '${name}' on 'Window': 1 argument required, but only 0 present.`);
+};
+export function btoa(...args) {
+  required('btoa', args.length);
+  const text = String(args[0]);
+  let out = '';
+  for (let i = 0; i < text.length; i += 3) {
+    const codes = [text.charCodeAt(i), text.charCodeAt(i + 1), text.charCodeAt(i + 2)];
+    if (codes.some(code => code > 255)) {
+      throw new DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", 'InvalidCharacterError');
+    }
+    const [a, b = 0, c = 0] = codes.map(code => Number.isNaN(code) ? undefined : code);
+    const bits = (a << 16) | (b << 8) | c;
+    const count = Math.min(3, text.length - i);
+    for (let j = 0; j < 4; j++) out += j <= count ? BASE64[(bits >> (18 - 6 * j)) & 63] : '=';
+  }
+  return out;
+}
+export function atob(...args) {
+  required('atob', args.length);
+  let text = String(args[0]).replace(/[\t\n\f\r ]/g, '');
+  if (text.length % 4 === 0) text = text.replace(/==?$/, '');
+  if (text.length % 4 === 1 || /[^A-Za-z0-9+/]/.test(text)) {
+    throw new DOMException("Failed to execute 'atob' on 'Window': The string to be decoded is not correctly encoded.", 'InvalidCharacterError');
+  }
+  let out = '';
+  let bits = 0;
+  let count = 0;
+  for (const letter of text) {
+    bits = (bits << 6) | BASE64.indexOf(letter);
+    count += 6;
+    if (count >= 8) {
+      count -= 8;
+      out += String.fromCharCode((bits >> count) & 255);
+    }
+  }
+  return out;
+}
