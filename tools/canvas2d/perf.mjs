@@ -55,6 +55,8 @@ async function edgePage(scene, waitFrames, ids) {
     const marker = `threejsc-edge-`;
     await withTimeout(page.goto(`${origin}/examples/canvas2d/index.html?scene=${scene}`), 'goto');
     ids.list = (await ask(`discover ${marker}`)).split(',').filter(Boolean);
+    // Opening the handles now keeps each process's CPU time readable after Edge closes.
+    if (ids.list.length) await ask(`cpu ${ids.list.join(',')}`);
     await withTimeout(page.waitForFunction(() => globalThis.__sceneReady || globalThis.__sceneError), 'scene');
     await withTimeout(page.evaluate(count => new Promise(done => { let left = count; const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }), waitFrames), 'frames', 120_000);
     return { lines };
