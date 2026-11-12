@@ -1,0 +1,12 @@
+[package]
+name = "threejsc-audio"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+web-audio-api = { version = "=1.7.0", default-features = false }
+
+[dev-dependencies]
+hound = "3.5"
+serde_json = "1"
