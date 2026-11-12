@@ -25,7 +25,7 @@ SPIKE_GAMMA=2.3 SPIKE_CONTRAST=1 cargo run --release --manifest-path spikes/canv
 
 ## Results
 
-Over the twelve text canvases, against Edge's software canvas (`--no-gpu`), with Skia's pen placement:
+Over the twelve text canvases, against Edge, with Skia's pen placement. Edge with the GPU flags the lanes use drew the twelve text canvases to the same bytes as with `--no-gpu`, and the gradients to within 1 of 255, so the table holds for both:
 
 | Pipeline | Hinted | Mask gamma | Mean difference | Pixels over 2/255 |
 |---|---|---|---|---|
