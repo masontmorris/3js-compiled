@@ -6,7 +6,7 @@
 import { createServer } from 'node:http';
 import { copyFile, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 
@@ -83,9 +83,26 @@ async function native(run) {
   return JSON.parse(line.slice(7));
 }
 
+// The share of all cores busy over the next `ms`.
+async function load(ms) {
+  const busy = () => cpus().reduce((sum, cpu) => sum + cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.irq, 0);
+  const total = () => cpus().reduce((sum, cpu) => sum + Object.values(cpu.times).reduce((a, b) => a + b, 0), 0);
+  const [b0, t0] = [busy(), total()];
+  await new Promise(resolve => setTimeout(resolve, ms));
+  return (busy() - b0) / (total() - t0);
+}
+// Waits, at most 2 minutes, until the machine is under 35% busy over 3 s, so other work does not skew a run.
+async function quiet(name) {
+  for (let tries = 0; tries < 40; tries++) {
+    const busy = await load(3000);
+    if (busy < 0.35) return console.log(`${name}: machine ${(busy * 100).toFixed(1)}% busy before the run`);
+  }
+  console.log(`${name}: machine stayed over 35% busy for 2 minutes`);
+}
 // Each run's idle window, so the load just before it measures can be read from a sampler's log.
 const windows = [];
 const timed = async (name, run) => {
+  await quiet(name);
   const result = await run();
   windows.push(`${name} ${result.idle[0]} ${result.idle[1]}`);
   return result;
