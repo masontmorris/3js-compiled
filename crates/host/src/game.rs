@@ -15,7 +15,7 @@ use std::{
     },
     time::Instant,
 };
-use threejsc_host::platform;
+use threejsc_host::{canvas2d, platform};
 
 pub type Log = Rc<RefCell<File>>;
 struct State {
@@ -154,7 +154,7 @@ impl<'a> Game<'a> {
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(platform::Loader::new())),
-            extensions: vec![host_ext::init(), platform::extension::init()],
+            extensions: vec![host_ext::init(), platform::extension::init(), canvas2d::extension::init()],
             ..Default::default()
         });
         let mut storage = Vec::new();
@@ -275,6 +275,10 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
+    }
+    /// Whether the entry module's top level has finished.
+    pub fn evaluated(&self) -> bool {
+        self.evaluation.is_none()
     }
     pub fn take_commands(&mut self) -> Option<Vec<u8>> {
         self.js

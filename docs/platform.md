@@ -10,7 +10,7 @@ The host runs browser game code on shims that behave as headless Edge does for w
 - Elements keep attributes, `id`, `className`, `classList`, inline `style`, `dataset`, children, `textContent`, `focus()`, `blur()`, `tabIndex`, and pointer capture.
 - Selectors cover type, universal, id, class and attribute selectors, `:not()`, `:is()`, `:where()`, a few structural pseudo-classes, and the descendant, child and sibling combinators, in comma-separated lists.
 - Nothing has layout, with one exception. An element whose inline style has `position: fixed` or `absolute` and fixes each axis with `left`, `right`, `top`, `bottom`, `inset`, `width` or `height` in px, %, vw or vh measures that box against the window in `getBoundingClientRect()`, `offsetWidth`, `offsetHeight`, `clientWidth` and `clientHeight`, as Edge does. Borders, padding and positioned ancestors are ignored. Otherwise a canvas, the body and the root element fill the window, and every other element has an empty box, where Edge would lay it out.
-- A canvas has `width` and `height` with Edge's defaults of 300 and 150. `getContext()` returns `null` and logs that it is not implemented.
+- A canvas has `width` and `height` with Edge's defaults of 300 and 150. `getContext('2d')` returns the canvas 2D context below. Other context types return `null` and log that they are not implemented.
 - Setting `innerHTML` stores the string and leaves the element with no children, and logs once that markup is not parsed.
 - A method Edge's DOM defines on an element or the document that the stand-in lacks logs `DOM method not implemented: <Interface>.<method>` once and returns `undefined`. `tools/platform/dom-methods.mjs` lists those methods from Edge into `dom-methods.js`. Any other missing property reads as `undefined`, as in Edge.
 
@@ -56,11 +56,21 @@ The input router turns each host input fact into the events Edge fires for it:
 
 `crypto.getRandomValues()` and `crypto.randomUUID()` read the operating system's random source, with Edge's errors for a non-integer array and for more than 65,536 bytes. `crypto.subtle` is not implemented.
 
+## Canvas 2D
+
+`canvas2d.js` draws what a three.js game draws on a 2D canvas: rectangles, linear and radial gradients, images, and filled and stroked text, with `globalAlpha`, transforms, `save()` and `restore()`, `measureText()`, `getImageData()` and `putImageData()`. A canvas keeps its pixels as premultiplied RGBA8. Setting its `width` or `height`, even to the same value, clears the pixels and resets the drawing state, as in Edge. `THREE.Texture(canvas)` and `CanvasTexture` upload the canvas through `copyExternalImageToTexture()`, and `drawImage()` and `createImageBitmap()` read it.
+
+- The host shapes text with harfrust, the Rust port of HarfBuzz that Chromium shapes with, at 16.16 fixed point as Blink does, so `measureText().width` matches Edge's to 0.01 px. Each character takes the first font in the list that has it, then the standard font, Times New Roman, then Segoe UI Emoji, Segoe UI Symbol, Segoe UI and Arial. The generic families are Edge's on Windows: Arial, Times New Roman, Consolas, Comic Sans MS, Impact and Segoe UI. The host reads these from the Windows font folder when a page first needs them.
+- The font metrics are Blink's: the ascent and descent rounded to whole pixels, the hanging baseline at 0.8 of the ascent, and the em box normalized to the font size at 1/64 pixel for the `top`, `middle` and `bottom` baselines.
+- vello_cpu with glifo rasterizes glyphs at quarter-pixel positions on a whole-pixel baseline, hinted, as Skia places horizontal text. Glyph coverage goes through Skia's glyph mask gamma before it blends, fitted to Edge at gamma 2.3 and contrast 1. Color fonts, such as Segoe UI Emoji, draw their own colors.
+- `FontFace` loads TrueType, OpenType, WOFF and WOFF2 from a buffer or from `url()` sources through `fetch`, and `document.fonts` is a `FontFaceSet` with `add()`, `delete()`, `load()`, `check()` and `ready`. Text draws with a face once it is loaded and added to `document.fonts`, chosen by CSS font matching on weight and style. A variable face draws at the requested weight on its `wght` axis.
+- Paths, clipping, patterns, shadows, filters, line dashes, `letterSpacing`, right-to-left text and compositing modes other than `source-over` log once and draw nothing, or draw with `source-over`. A `drawImage()` source rectangle rounds out to whole pixels, and fonts get no synthetic bold or italic.
+
 ## Not implemented
 
-- Canvas 2D, which E6 adds, and audio, `Audio` and `XMLHttpRequest`, which E7 adds ("Play sound through Web Audio (E7)" in plan PR #4).
+- Audio, `Audio` and `XMLHttpRequest`, which E7 adds ("Play sound through Web Audio (E7)" in plan PR #4).
 - HTML parsing, stylesheets, layout beyond the inline-style rule above, hit testing below the canvas, and `getComputedStyle`, which returns the inline style.
 - Touch events, `visibilitychange`, pointer lock, fullscreen, text input and IME composition.
 - Workers, `WebSocket`, network `fetch`, response streams, `crypto.subtle`, and navigation.
-- EXIF orientation, `createImageBitmap` resizing and color conversion of an image element's pixels with `'none'`, and canvas or video sources for images.
+- EXIF orientation, `createImageBitmap` resizing and color conversion of an image element's pixels with `'none'`, and video sources for images.
 - WebP decodes about 2.3 times slower than in Edge: 41.5 ms against 18.1 ms for folio's 20 largest WebP files (swarm lane P at 9652f72).

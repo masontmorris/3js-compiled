@@ -2,6 +2,7 @@
 // and listeners. Nothing lays out or paints. A canvas in the document fills the window, as a game's canvas does.
 import { EventTarget, Event, FocusEvent, MouseEvent, trusted, defineHandlers, HANDLER_TYPES, INPUT } from './events.js';
 import { DOM_METHODS } from './dom-methods.js';
+import { CanvasRenderingContext2D, CONTEXT_2D, FontFaceSet, RESIZE } from './canvas2d.js';
 
 const ATTRIBUTES = Symbol('attributes');
 const CHILDREN = Symbol('children');
@@ -512,15 +513,17 @@ export class HTMLTextAreaElement extends HTMLInputElement {}
 
 const reflectSize = (name, fallback) => ({
   get() { const value = Number.parseInt(this.getAttribute(name), 10); return Number.isInteger(value) && value >= 0 ? value : fallback; },
-  set(value) { this.setAttribute(name, String(value >>> 0)); },
+  set(value) { this.setAttribute(name, String(value >>> 0)); this[CONTEXT_2D]?.[RESIZE](); },
   configurable: true,
   enumerable: true,
 });
 export class HTMLCanvasElement extends HTMLElement {
   getContext(type) {
+    if (type === '2d') return this[CONTEXT_2D] ??= new CanvasRenderingContext2D(this, this.ownerDocument?.fonts);
     logOnce(`DOM stand-in: HTMLCanvasElement.getContext('${type}') is not implemented and returns null`);
     return null;
   }
+  get [Symbol.for('threejsc.pixels')]() { return this[CONTEXT_2D]?.[Symbol.for('threejsc.pixels')]; }
 }
 Object.defineProperties(HTMLCanvasElement.prototype, { width: reflectSize('width', 300), height: reflectSize('height', 150) });
 
@@ -537,6 +540,7 @@ export class Document extends Node {
     this.ownerDocument = null;
     this.defaultView = window;
     this.readyState = 'complete';
+    this.fonts = new FontFaceSet();
     this.visibilityState = 'visible';
     this.hidden = false;
     this.characterSet = 'UTF-8';

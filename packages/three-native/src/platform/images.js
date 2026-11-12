@@ -510,8 +510,8 @@ export class ImageBitmap {
 
 // createImageBitmap from a Blob, a decoded image element, an ImageBitmap or ImageData, with a crop rectangle,
 // imageOrientation, premultiplyAlpha and colorSpaceConversion, which for a Blob converts to sRGB unless it is 'none',
-// as in Edge. An image element's pixels are already converted. A canvas source and resize options are not
-// implemented.
+// as in Edge. An image element's pixels are already converted, and a canvas gives its 2D pixels. Resize options
+// are not implemented.
 export async function createImageBitmap(source, ...rest) {
   const options = (typeof rest.at(-1) === 'object' && rest.at(-1) !== null ? rest.pop() : undefined) ?? {};
   let pixels;

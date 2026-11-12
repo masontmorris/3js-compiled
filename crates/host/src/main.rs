@@ -38,6 +38,8 @@ struct Options {
     storage: Option<PathBuf>,
     hash: String,
     vsync: bool,
+    /// Runs the entry module with no window or GPU until its top level finishes, then this many frames.
+    headless: Option<u32>,
 }
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
@@ -48,6 +50,7 @@ fn options() -> Result<Options> {
     let mut storage = None;
     let mut hash = String::new();
     let mut vsync = true;
+    let mut headless = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
@@ -64,6 +67,7 @@ fn options() -> Result<Options> {
                 }
             }
             "--novsync" => vsync = false,
+            "--headless" => headless = Some(args.next().context("--headless needs a frame count")?.parse()?),
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -81,6 +85,7 @@ fn options() -> Result<Options> {
         storage,
         hash,
         vsync,
+        headless,
     })
 }
 fn log(log: &Log, message: &str) -> Result<()> {
@@ -187,8 +192,33 @@ fn finish(
     )?;
     Ok(())
 }
+/// Runs the entry module's script with no window, GPU or input until its top level finishes, for at most 30 seconds,
+/// then `frames` more frames, for tests of the platform shims.
+fn headless(options: &Options, frames: u32) -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let _entered = runtime.enter();
+    let log: Log = Rc::new(RefCell::new(File::create("host.log")?));
+    let page = Page { hash: options.hash.clone(), ..Page::default() };
+    let mut game = Game::open(&options.entry, log, &runtime, options.scene.as_deref(), (1280, 720), None, &page)?;
+    let start = Instant::now();
+    while !game.evaluated() {
+        if start.elapsed() > Duration::from_secs(30) {
+            bail!("the entry module did not finish in 30 seconds");
+        }
+        game.frame()?;
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    for _ in 0..frames {
+        game.frame()?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let options = options()?;
+    if let Some(frames) = options.headless {
+        return headless(&options, frames);
+    }
     let steps = if let Some(path) = &options.script {
         threejsc_host::script::parse(
             &std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?,
