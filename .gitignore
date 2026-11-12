@@ -7,3 +7,4 @@ frames.csv
 __pycache__/
 examples/scenes/scene-bundle.js
 examples/platform/platform-bundle.js
+examples/canvas2d/canvas2d-bundle.js
