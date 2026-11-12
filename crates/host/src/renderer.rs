@@ -25,6 +25,8 @@ pub struct Rendered {
     /// When the surface texture was acquired, if acquiring it waited for the display to take a
     /// frame: a display refresh.
     pub refresh: Option<Instant>,
+    /// When acquiring the surface texture began and ended.
+    pub acquire: (Instant, Instant),
 }
 
 /// The window's raw handles, from which the render thread makes a surface for a new device.
@@ -284,6 +286,7 @@ impl Renderer {
             cpu: started.elapsed() - shown.acquire_wait,
             latency: frame.started.elapsed(),
             refresh: (shown.acquire_wait >= Duration::from_micros(250)).then_some(shown.acquired),
+            acquire: (shown.acquired - shown.acquire_wait, shown.acquired),
         })
     }
 }

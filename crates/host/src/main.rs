@@ -89,6 +89,7 @@ fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
 struct Row {
     cpu: Duration,
     interval: Duration,
+    handed: Instant,
 }
 /// Logs `rendered`'s errors, dispatches its responses to JavaScript, and writes its CSV row.
 fn finish(
@@ -97,6 +98,7 @@ fn finish(
     csv: &mut impl Write,
     row: Row,
     rendered: Rendered,
+    clock: Instant,
 ) -> Result<()> {
     let mut readbacks = HashMap::new();
     let responses = match rendered.replay {
@@ -138,14 +140,18 @@ fn finish(
         game.gpu_responses(responses, readbacks)?;
     }
     let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
+    let at = |instant: Instant| ms(instant.saturating_duration_since(clock));
     writeln!(
         csv,
-        "{},{:.4},{:.4},{:.4},{:.4}",
+        "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}",
         rendered.index,
         ms(row.cpu),
         ms(row.interval),
         ms(rendered.cpu),
-        ms(rendered.latency)
+        ms(rendered.latency),
+        at(row.handed),
+        at(rendered.acquire.0),
+        at(rendered.acquire.1)
     )?;
     Ok(())
 }
@@ -171,7 +177,10 @@ fn main() -> Result<()> {
 }
 fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut csv = BufWriter::new(File::create("frames.csv")?);
-    writeln!(csv, "frame,cpu_ms,interval_ms,render_cpu_ms,latency_ms")?;
+    writeln!(
+        csv,
+        "frame,cpu_ms,interval_ms,render_cpu_ms,latency_ms,handed_at_ms,acquire_start_at_ms,acquired_at_ms"
+    )?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -202,10 +211,13 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         .and_then(|hz| hz.parse::<f64>().ok())
         .filter(|hz| *hz > 0.0)
         .map(|hz| 1000.0 / hz);
-    game.set_display_interval(forced.unwrap_or_else(|| display_interval(&window)))?;
+    let interval = forced.unwrap_or_else(|| display_interval(&window));
+    log(log_file, &format!("display interval {interval:.4} ms"))?;
+    game.set_display_interval(interval)?;
     if let Some(ms) = forced {
         game.set_frame_pacing(ms)?;
     }
+    let clock = game.clock_origin();
     let progress = Arc::new(RenderProgress::default());
     game.set_render_progress(progress.clone());
     let rendering = progress.clone();
@@ -339,15 +351,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             commands,
             captures,
         })?;
+        let handed = Instant::now();
         progress.submitted.fetch_add(1, Ordering::Release);
         let render_wait = submitted.elapsed();
         if let Some(rendered) = rendered {
             let row = row.take().expect("a rendered frame has a game-thread row");
-            finish(&mut game, log_file, &mut csv, row, rendered)?;
+            finish(&mut game, log_file, &mut csv, row, rendered, clock)?;
         }
         row = Some(Row {
             cpu: started.elapsed() - render_wait,
             interval: started.duration_since(last),
+            handed,
         });
         last = started;
         frame += 1;
@@ -355,7 +369,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     }
     if let Some(rendered) = render.close()? {
         let row = row.take().expect("a rendered frame has a game-thread row");
-        finish(&mut game, log_file, &mut csv, row, rendered)?;
+        finish(&mut game, log_file, &mut csv, row, rendered, clock)?;
     }
     csv.flush()?;
     log(log_file, &format!("closed after {frame} frames"))?;

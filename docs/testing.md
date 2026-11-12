@@ -32,6 +32,7 @@ The host runs two threads. The game thread owns the window, input, the script, a
 - `interval_ms` is the time between the starts of this frame and the previous one on the game thread.
 - `render_cpu_ms` is the render thread's time for the frame, through replay, the copy to the window, any capture, and present. It excludes the wait to acquire a surface texture.
 - `latency_ms` runs from the start of the frame, where the game thread polls input, to the return of the frame's present call. The swap chain can hold the frame for up to two more refreshes after that.
+- `handed_at_ms` is when the game thread handed the frame to the render thread, and `acquire_start_at_ms` and `acquired_at_ms` are when the render thread began and finished acquiring its surface texture, all on the page's clock, `performance.now()`. An acquire that waits through a display refresh shows a refresh at which the swap chain took no new frame although one was ready. `host.log` gives the display interval the host schedules against.
 
 Closing the window or a `close` step finishes the frame on the render thread, writes its row, and joins the thread. When the render thread fails or panics, the host writes `host failed: render thread ...` to `host.log` and exits with code 1.
 

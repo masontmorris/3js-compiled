@@ -281,6 +281,10 @@ impl<'a> Game<'a> {
             .readbacks = readbacks;
         self.event(&serde_json::json!({"type": "gpu-response", "responses": responses}))
     }
+    /// When the page's clock, `performance.now()`, reads 0.
+    pub fn clock_origin(&mut self) -> Instant {
+        self.js.op_state().borrow().borrow::<State>().start
+    }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
