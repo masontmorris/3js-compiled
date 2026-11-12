@@ -2,7 +2,8 @@
 // Speakers virtual device, Edge runs muted, and a WASAPI loopback recording of the virtual device during the lifecycle
 // scenarios. analyze.mjs turns it into each lane's verdict and plot. Run it under the GPU lease after
 // `npm run build:audio`, `npm run build:scenes` and `npm run build:platform`, and after building the host and the
-// loopback tool in one cargo call, since cargo_fresh.py cleans the workspace's binaries before each build:
+// loopback tool in one cargo call and copying both to C:/3jsc/swarm/e7/owner/bin/head, since cargo_fresh.py cleans the
+// workspace's binaries before each build:
 // `cargo build --release -p threejsc-host -p threejsc-audio --features threejsc-audio/output --bins --examples`.
 //   node tools/audio-parity/lanes.mjs <out dir> [--base-host <exe>] [--only lane1,lane5,...]
 import { execFileSync, spawn } from 'node:child_process';
@@ -12,9 +13,9 @@ import { runHost } from './host.mjs';
 
 const args = process.argv.slice(2);
 const option = name => { const i = args.indexOf(`--${name}`); return i < 0 ? undefined : args.splice(i, 2)[1]; };
-const baseHost = option('base-host') ?? 'C:/3jsc/freeze-out/e7-base/release/host.exe';
+const baseHost = option('base-host') ?? 'C:/3jsc/swarm/e7/owner/bin/base/host.exe';
 const only = option('only')?.split(',');
-const loopbackExe = 'C:/3jsc/freeze-out/e7-owner/release/examples/loopback.exe';
+const loopbackExe = 'C:/3jsc/swarm/e7/owner/bin/head/loopback.exe';
 const device = 'Speakers (Steam Streaming Speakers)';
 const out = resolve(args[0]);
 const at = (...parts) => join(out, ...parts);
@@ -26,9 +27,9 @@ const lanes = {
   async lane1() {
     const capture = name => [{ type: 'capture', path: `${name}.png` }];
     for (const [side, exe] of [['base', baseHost], ['head', undefined]]) {
-      await runHost('examples/platform/index.js', '', at('lane1', side, 'platform'), { exe, frames: 60, steps: capture('platform'), audioOut: false, args: ['--scene', 'texture'] });
+      await runHost('examples/platform/index.js', '', at('lane1', side, 'platform'), { exe, frames: 60, steps: capture('platform'), audio: side === 'head', audioOut: false, args: ['--scene', 'texture'] });
       for (const scene of ['basic-cube', 'materials', 'textures', 'standard-shadow', 'instancing', 'gltf', 'msaa', 'alpha']) {
-        await runHost('examples/scenes/index.js', '', at('lane1', side, scene), { exe, frames: 60, steps: capture(scene), audioOut: false, args: ['--scene', scene] });
+        await runHost('examples/scenes/index.js', '', at('lane1', side, scene), { exe, frames: 60, steps: capture(scene), audio: side === 'head', audioOut: false, args: ['--scene', scene] });
       }
     }
   },

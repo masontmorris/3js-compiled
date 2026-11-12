@@ -13,7 +13,8 @@ import { writeWav } from './wav.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const i = args.indexOf(`--${name}`); return i < 0 ? fallback : args.splice(i, 2)[1]; };
-const hostExe = resolve(option('host', 'C:/3jsc/freeze-out/e7-owner/release/host.exe'));
+// A frozen copy, outside the target directory that cargo_fresh.py cleans before each build.
+const hostExe = resolve(option('host', 'C:/3jsc/swarm/e7/owner/bin/head/host.exe'));
 const device = option('audio-device', 'Speakers (Steam Streaming Speakers)');
 const filter = option('filter', '');
 const dump = option('dump', '');
@@ -24,14 +25,16 @@ const repo = resolve('.');
 
 // Runs the host on `entry` in `out` and answers host.log once it exits. `steps` run after `frames` frames, then the
 // host closes.
-export function runHost(entry, hash, out, { exe = hostExe, frames: count = frames, steps = [], args: extra = [], audioOut = true, timeoutMs = 300_000 } = {}) {
+export function runHost(entry, hash, out, { exe = hostExe, frames: count = frames, steps = [], args: extra = [], audio = true, audioOut = true, timeoutMs = 300_000 } = {}) {
   mkdirSync(out, { recursive: true });
   const script = join(out, 'steps.json');
   writeFileSync(script, JSON.stringify([{ type: 'wait', frames: count }, ...steps, { type: 'close' }]));
-  const args = ['--entry', join(repo, entry), '--hash', hash, '--script', script, '--audio-device', device, ...(audioOut ? ['--audio-out', join(out, 'out.wav')] : []), ...extra];
+  // The base host has no audio, so it takes neither audio flag.
+  const args = ['--entry', join(repo, entry), '--hash', hash, '--script', script, ...(audio ? ['--audio-device', device] : []), ...(audio && audioOut ? ['--audio-out', join(out, 'out.wav')] : []), ...extra];
   return new Promise((done, fail) => {
     const child = spawn(exe, args, { cwd: out, stdio: ['ignore', 'ignore', 'inherit'] });
     const timer = setTimeout(() => { child.kill(); fail(new Error(`host.mjs: the host did not exit within ${timeoutMs / 1000} s (pid ${child.pid})`)); }, timeoutMs);
+    child.on('error', error => { clearTimeout(timer); fail(error); });
     child.on('exit', code => { clearTimeout(timer); code === 0 ? done(readFileSync(join(out, 'host.log'), 'utf8')) : fail(new Error(`host exited with ${code}`)); });
   });
 }
