@@ -55,40 +55,83 @@ setHost({
 const floats = bytes => new Float32Array(bytes.slice().buffer);
 const view = array => new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
 let endedPump = null;
+// The graph changes a page makes in one task turn go to the engine in one call. AudioParam automation, property sets,
+// connections and source starts and stops queue here in order, as op_audio_batch's commands, and go when the turn's
+// promise jobs run, which is before the frame ends, or before any other audio call, so each call sees the changes
+// made before it.
+const turnEnd = Promise.resolve();
+let batch = { words: [], strings: [], names: new Map(), values: [] };
+let flushQueued = false;
+const flush = () => {
+  flushQueued = false;
+  if (batch.words.length === 0) return;
+  const { words, strings, values } = batch;
+  batch = { words: [], strings: [], names: new Map(), values: [] };
+  ops.op_audio_batch(new Uint8Array(new Float64Array(words).buffer), strings, values);
+};
+const name = text => {
+  let index = batch.names.get(text);
+  if (index === undefined) {
+    index = batch.strings.push(text) - 1;
+    batch.names.set(text, index);
+  }
+  return index;
+};
+const queue = (...words) => {
+  batch.words.push(...words);
+  if (!flushQueued) {
+    flushQueued = true;
+    turnEnd.then(flush);
+  }
+};
+const flushed = call => (...args) => {
+  flush();
+  return call(...args);
+};
+// An online context's currentTime is the frame count the render thread publishes, in render quanta, to the context's
+// SharedArrayBuffer as each quantum begins, so reading it is no call into the engine and it advances by render
+// quantum, as in Chrome. An offline context's is a call.
+const clocks = new Map();
 audio.setAudioHost({
-  context: spec => {
+  context: flushed(spec => {
     // Ended sources arrive over one long-lived op, started with the first context.
     endedPump ??= (async () => {
       for (;;) audio.sourceEnded(await ops.op_audio_ended());
     })();
-    return ops.op_audio_context(spec);
+    const slot = spec.kind === 'offline' ? undefined : new SharedArrayBuffer(4);
+    const info = ops.op_audio_context(spec, slot);
+    if (slot) clocks.set(info.id, { quanta: new Int32Array(slot), rate: info.sampleRate });
+    return info;
+  }),
+  currentTime: id => {
+    const clock = clocks.get(id);
+    return clock ? ((Atomics.load(clock.quanta, 0) >>> 0) * 128) / clock.rate : ops.op_audio_current_time(id);
   },
-  currentTime: id => ops.op_audio_current_time(id),
-  baseLatency: id => ops.op_audio_base_latency(id),
-  outputLatency: id => ops.op_audio_output_latency(id),
-  destination: id => ops.op_audio_destination(id),
-  listener: id => ops.op_audio_listener(id),
-  maxChannelCount: id => ops.op_audio_max_channel_count(id),
-  suspend: id => ops.op_audio_lifecycle(id, 'suspend'),
-  resume: id => ops.op_audio_lifecycle(id, 'resume'),
-  close: id => ops.op_audio_lifecycle(id, 'close'),
-  render: async id => (await ops.op_audio_render(id)).map(floats),
-  node: (context, kind, options) => ops.op_audio_node(context, kind, options),
-  set: (id, prop, value) => ops.op_audio_set(id, prop, value),
-  param: (id, name, method, a, b, c) => ops.op_audio_param(id, name, method, a, b, c),
-  curve: (id, name, values, start, duration) => ops.op_audio_curve(id, name, view(values), start, duration),
-  paramValue: (id, name) => ops.op_audio_param_value(id, name),
-  connect: (from, to, output, input) => ops.op_audio_connect(from, to, output, input),
-  connectParam: (from, to, name, output) => ops.op_audio_connect_param(from, to, name, output),
-  disconnect: (from, to, output, input) => ops.op_audio_disconnect(from, to, output, input),
-  disconnectParam: (from, to, name, output) => ops.op_audio_disconnect_param(from, to, name, output),
-  start: (id, when, offset, duration) => ops.op_audio_start(id, when, offset, duration),
-  stop: (id, when) => ops.op_audio_stop(id, when),
-  buffer: (channels, rate) => ops.op_audio_buffer(channels.map(view), rate),
-  bufferData: (id, channel) => floats(ops.op_audio_buffer_data(id, channel)),
-  sourceBuffer: (node, buffer) => ops.op_audio_source_buffer(node, buffer),
-  decode: (bytes, rate) => ops.op_audio_decode(new Uint8Array(bytes), rate),
-  analyser: (id, kind, array) => ops.op_audio_analyser(id, kind, view(array)),
+  baseLatency: flushed(id => ops.op_audio_base_latency(id)),
+  outputLatency: flushed(id => ops.op_audio_output_latency(id)),
+  destination: flushed(id => ops.op_audio_destination(id)),
+  listener: flushed(id => ops.op_audio_listener(id)),
+  maxChannelCount: flushed(id => ops.op_audio_max_channel_count(id)),
+  suspend: flushed(id => ops.op_audio_lifecycle(id, 'suspend')),
+  resume: flushed(id => ops.op_audio_lifecycle(id, 'resume')),
+  close: flushed(id => ops.op_audio_lifecycle(id, 'close')),
+  render: flushed(async id => (await ops.op_audio_render(id)).map(floats)),
+  node: flushed((context, kind, options) => ops.op_audio_node(context, kind, options)),
+  set: (id, prop, value) => queue(1, id, name(prop), batch.values.push(value) - 1),
+  param: (id, param, method, a, b, c) => queue(0, id, name(param), name(method), a, b, c),
+  curve: flushed((id, param, values, start, duration) => ops.op_audio_curve(id, param, view(values), start, duration)),
+  paramValue: flushed((id, param) => ops.op_audio_param_value(id, param)),
+  connect: (from, to, output, input) => queue(2, from, to, output, input),
+  connectParam: (from, to, param, output) => queue(3, from, to, name(param), output),
+  disconnect: (from, to, output, input) => queue(4, from, to, output, input),
+  disconnectParam: (from, to, param, output) => queue(5, from, to, name(param), output),
+  start: (id, when, offset, duration) => queue(6, id, when, offset, duration),
+  stop: (id, when) => queue(7, id, when),
+  buffer: flushed((channels, rate) => ops.op_audio_buffer(channels.map(view), rate)),
+  bufferData: flushed((id, channel) => floats(ops.op_audio_buffer_data(id, channel))),
+  sourceBuffer: flushed((node, buffer) => ops.op_audio_source_buffer(node, buffer)),
+  decode: flushed((bytes, rate) => ops.op_audio_decode(new Uint8Array(bytes), rate)),
+  analyser: flushed((id, kind, array) => ops.op_audio_analyser(id, kind, view(array))),
 });
 // Media queries over the window's size and pixel ratio, with Edge's answers for a desktop with a mouse.
 const evaluateMedia = query => evaluate(query, { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio });

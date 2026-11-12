@@ -147,6 +147,29 @@ pub type ObserverFactory = Box<dyn FnMut(f32, usize) -> Box<dyn RenderObserver>>
 
 pub type OnlineHook = Box<dyn FnMut(&Arc<AudioContext>)>;
 
+/// Sees a context's frame count each time a render quantum begins, on the render thread. It must not block.
+pub type FrameSink = Box<dyn Fn(u64) + Send + Sync>;
+
+// The observer an online context gets: the output's observer, if any, and the frame sink, if any.
+struct Observed {
+    output: Option<Box<dyn RenderObserver>>,
+    frames: Option<FrameSink>,
+}
+
+impl RenderObserver for Observed {
+    fn rendered(&self, report: &web_audio_api::RenderReport<'_>) {
+        if let Some(output) = &self.output {
+            output.rendered(report);
+        }
+    }
+
+    fn frame(&self, frames_played: u64) {
+        if let Some(frames) = &self.frames {
+            frames(frames_played);
+        }
+    }
+}
+
 /// How an online context reaches the output: the device, and an observer of what the device receives.
 pub struct Output {
     /// The engine's sink id, or empty for the default device.
@@ -194,11 +217,13 @@ impl Graph {
         id
     }
 
+    /// A new online context on the output. `frames` sees its frame count each render quantum.
     pub fn online(
         &mut self,
         output: &mut Output,
         sample_rate: Option<f32>,
         latency_hint: &str,
+        frames: Option<FrameSink>,
     ) -> Result<OnlineInfo> {
         let latency_hint = match latency_hint {
             "balanced" => AudioContextLatencyCategory::Balanced,
@@ -215,11 +240,17 @@ impl Graph {
             ..AudioContextOptions::default()
         };
         let context = AudioContext::try_new(options).map_err(|e| GraphError(e.to_string()))?;
-        if let Some(observer) = &mut output.observer {
-            context.set_render_observer(Some(observer(
+        let observed = output.observer.as_mut().map(|observer| {
+            observer(
                 context.sample_rate(),
                 context.destination().max_channel_count(),
-            )));
+            )
+        });
+        if observed.is_some() || frames.is_some() {
+            context.set_render_observer(Some(Box::new(Observed {
+                output: observed,
+                frames,
+            })));
         }
         let id = self.id();
         let info = OnlineInfo {
@@ -652,5 +683,43 @@ impl Graph {
         self.nodes.retain(|_, (owner, _)| *owner != context);
         self.destinations.remove(&context);
         self.listeners.remove(&context);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn an_online_context_reports_its_frame_count_each_render_quantum() {
+        let (mut graph, _ended) = Graph::new();
+        let mut output = Output {
+            sink_id: "none".into(),
+            observer: None,
+            on_online: None,
+        };
+        let seen = Arc::new(AtomicU64::new(u64::MAX));
+        let sink = Arc::clone(&seen);
+        let info = graph
+            .online(
+                &mut output,
+                None,
+                "interactive",
+                Some(Box::new(move |frames| {
+                    sink.store(frames, Ordering::Relaxed)
+                })),
+            )
+            .unwrap();
+        let tone = graph.node(info.id, "Oscillator", &Value::Null).unwrap();
+        let destination = graph.destination(info.id).unwrap();
+        graph.connect(tone, destination, 0, 0).unwrap();
+        graph.start(tone, 0., 0., -1.).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let frames = seen.load(Ordering::Relaxed);
+        let engine = graph.current_time(info.id);
+        assert_ne!(frames, u64::MAX, "the sink saw no render quantum");
+        assert_eq!(frames % 128, 0);
+        assert!(frames > 0 && frames as f64 / f64::from(info.sample_rate) <= engine);
     }
 }

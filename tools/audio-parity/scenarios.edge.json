@@ -1330,6 +1330,27 @@
      ]
     ]
    ]
+  ],
+  "current-time": [
+   [
+    "at construction",
+    0
+   ],
+   [
+    "running: advances, in whole render quanta",
+    true,
+    true
+   ],
+   [
+    "suspended: holds, in whole render quanta",
+    true,
+    true
+   ],
+   [
+    "resumed: advances again, in whole render quanta",
+    true,
+    true
+   ]
   ]
  }
 }

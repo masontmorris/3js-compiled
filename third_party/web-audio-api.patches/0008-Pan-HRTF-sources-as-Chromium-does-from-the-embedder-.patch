@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 08:50:56 -0500
-Subject: [PATCH 8/8] Pan HRTF sources as Chromium does, from the embedder's
+Subject: [PATCH 8/9] Pan HRTF sources as Chromium does, from the embedder's
  responses
 
 set_hrtf_responses() takes the composite IRCAM responses Chromium ships,

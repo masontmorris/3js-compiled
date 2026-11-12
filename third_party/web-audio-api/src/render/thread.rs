@@ -23,7 +23,7 @@ use crate::events::{EventDispatch, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::AudioWorkletGlobalScope;
-use crate::stats::{AudioStats, RenderReport};
+use crate::stats::{AudioStats, Observer, RenderReport};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::graph::Graph;
@@ -434,10 +434,10 @@ impl RenderThread {
             // SAFETY: potentially risky - "modifying the masking flags, rounding mode, or
             // denormals-are-zero mode flags leads to immediate Undefined Behavior: Rust assumes
             // that these are always in their default state and will optimize accordingly."
-            no_denormals::no_denormals(|| self.render_inner(output_buffer))
+            no_denormals::no_denormals(|| self.render_inner(output_buffer, observer.as_deref()))
         };
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        self.render_inner(output_buffer);
+        self.render_inner(output_buffer, observer.as_deref());
 
         let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let callback_budget_ns = if self.sample_rate <= 0. {
@@ -463,7 +463,11 @@ impl RenderThread {
         }
     }
 
-    fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
+    fn render_inner<S: FromSample<f32> + Clone>(
+        &mut self,
+        mut output_buffer: &mut [S],
+        observer: Option<&Observer>,
+    ) {
         self.buffer_size = output_buffer.len();
 
         // There may be audio frames left over from the previous render call,
@@ -515,6 +519,9 @@ impl RenderThread {
             let current_frame = self
                 .frames_played
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::Relaxed);
+            if let Some(observer) = observer {
+                observer.0.frame(current_frame + RENDER_QUANTUM_SIZE as u64);
+            }
             let current_time = current_frame as f64 / self.sample_rate as f64;
 
             let scope = AudioWorkletGlobalScope {

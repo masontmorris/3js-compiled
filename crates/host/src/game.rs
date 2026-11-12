@@ -1687,4 +1687,99 @@ mod tests {
         assert!(!log.contains("Uncaught"), "{log}");
         Ok(())
     }
+    // Runs `script` in the page and answers whether it returned true.
+    fn holds(game: &mut Game, script: String) -> Result<bool> {
+        Ok(game
+            .js
+            .execute_script("host:check", script)?
+            .open(game.js.v8_isolate())
+            .is_true())
+    }
+
+    fn batched(game: &Game) -> (u64, u64) {
+        game.js
+            .op_state()
+            .borrow()
+            .borrow::<threejsc_host::audio::Audio>()
+            .batched()
+    }
+
+    #[test]
+    fn audio_changes_made_in_a_frame_reach_the_engine_in_one_call_before_it_ends() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-batch-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-batch.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        // The page builds its graph, then changes it in each frame's callback with no other audio call.
+        game.frame()?;
+        for _ in 0..5 {
+            let (batches, commands) = batched(&game);
+            game.frame()?;
+            let (after, applied) = batched(&game);
+            assert_eq!(after - batches, 1, "one call per frame");
+            assert!(
+                holds(
+                    &mut game,
+                    format!("globalThis.__made === {} && __made > 0", applied - commands)
+                )?,
+                "every change the frame made reached the engine by its end: {}",
+                std::fs::read_to_string(&log_path)?
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn audio_current_time_is_the_engines_and_advances_by_render_quantum() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-time-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-time.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.frame()?;
+        holds(&mut game, "globalThis.__times = []; true".into())?;
+        let started = Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(600) {
+            game.frame()?;
+            // The page's reading, then the engine's: the engine's is the same or a few quanta later.
+            holds(&mut game, "__times.push(__time()); true".into())?;
+            let engine = game
+                .js
+                .op_state()
+                .borrow()
+                .borrow::<threejsc_host::audio::Audio>()
+                .current_time(1);
+            assert!(
+                holds(
+                    &mut game,
+                    format!(
+                        "{{ const t = __times.at(-1), e = {engine}, q = t * __rate / 128, r = Math.round(q);
+                        const ok = Math.abs(q - r) < 1e-6 && t <= e && e - t < 0.05 && (__times.length < 2 || t >= __times.at(-2));
+                        if (!ok) console.log(`currentTime ${{t}} engine ${{e}} quanta ${{q}}`);
+                        ok }}"
+                    )
+                )?,
+                "{}",
+                std::fs::read_to_string(&log_path)?
+            );
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+        assert!(
+            holds(
+                &mut game,
+                "__times.at(-1) > 0.3 && new Set(__times).size > 10".into()
+            )?,
+            "currentTime advanced while the context ran"
+        );
+        Ok(())
+    }
 }

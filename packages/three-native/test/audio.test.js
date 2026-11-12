@@ -28,10 +28,12 @@ function fakeHost() {
   const values = new Map();
   const clocks = new Map();
   const later = value => new Promise(resolve => setTimeout(() => resolve(value), 5));
+  // The engine's clock advances by whole render quanta of 128 frames at 48 kHz.
   const time = id => {
     const clock = clocks.get(id);
     if (!clock) return 0;
-    return clock.held + (clock.running ? (performance.now() - clock.since) / 1000 : 0);
+    const seconds = clock.held + (clock.running ? (performance.now() - clock.since) / 1000 : 0);
+    return (Math.floor((seconds * 48000) / 128) * 128) / 48000;
   };
   const run = (id, running) => {
     const clock = clocks.get(id);
@@ -102,7 +104,7 @@ async function run(name) {
   return JSON.parse(JSON.stringify(log));
 }
 
-for (const name of ['context-start', 'param-errors', 'node-errors', 'statechange-timing', 'statechange-races', 'suspend-resume-close', 'offline-render', 'audio-element', 'xhr']) {
+for (const name of ['context-start', 'current-time', 'param-errors', 'node-errors', 'statechange-timing', 'statechange-races', 'suspend-resume-close', 'offline-render', 'audio-element', 'xhr']) {
   test(`${name} logs what Edge logs`, async () => {
     install();
     assert.deepEqual(await run(name), edge[name]);

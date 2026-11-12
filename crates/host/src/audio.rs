@@ -9,17 +9,20 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use deno_core::{JsBuffer, OpState, ToJsBuffer, op2};
+use deno_core::{JsBuffer, OpState, ToJsBuffer, op2, v8};
 use deno_error::JsErrorBox;
 use futures_channel::mpsc::UnboundedReceiver;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use threejsc_audio::decode::decode_audio_data;
-use threejsc_audio::graph::{Graph, Id, ObserverFactory, OnlineHook, OnlineInfo, Output};
+use threejsc_audio::graph::{
+    FrameSink, Graph, Id, ObserverFactory, OnlineHook, OnlineInfo, Output,
+};
 use threejsc_audio::record::Recorder;
 use threejsc_audio::web_audio_api::context::BaseAudioContext;
 
@@ -43,6 +46,8 @@ pub struct Audio {
     recorder: Option<Rc<RefCell<Recorder>>>,
     // Keeps the default-device follower thread alive.
     followed: Option<threejsc_audio::device::Followed>,
+    // The batches op_audio_batch has run, and the commands in them.
+    batched: (u64, u64),
 }
 
 impl Audio {
@@ -56,7 +61,18 @@ impl Audio {
             output: None,
             recorder: None,
             followed: None,
+            batched: (0, 0),
         }
+    }
+
+    /// The batches of graph changes the page has sent, and the commands in them.
+    pub fn batched(&self) -> (u64, u64) {
+        self.batched
+    }
+
+    /// An online context's currentTime as the engine reads it.
+    pub fn current_time(&self, context: Id) -> f64 {
+        self.graph.current_time(context)
     }
 
     fn log(&self, message: String) {
@@ -120,10 +136,17 @@ impl Audio {
         Ok(())
     }
 
-    fn online(&mut self, sample_rate: Option<f32>, hint: &str) -> Result<OnlineInfo, JsErrorBox> {
+    fn online(
+        &mut self,
+        sample_rate: Option<f32>,
+        hint: &str,
+        frames: Option<FrameSink>,
+    ) -> Result<OnlineInfo, JsErrorBox> {
         self.ensure_output()?;
         let output = self.output.as_mut().expect("ensure_output set the output");
-        self.graph.online(output, sample_rate, hint).map_err(fail)
+        self.graph
+            .online(output, sample_rate, hint, frames)
+            .map_err(fail)
     }
 
     fn get(&mut self) -> Result<&mut Graph, JsErrorBox> {
@@ -167,11 +190,31 @@ struct ContextInfo {
     sample_rate: f32,
 }
 
+// Publishes an online context's frame count, in render quanta, to the first 4 bytes of the page's SharedArrayBuffer,
+// which `currentTime` reads with `Atomics.load`, so a read is no call into the engine. The render thread writes it as
+// each render quantum begins, so it advances by render quantum, as Chrome's does.
+fn publisher(slot: v8::Local<v8::Value>) -> Option<FrameSink> {
+    let slot = v8::Local::<v8::SharedArrayBuffer>::try_from(slot).ok()?;
+    let store = slot.get_backing_store();
+    if store.byte_length() < 4 {
+        return None;
+    }
+    Some(Box::new(move |frames| {
+        if let Some(data) = store.data() {
+            // SAFETY: `store` keeps the SharedArrayBuffer's memory alive for as long as this closure, a
+            // SharedArrayBuffer's memory is aligned for its typed arrays, and the page only reads it atomically.
+            let quanta = unsafe { AtomicU32::from_ptr(data.as_ptr().cast()) };
+            quanta.store((frames / 128) as u32, Ordering::Relaxed);
+        }
+    }))
+}
+
 #[op2]
 #[serde]
 fn op_audio_context(
     state: &mut OpState,
     #[serde] spec: ContextSpec,
+    slot: v8::Local<v8::Value>,
 ) -> Result<ContextInfo, JsErrorBox> {
     if spec.kind == "offline" {
         let rate = spec.sample_rate.unwrap_or(44100.);
@@ -189,7 +232,8 @@ fn op_audio_context(
         Some(Value::String(s)) => s,
         _ => "interactive".into(),
     };
-    let OnlineInfo { id, sample_rate } = audio(state).online(spec.sample_rate, &hint)?;
+    let OnlineInfo { id, sample_rate } =
+        audio(state).online(spec.sample_rate, &hint, publisher(slot))?;
     Ok(ContextInfo { id, sample_rate })
 }
 
@@ -309,6 +353,91 @@ fn op_audio_param(
         .get()?
         .param(node, name, method, a, b, c)
         .map_err(fail)
+}
+
+/// Runs the graph changes a page made in one task turn, in order. `platform/index.js` queues AudioParam automation,
+/// property sets, connections and source starts and stops, and sends them in one call at the end of the turn, or
+/// before any other audio call. Each command is a little-endian f64 code and its arguments; names index `strings`
+/// and set values index `values`.
+#[op2]
+fn op_audio_batch(
+    state: &mut OpState,
+    #[buffer] commands: &[u8],
+    #[serde] strings: Vec<String>,
+    #[serde] values: Vec<Value>,
+) -> Result<(), JsErrorBox> {
+    let words: Vec<f64> = commands
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|w| f64::from_le_bytes(*w))
+        .collect();
+    let audio = audio(state);
+    audio.batched.0 += 1;
+    let graph = &mut audio.graph;
+    let string = |i: f64| {
+        strings
+            .get(i as usize)
+            .map(String::as_str)
+            .ok_or_else(|| fail(format!("no batched string {i}")))
+    };
+    let mut at = 0;
+    while at < words.len() {
+        let w = &words[at..];
+        let arg = |i: usize| w.get(i).copied().unwrap_or(0.);
+        let id = arg(1) as u32;
+        let length = match arg(0) as u32 {
+            0 => {
+                graph
+                    .param(id, string(arg(2))?, string(arg(3))?, arg(4), arg(5), arg(6))
+                    .map_err(fail)?;
+                7
+            }
+            1 => {
+                let value = values
+                    .get(arg(3) as usize)
+                    .ok_or_else(|| fail("no batched value"))?;
+                graph.set(id, string(arg(2))?, value).map_err(fail)?;
+                4
+            }
+            2 => {
+                graph
+                    .connect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
+                    .map_err(fail)?;
+                5
+            }
+            3 => {
+                graph
+                    .connect_param(id, arg(2) as u32, string(arg(3))?, arg(4) as usize)
+                    .map_err(fail)?;
+                5
+            }
+            4 => {
+                graph
+                    .disconnect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
+                    .map_err(fail)?;
+                5
+            }
+            5 => {
+                graph
+                    .disconnect_param(id, arg(2) as u32, string(arg(3))?, arg(4) as usize)
+                    .map_err(fail)?;
+                5
+            }
+            6 => {
+                graph.start(id, arg(2), arg(3), arg(4)).map_err(fail)?;
+                5
+            }
+            7 => {
+                graph.stop(id, arg(2)).map_err(fail)?;
+                3
+            }
+            code => return Err(fail(format!("no batched command {code}"))),
+        };
+        at += length;
+        audio.batched.1 += 1;
+    }
+    Ok(())
 }
 
 #[op2(fast)]
@@ -536,6 +665,7 @@ deno_core::extension!(
         op_audio_node,
         op_audio_set,
         op_audio_param,
+        op_audio_batch,
         op_audio_curve,
         op_audio_param_value,
         op_audio_connect,
@@ -553,3 +683,59 @@ deno_core::extension!(
     ]
 );
 pub use audio_ext as extension;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deno_core::{JsRuntime, RuntimeOptions};
+
+    #[test]
+    fn the_publisher_writes_render_quanta_where_the_page_reads_them() {
+        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let slot = runtime
+            .execute_script("slot", "globalThis.slot = new SharedArrayBuffer(4); slot")
+            .unwrap();
+        let sink = {
+            deno_core::scope!(scope, runtime);
+            let slot = v8::Local::new(scope, slot);
+            publisher(slot).expect("a SharedArrayBuffer of 4 bytes")
+        };
+        sink(128 * 37);
+        let read = runtime
+            .execute_script("read", "Atomics.load(new Int32Array(slot), 0)")
+            .unwrap();
+        deno_core::scope!(scope, runtime);
+        assert_eq!(v8::Local::new(scope, read).int32_value(scope), Some(37));
+    }
+
+    #[test]
+    fn a_running_context_publishes_its_frame_count_to_the_page() {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![extension::init()],
+            ..Default::default()
+        });
+        runtime.op_state().borrow_mut().put(Audio::new(Options {
+            device: Some("none".into()),
+            csv: std::env::temp_dir().join(format!("threejsc-publish-{}.csv", std::process::id())),
+            ..Default::default()
+        }));
+        runtime
+            .execute_script(
+                "context",
+                "const ops = Deno.core.ops;
+                globalThis.slot = new SharedArrayBuffer(4);
+                const { id } = ops.op_audio_context({ kind: 'online', sampleRate: null, latencyHint: 'interactive' }, slot);
+                const tone = ops.op_audio_node(id, 'Oscillator', {});
+                ops.op_audio_connect(tone, ops.op_audio_destination(id), 0, 0);
+                ops.op_audio_start(tone, 0, 0, -1);",
+            )
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let read = runtime
+            .execute_script("read", "Atomics.load(new Int32Array(slot), 0)")
+            .unwrap();
+        deno_core::scope!(scope, runtime);
+        let quanta = v8::Local::new(scope, read).int32_value(scope).unwrap();
+        assert!(quanta > 0, "the page's slot holds {quanta} quanta");
+    }
+}

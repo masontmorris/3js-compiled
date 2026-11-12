@@ -24,6 +24,10 @@ pub struct RenderReport<'a> {
 /// Sees every callback's output on the render thread. It must not block or allocate.
 pub trait RenderObserver: Send + Sync {
     fn rendered(&self, report: &RenderReport<'_>);
+
+    /// Sees the context's frame count each time a render quantum begins, the value `currentTime` reads from then
+    /// on, so an embedder can publish `currentTime` where its control thread reads it without a call.
+    fn frame(&self, _frames_played: u64) {}
 }
 
 pub(crate) struct Observer(pub Box<dyn RenderObserver>);

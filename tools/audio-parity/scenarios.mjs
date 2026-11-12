@@ -44,6 +44,27 @@ export const scenarios = {
     log('state after close', ctx.state);
   },
 
+  // currentTime is 0 at construction, advances by whole render quanta while the context runs, holds while it is
+  // suspended, and advances again after resume.
+  async 'current-time'(log) {
+    const ctx = new AudioContext();
+    const whole = t => Math.abs((t * ctx.sampleRate) / 128 - Math.round((t * ctx.sampleRate) / 128)) < 1e-6;
+    log('at construction', ctx.currentTime);
+    await running(ctx);
+    await sleep(200);
+    const ran = ctx.currentTime;
+    log('running: advances, in whole render quanta', ran > 0, whole(ran));
+    await ctx.suspend();
+    const held = ctx.currentTime;
+    await sleep(150);
+    log('suspended: holds, in whole render quanta', ctx.currentTime === held, whole(held));
+    await ctx.resume();
+    await sleep(150);
+    const resumed = ctx.currentTime;
+    log('resumed: advances again, in whole render quanta', resumed > held, whole(resumed));
+    await ctx.close();
+  },
+
   async 'suspend-resume-close'(log) {
     const ctx = new AudioContext();
     await running(ctx);
