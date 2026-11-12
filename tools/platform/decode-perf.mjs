@@ -1,6 +1,7 @@
 // E5's perf rule: total decode time of a set of images, in headless Edge and in the host, interleaved. Each run
-// reads every file first, then decodes the whole set with createImageBitmap, as three's ImageBitmapLoader does,
-// three times, and reports each pass's total in ms. It drives the GPU, so run it under the lease:
+// reads every file first, idles 3 s so the machine's load can be read just before it measures, then decodes the
+// whole set with createImageBitmap, as three's ImageBitmapLoader does, three times, and reports each pass's total
+// in ms. It writes each run's idle window to windows.txt. It drives the GPU, so run it under the lease:
 //   node tools/platform/decode-perf.mjs --images <dir> --out <dir> [--host <host.exe>] [--runs 3]
 import { createServer } from 'node:http';
 import { copyFile, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -23,6 +24,9 @@ await writeFile(join(page, 'manifest.json'), JSON.stringify(files));
 await writeFile(join(page, 'decode.js'), `
 const files = await (await fetch(new URL('manifest.json', location.href))).json();
 const blobs = await Promise.all(files.map(async file => (await fetch(new URL('images/' + file, location.href))).blob()));
+const idleStart = new Date().toISOString();
+await new Promise(resolve => setTimeout(resolve, 3000));
+const idle = [idleStart, new Date().toISOString()];
 const passes = [];
 let pixels = 0;
 for (let pass = 0; pass < 3; pass++) {
@@ -32,7 +36,7 @@ for (let pass = 0; pass < 3; pass++) {
   pixels = bitmaps.reduce((sum, bitmap) => sum + bitmap.width * bitmap.height, 0);
   for (const bitmap of bitmaps) bitmap.close();
 }
-console.log('DECODE ' + JSON.stringify({ files: files.length, bytes: blobs.reduce((sum, blob) => sum + blob.size, 0), pixels, passes }));
+console.log('DECODE ' + JSON.stringify({ files: files.length, bytes: blobs.reduce((sum, blob) => sum + blob.size, 0), pixels, passes, idle }));
 globalThis.__done = true;
 `);
 await writeFile(join(page, 'decode.html'), '<!doctype html><script type="module" src="decode.js"></script>');
@@ -79,12 +83,11 @@ async function native(run) {
   return JSON.parse(line.slice(7));
 }
 
-// Each run's start and end, so its CPU load can be read from a sampler's log.
+// Each run's idle window, so the load just before it measures can be read from a sampler's log.
 const windows = [];
 const timed = async (name, run) => {
-  const start = new Date().toISOString();
   const result = await run();
-  windows.push(`${name} ${start} ${new Date().toISOString()}`);
+  windows.push(`${name} ${result.idle[0]} ${result.idle[1]}`);
   return result;
 };
 const results = { edge: [], native: [] };
