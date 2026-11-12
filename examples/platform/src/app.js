@@ -83,7 +83,17 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 });
 
+// The Display P3 fixture: TextureLoader converts it to sRGB as an image element does, and ImageBitmapLoader keeps
+// its stored values, as colorSpaceConversion 'none' does.
+const P3 = new URL('../../crates/host/tests/fixtures/color/iccp-p3.png', location.href).href;
 async function loadTexture() {
+  if (scene === 'p3') return new THREE.TextureLoader().loadAsync(P3);
+  if (scene === 'p3-bitmap') {
+    const texture = new THREE.Texture(await new THREE.ImageBitmapLoader().setOptions({ imageOrientation: 'flipY' }).loadAsync(P3));
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
   if (scene === 'blob') {
     const blob = await (await fetch(textureURL)).blob();
     const url = URL.createObjectURL(blob);
@@ -98,6 +108,10 @@ async function loadTexture() {
 }
 const texture = await loadTexture();
 texture.colorSpace = THREE.SRGBColorSpace;
+if (scene.startsWith('p3')) {
+  texture.magFilter = texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+}
 material.map = texture;
 material.needsUpdate = true;
 console.log(`E texture ${scene} ${texture.image.width}x${texture.image.height}`);
