@@ -28,6 +28,7 @@ pub use capacity::*;
 
 mod playback_stats;
 pub use playback_stats::*;
+pub use stats::{RenderObserver, RenderReport};
 
 pub mod context;
 

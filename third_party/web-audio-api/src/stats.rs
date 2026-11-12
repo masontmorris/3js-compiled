@@ -1,6 +1,30 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use arc_swap::ArcSwapOption;
+
+/// What one system-level audio callback rendered, as [`RenderObserver::rendered`] sees it.
+#[derive(Debug)]
+pub struct RenderReport<'a> {
+    /// The samples the callback handed to the device, interleaved.
+    pub samples: &'a [f32],
+    /// The number of channels in `samples`.
+    pub channels: usize,
+    /// The time the callback took to render, in nanoseconds.
+    pub render_ns: u64,
+    /// The time the callback's frames last at the context's sample rate, in nanoseconds.
+    pub budget_ns: u64,
+    /// The render time of each render quantum the callback rendered, in nanoseconds.
+    pub quantum_ns: &'a [u64],
+}
+
+/// Sees every callback's output on the render thread. It must not block or allocate.
+pub trait RenderObserver: Send + Sync {
+    fn rendered(&self, report: &RenderReport<'_>);
+}
+
+pub(crate) struct Observer(pub Box<dyn RenderObserver>);
+
 #[derive(Clone, Debug)]
 pub(crate) struct AudioStats {
     inner: Arc<AudioStatsInner>,
@@ -21,6 +45,13 @@ struct AudioStatsInner {
     latency_count: AtomicU64,
     latency_min_ns: AtomicU64,
     latency_max_ns: AtomicU64,
+    observer: ArcSwapOption<Observer>,
+}
+
+impl std::fmt::Debug for Observer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Observer")
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -60,8 +91,19 @@ impl AudioStats {
                 latency_count: AtomicU64::new(0),
                 latency_min_ns: AtomicU64::new(u64::MAX),
                 latency_max_ns: AtomicU64::new(0),
+                observer: ArcSwapOption::empty(),
             }),
         }
+    }
+
+    pub(crate) fn set_observer(&self, observer: Option<Box<dyn RenderObserver>>) {
+        self.inner
+            .observer
+            .store(observer.map(|o| Arc::new(Observer(o))));
+    }
+
+    pub(crate) fn observer(&self) -> Option<Arc<Observer>> {
+        self.inner.observer.load_full()
     }
 
     pub(crate) fn record_render_callback(&self, render_duration_ns: u64, callback_budget_ns: u64) {

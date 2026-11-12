@@ -148,6 +148,8 @@ pub struct AudioContext {
     startup_pending: std::sync::Arc<AtomicBool>,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
+    /// Render statistics shared with the render thread, which also carry the render observer
+    stats: crate::stats::AudioStats,
 }
 
 impl std::fmt::Debug for AudioContext {
@@ -284,7 +286,7 @@ impl AudioContext {
 
         // Setup AudioRenderCapacity for this context
         let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
-        let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
+        let playback_stats = AudioPlaybackStats::new(base.clone(), stats.clone());
 
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
@@ -298,6 +300,7 @@ impl AudioContext {
             playback_stats,
             startup_pending,
             render_thread_init,
+            stats,
         })
     }
 
@@ -344,6 +347,12 @@ impl AudioContext {
     #[must_use]
     pub fn render_capacity(&self) -> AudioRenderCapacity {
         self.render_capacity.clone()
+    }
+
+    /// Sets the observer that sees each callback's output and render timing, or clears it with
+    /// `None`. It persists across output device changes.
+    pub fn set_render_observer(&self, observer: Option<Box<dyn crate::RenderObserver>>) {
+        self.stats.set_observer(observer);
     }
 
     /// Returns an [`AudioPlaybackStats`] instance associated with this `AudioContext`.

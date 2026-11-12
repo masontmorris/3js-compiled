@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
-use dasp_sample::FromSample;
+use dasp_sample::{FromSample, ToSample};
 use futures_channel::{mpsc, oneshot};
 use futures_util::StreamExt as _;
 
@@ -23,7 +23,7 @@ use crate::events::{EventDispatch, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::AudioWorkletGlobalScope;
-use crate::stats::AudioStats;
+use crate::stats::{AudioStats, RenderReport};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::graph::Graph;
@@ -45,6 +45,10 @@ pub(crate) struct RenderThread {
     stats: AudioStats,
     event_sender: Sender<EventDispatch>,
     garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
+    /// Render time of each quantum in the current callback, kept only while an observer is set
+    quantum_ns: Vec<u64>,
+    observed: Vec<f32>,
+    timed: bool,
 }
 
 // SAFETY:
@@ -104,6 +108,9 @@ impl RenderThread {
             stats,
             event_sender,
             garbage_collector: None,
+            quantum_ns: Vec::with_capacity(64),
+            observed: Vec::new(),
+            timed: false,
         }
     }
 
@@ -410,10 +417,13 @@ impl RenderThread {
         self.graph.take().unwrap().before_drop(&scope);
     }
 
-    pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
+    pub fn render<S: FromSample<f32> + ToSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
         // Collect timing information
         let render_start = Instant::now();
         let frames = output_buffer.len() / self.number_of_channels;
+        let observer = self.stats.observer();
+        self.quantum_ns.clear();
+        self.timed = observer.is_some();
 
         // Perform actual rendering
 
@@ -436,6 +446,19 @@ impl RenderThread {
         };
         self.stats
             .record_render_callback(render_duration_ns, callback_budget_ns);
+
+        if let Some(observer) = observer {
+            self.observed.clear();
+            self.observed
+                .extend(output_buffer.iter().map(|s| s.clone().to_sample_()));
+            observer.0.rendered(&RenderReport {
+                samples: &self.observed,
+                channels: self.number_of_channels,
+                render_ns: render_duration_ns,
+                budget_ns: callback_budget_ns,
+                quantum_ns: &self.quantum_ns,
+            });
+        }
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
@@ -485,6 +508,7 @@ impl RenderThread {
         let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
 
         for data in output_buffer.chunks_mut(chunk_size) {
+            let quantum_start = self.timed.then(Instant::now);
             // update time
             let current_frame = self
                 .frames_played
@@ -528,6 +552,13 @@ impl RenderThread {
 
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
+
+            if let Some(start) = quantum_start {
+                if self.quantum_ns.len() < self.quantum_ns.capacity() {
+                    self.quantum_ns
+                        .push(start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
+                }
+            }
         }
     }
 
