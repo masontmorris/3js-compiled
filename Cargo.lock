@@ -2178,6 +2178,7 @@ dependencies = [
  "anyhow",
  "deno_core",
  "deno_error",
+ "getrandom",
  "image",
  "moxcms",
  "pollster",

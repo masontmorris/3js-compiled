@@ -6,6 +6,7 @@ import { Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator, Gamepads }
 import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
+import { CookieJar, Crypto, QuotaExceededError, evaluateMedia as evaluate, openWindow } from './window.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -24,6 +25,8 @@ window.dispatchEvent = event => events.dispatchEvent.call(window, event);
 events.defineHandlers(window, [...events.HANDLER_TYPES, 'beforeunload', 'gamepadconnected', 'gamepaddisconnected', 'hashchange', 'pagehide', 'pageshow', 'storage', 'unload']);
 
 const document = new Document(window);
+const cookies = new CookieJar(config.cookies ?? [], new URL(config.href).pathname, () => Date.now(), saved => ops.op_cookies_save(JSON.stringify(saved)));
+Object.defineProperty(document, 'cookie', { get: () => cookies.get(), set: value => cookies.set(value), configurable: true, enumerable: true });
 const location = new URL(config.href);
 const router = new events.InputRouter(window, document);
 const gamepads = new Gamepads(window);
@@ -43,49 +46,8 @@ setHost({
   },
 });
 
-// Media queries over the window's size and Edge's defaults for a desktop with a mouse.
-function evaluateMedia(query) {
-  const feature = (name, value) => {
-    const number = Number.parseFloat(value);
-    switch (name) {
-      case 'min-width': return window.innerWidth >= number;
-      case 'max-width': return window.innerWidth <= number;
-      case 'width': return window.innerWidth === number;
-      case 'min-height': return window.innerHeight >= number;
-      case 'max-height': return window.innerHeight <= number;
-      case 'height': return window.innerHeight === number;
-      case 'orientation': return value === (window.innerHeight >= window.innerWidth ? 'portrait' : 'landscape');
-      case 'min-aspect-ratio': case 'max-aspect-ratio': {
-        const [w, h] = value.split('/').map(Number);
-        const ratio = window.innerWidth / window.innerHeight;
-        return name.startsWith('min') ? ratio >= w / h : ratio <= w / h;
-      }
-      case 'min-resolution': return window.devicePixelRatio >= (value.endsWith('dpi') ? number / 96 : number);
-      case 'max-resolution': return window.devicePixelRatio <= (value.endsWith('dpi') ? number / 96 : number);
-      case '-webkit-min-device-pixel-ratio': return window.devicePixelRatio >= number;
-      case '-webkit-max-device-pixel-ratio': return window.devicePixelRatio <= number;
-      case 'prefers-color-scheme': return value === 'light';
-      case 'prefers-reduced-motion': return value === 'no-preference';
-      case 'prefers-contrast': return value === 'no-preference';
-      case 'hover': case 'any-hover': return value === undefined || value === 'hover';
-      case 'pointer': case 'any-pointer': return value === undefined || value === 'fine';
-      case 'display-mode': return value === 'browser';
-      case 'color': return true;
-      default: logOnce(`matchMedia: the ${name} feature is not implemented and does not match`); return false;
-    }
-  };
-  return String(query).split(',').some(part => {
-    let text = part.trim().toLowerCase();
-    const negate = text.startsWith('not ');
-    if (negate) text = text.slice(4);
-    const result = text.split(/\s+and\s+/).every(term => {
-      const match = /^\(\s*([\w-]+)\s*(?::\s*([^)]+?))?\s*\)$/.exec(term.trim());
-      if (match) return feature(match[1], match[2]);
-      return ['all', 'screen', 'only screen'].includes(term.trim());
-    });
-    return negate ? !result : result;
-  });
-}
+// Media queries over the window's size and pixel ratio, with Edge's answers for a desktop with a mouse.
+const evaluateMedia = query => evaluate(query, { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio });
 class MediaQueryList extends events.EventTarget {
   constructor(media) {
     super();
@@ -164,7 +126,8 @@ Object.assign(window, {
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
   AbortController, AbortSignal,
-  fetch, createImageBitmap, document, navigator, screen, localStorage,
+  fetch, createImageBitmap, document, navigator, screen, localStorage, QuotaExceededError, Crypto,
+  crypto: new Crypto(bytes => ops.op_random_fill(bytes)),
   sessionStorage: new Storage(),
   location: locationObject,
   Image: imageConstructor(document),
@@ -180,7 +143,7 @@ Object.assign(window, {
   scrollTo() {},
   scroll() {},
   scrollBy() {},
-  open(url) { logOnce(`window.open is not implemented; ${url} does not open`); return null; },
+  open: url => openWindow(url, href => ops.op_open_url(href), message => ops.op_log(message)),
   alert(message) { ops.op_log(`alert: ${message}`); },
   confirm(message) { ops.op_log(`confirm: ${message}`); return false; },
   prompt(message) { ops.op_log(`prompt: ${message}`); return null; },

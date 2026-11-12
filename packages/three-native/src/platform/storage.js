@@ -1,11 +1,13 @@
 // Web Storage. Reads come from a map in JavaScript. Each change goes to `sink`, which for localStorage is the
 // host's writer thread, so a change costs the size of the change and never the size of the store.
+import { QuotaExceededError } from './window.js';
+
 const ENTRIES = Symbol('entries');
 const SINK = Symbol('sink');
 const QUOTA = Symbol('quota');
 const USED = Symbol('used');
 
-// Edge's quota per origin: 10 MiB of UTF-16, counted over keys and values.
+// Edge's quota per origin: 5,242,880 UTF-16 code units, counted over keys and values.
 export const STORAGE_QUOTA = 5 * 1024 * 1024;
 
 export class Storage {
@@ -33,7 +35,7 @@ export class Storage {
     const old = this[ENTRIES].get(key);
     if (old === value) return;
     const used = this[USED] - (old === undefined ? 0 : key.length + old.length) + key.length + value.length;
-    if (used > this[QUOTA]) throw new DOMException(`Failed to execute 'setItem' on 'Storage': Setting the value of '${key}' exceeded the quota.`, 'QuotaExceededError');
+    if (used > this[QUOTA]) throw new QuotaExceededError(`Failed to execute 'setItem' on 'Storage': Setting the value of '${key}' exceeded the quota.`);
     this[USED] = used;
     this[ENTRIES].set(key, value);
     this[SINK]?.set(key, value);

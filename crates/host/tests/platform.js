@@ -14,6 +14,10 @@ const runs = Number(localStorage.getItem('runs') ?? 0) + 1;
 localStorage.setItem('runs', String(runs));
 localStorage.big = 'x'.repeat(1000);
 check('localStorage runs', runs);
+check('cookie before', JSON.stringify(document.cookie));
+document.cookie = `visits=${runs}`;
+const random = crypto.getRandomValues(new Uint32Array(8));
+check('crypto', `${/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(crypto.randomUUID())} ${new Set(random).size > 1}`);
 
 const order = [];
 addEventListener('keydown', event => order.push(`window:${event.key}:${event.isTrusted}`));
