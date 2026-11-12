@@ -150,6 +150,9 @@ pub type OnlineHook = Box<dyn FnMut(&Arc<AudioContext>)>;
 /// Sees a context's frame count each time a render quantum begins, on the render thread. It must not block.
 pub type FrameSink = Box<dyn Fn(u64) + Send + Sync>;
 
+/// A render quantum's length in frames, the step the engine's frame count moves by.
+const QUANTUM: u64 = 128;
+
 // The observer an online context gets: the output's observer, if any, and the frame sink, if any.
 struct Observed {
     output: Option<Box<dyn RenderObserver>>,
@@ -240,6 +243,13 @@ impl Graph {
             ..AudioContextOptions::default()
         };
         let context = AudioContext::try_new(options).map_err(|e| GraphError(e.to_string()))?;
+        // The context renders from the moment it is made, and making it can take a while, so publish the frame count it
+        // has reached before the observer goes on. A page that reads currentTime before the first quantum after this
+        // call still reads the engine's time, not zero.
+        if let Some(frames) = &frames {
+            let played = (context.current_time() * f64::from(context.sample_rate())) as u64;
+            frames(played / QUANTUM * QUANTUM);
+        }
         let observed = output.observer.as_mut().map(|observer| {
             observer(
                 context.sample_rate(),
@@ -711,6 +721,15 @@ mod tests {
                 })),
             )
             .unwrap();
+        // The context renders while it is made, so the sink is seeded with the frames it has reached before the
+        // first render quantum arrives.
+        let seeded = seen.load(Ordering::Relaxed);
+        assert_ne!(
+            seeded,
+            u64::MAX,
+            "the sink is seeded when the context is made"
+        );
+        assert_eq!(seeded % 128, 0);
         let tone = graph.node(info.id, "Oscillator", &Value::Null).unwrap();
         let destination = graph.destination(info.id).unwrap();
         graph.connect(tone, destination, 0, 0).unwrap();
@@ -718,7 +737,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(300));
         let frames = seen.load(Ordering::Relaxed);
         let engine = graph.current_time(info.id);
-        assert_ne!(frames, u64::MAX, "the sink saw no render quantum");
+        assert!(frames > seeded, "the sink sees each render quantum");
         assert_eq!(frames % 128, 0);
         assert!(frames > 0 && frames as f64 / f64::from(info.sample_rate) <= engine);
     }
