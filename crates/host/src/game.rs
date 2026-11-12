@@ -27,14 +27,33 @@ struct State {
 
 /// How many frames the game thread has handed to the render thread, and how many it has
 /// rendered. The next frame is due once the render thread has caught up, as a browser's rendering
-/// opportunity comes once its compositor is ready.
-#[derive(Default)]
+/// opportunity comes once its compositor is ready. `refreshed` is when the render thread last
+/// waited for the display to take a frame, a display refresh, in nanoseconds after `epoch`, or 0.
 pub struct RenderProgress {
     pub submitted: AtomicU64,
     pub finished: AtomicU64,
+    refreshed: AtomicU64,
+    epoch: Instant,
+}
+
+impl Default for RenderProgress {
+    fn default() -> Self {
+        Self {
+            submitted: AtomicU64::default(),
+            finished: AtomicU64::default(),
+            refreshed: AtomicU64::default(),
+            epoch: Instant::now(),
+        }
+    }
 }
 
 impl RenderProgress {
+    /// Records that the display took a frame at `at`, which the render thread waited for.
+    pub fn refreshed_at(&self, at: Instant) {
+        let nanos =
+            u64::try_from(at.saturating_duration_since(self.epoch).as_nanos()).unwrap_or(u64::MAX);
+        self.refreshed.store(nanos.max(1), Ordering::Release);
+    }
     fn caught_up(&self) -> bool {
         self.finished.load(Ordering::Acquire) >= self.submitted.load(Ordering::Acquire)
     }
@@ -420,8 +439,14 @@ mod tests {
                 previous.join().expect("the render thread finishes");
             }
             let mut finish = Instant::now() + std::time::Duration::from_micros(500);
-            if let Some(&two_before) = shown.len().checked_sub(2).and_then(|i| shown.get(i)) {
-                finish = finish.max(two_before);
+            // The render job waits for a swapchain image only while two frames are queued, until
+            // the refresh that shows the first of them.
+            let mut refresh = None;
+            if let Some(&two_before) = shown.len().checked_sub(2).and_then(|i| shown.get(i))
+                && two_before > finish
+            {
+                finish = two_before;
+                refresh = Some(two_before);
             }
             let earliest = shown
                 .last()
@@ -431,6 +456,9 @@ mod tests {
             let render = progress.clone();
             rendering = Some(std::thread::spawn(move || {
                 std::thread::sleep(finish.saturating_duration_since(Instant::now()));
+                if let Some(at) = refresh {
+                    render.refreshed_at(at);
+                }
                 render.finished.fetch_add(1, Ordering::Release);
             }));
         }
@@ -534,6 +562,55 @@ mod tests {
             }
         }
         assert!(misses.is_empty(), "{}", misses.join("; "));
+        Ok(())
+    }
+
+    #[test]
+    fn a_late_frame_does_not_start_the_next_before_its_refresh() -> Result<()> {
+        // Frame callbacks that work 3 ms, and 9 ms every 30th frame, at 169.9 Hz. Edge begins
+        // frames on its display's refresh: after a late frame it begins the next at once, then
+        // waits for the refresh, so no refresh begins two frames (C:\3jsc\swarm\e3-r18\kit\out\edge,
+        // diag-1 to diag-3 and frame-pacing). A host that begins a frame whenever the render thread
+        // is free runs frames ahead after each late one, 3.5 ms apart.
+        let period = std::time::Duration::from_secs_f64(1.0 / 169.9);
+        let log = run_rendered(
+            "frame-pacing-rendered",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/frame-pacing.js"),
+            None,
+            period,
+        )?;
+        let starts: Vec<f64> = result(&log, "frame starts")
+            .split(' ')
+            .skip(10)
+            .map(str::parse)
+            .collect::<Result<_, _>>()?;
+        let period = period.as_secs_f64() * 1000.0;
+        // The refresh grid's phase is not known on the page's clock, so count the refreshes that
+        // begin two frames at the phase with the fewest.
+        let doubled = (0..200)
+            .map(|step| {
+                let phase = period * f64::from(step) / 200.0;
+                let mut refreshes: Vec<i64> = starts
+                    .iter()
+                    .map(|start| ((start - phase) / period).floor() as i64)
+                    .collect();
+                let all = refreshes.len();
+                refreshes.dedup();
+                all - refreshes.len()
+            })
+            .min()
+            .expect("phases");
+        let short: Vec<String> = starts
+            .windows(2)
+            .filter(|pair| pair[1] - pair[0] < 0.75 * period)
+            .map(|pair| format!("{:.2}+{:.2}", pair[0], pair[1] - pair[0]))
+            .collect();
+        assert_eq!(
+            doubled,
+            0,
+            "refreshes that began two frames, at the best phase; short gaps {}",
+            short.join(" ")
+        );
         Ok(())
     }
 
