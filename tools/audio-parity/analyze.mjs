@@ -39,9 +39,9 @@ function wavFrame(rows, frame, context = rows[0]?.context) {
   return frame - hi;
 }
 
-// A quantum underruns when it took longer to render than it lasts. A late callback is information: the device's queued
+// A callback underruns when its render took longer than its budget. A late callback is information: the device's queued
 // audio covers it, and a loopback recording shows whether the device ran dry.
-function underruns(rows) { return rows.filter(r => r.underrun === 1).length; }
+function underruns(rows) { return new Set(rows.filter(r => r.underrun === 1).map(r => r.callback)).size; }
 function late(rows) {
   const gaps = rows.filter(r => r.late === 1).map(r => r.gap_us / 1000).sort((a, b) => a - b);
   return { count: gaps.length, minMs: gaps[0] ?? null, maxMs: gaps.at(-1) ?? null };

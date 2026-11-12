@@ -183,11 +183,12 @@ impl RenderObserver for Observer {
 /// A gap this long between callbacks is a paused stream, from suspend() or a device change, not a late callback.
 const PAUSE_NS: u64 = 100_000_000;
 
-// A quantum underruns when it took longer to render than the audio it holds lasts. The device's queued audio covers a
-// callback that comes late, so lateness is information: a callback is late when it started more than twice the
-// previous callback's length after it. Whether the device ran dry shows in a loopback recording of it.
-fn underrun(row: &Row, sample_rate: f32) -> bool {
-    row.quantum_ns as f64 > 128e9 / f64::from(sample_rate)
+// A callback underruns when its render took longer than the audio it holds lasts, which is what Chromium's render
+// capacity calls an underrun. The device's queued audio covers a callback that comes late, so lateness is information:
+// a callback is late when it started more than twice the previous callback's length after it. Whether the device ran
+// dry shows in a loopback recording of it.
+fn underrun(row: &Row) -> bool {
+    row.callback_render_ns > row.callback_budget_ns
 }
 
 fn late(row: &Row, previous_budget_ns: u64) -> bool {
@@ -216,12 +217,12 @@ fn write_loop(
         let mut streams = shared.streams.lock().unwrap();
         for stream in streams.iter_mut() {
             while let Ok(row) = stream.rows.pop() {
-                let bad = underrun(&row, stream.sample_rate);
+                let bad = underrun(&row);
                 let behind = late(&row, stream.previous_budget_ns);
                 if row.quantum == 0 {
                     stream.previous_budget_ns = row.callback_budget_ns;
+                    summary.underruns += u64::from(bad);
                 }
-                summary.underruns += u64::from(bad);
                 summary.late += u64::from(behind);
                 summary.quanta += 1;
                 writeln!(

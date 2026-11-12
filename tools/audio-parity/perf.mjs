@@ -1,8 +1,8 @@
 // E7's perf probe: examples/audio/stress.js with its audio calls on and off, in the order given, each for `--seconds`.
 // Per run it reports the game thread's CPU time per frame from frames.csv, and the rest of the machine's load over the
-// run, which voids a run above 40 percent. An audio-on run also reports each quantum's render time and the quanta that
-// took longer than they last, from audio.csv; the late callbacks, as information; and the gaps, skips and mismatches
-// in a loopback recording of the device against what the engine handed it.
+// run, which voids a run above 40 percent. An audio-on run also reports each quantum's render time and the callbacks
+// that rendered longer than their budget, from audio.csv; the late callbacks, as information; and the gaps, skips and
+// mismatches in a loopback recording of the device against what the engine handed it.
 // Run it under the GPU lease and quiet_run.py.
 //   node tools/audio-parity/perf.mjs <out dir> [--order on,off,on] [--seconds 300]
 import { spawn } from 'node:child_process';
@@ -79,7 +79,7 @@ for (const [i, mode] of order.entries()) {
     row.quantumUsP50 = percentile(audio.map(a => a.quantum_us), 0.5);
     row.quantumUsP99 = percentile(audio.map(a => a.quantum_us), 0.99);
     row.quantumUsMax = Math.max(...audio.map(a => a.quantum_us));
-    row.underruns = audio.filter(a => a.underrun === 1).length;
+    row.underruns = new Set(audio.filter(a => a.underrun === 1).map(a => a.callback)).size;
     const late = audio.filter(a => a.late === 1);
     row.lateCallbacks = late.length;
     row.lateGapsMs = summarize(late.map(a => a.gap_us / 1000));
