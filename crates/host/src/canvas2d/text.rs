@@ -63,10 +63,21 @@ fn instance(fonts: &Fonts, face: FaceId, weight: f32) -> Instance {
     let font = fonts.get(face);
     let weight = font.weight_axis.map(|(min, max)| weight.clamp(min, max));
     let coords = match weight {
-        Some(weight) => font.font().axes().location([("wght", weight)]).coords().iter().map(|coord| coord.to_bits()).collect(),
+        Some(weight) => font
+            .font()
+            .axes()
+            .location([("wght", weight)])
+            .coords()
+            .iter()
+            .map(|coord| coord.to_bits())
+            .collect(),
         None => Vec::new(),
     };
-    Instance { face, weight, coords }
+    Instance {
+        face,
+        weight,
+        coords,
+    }
 }
 
 /// The fonts a text draws with: the font list's available faces, or the standard font when none is, then the
@@ -87,7 +98,9 @@ impl Chain {
     /// The order to try the fonts in for `c`: the listed fonts, then the emoji font for an emoji, then the rest.
     fn order(&self, c: char) -> impl Iterator<Item = usize> + '_ {
         let emoji = self.emoji.filter(|_| is_emoji(c));
-        (0..self.listed).chain(emoji).chain((self.listed..self.instances.len()).filter(move |index| Some(*index) != emoji))
+        (0..self.listed)
+            .chain(emoji)
+            .chain((self.listed..self.instances.len()).filter(move |index| Some(*index) != emoji))
     }
 }
 
@@ -120,8 +133,14 @@ pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
             }
         }
     }
-    let emoji = emoji.and_then(|face| instances.iter().position(|known| known.face == face)).filter(|index| *index >= kept);
-    Chain { instances, listed: kept, emoji }
+    let emoji = emoji
+        .and_then(|face| instances.iter().position(|known| known.face == face))
+        .filter(|index| *index >= kept);
+    Chain {
+        instances,
+        listed: kept,
+        emoji,
+    }
 }
 
 /// Characters Windows draws from its emoji font: pictographs, dingbats and the other symbols with an emoji
@@ -143,13 +162,20 @@ fn continues_cluster(c: char) -> bool {
 
 /// Shapes `text` left to right, a run per stretch of characters that the same font draws.
 pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
-    let charmaps: Vec<_> = chain.instances.iter().map(|instance| fonts.get(instance.face).font().charmap()).collect();
+    let charmaps: Vec<_> = chain
+        .instances
+        .iter()
+        .map(|instance| fonts.get(instance.face).font().charmap())
+        .collect();
     // Blink shapes each word and each space on its own, so no kerning or ligature crosses a space.
     let mut pieces: Vec<(usize, &str)> = Vec::new();
-    for segment in text.split_inclusive(' ').flat_map(|word| match word.strip_suffix(' ') {
-        Some(rest) => [rest, " "],
-        None => [word, ""],
-    }) {
+    for segment in text
+        .split_inclusive(' ')
+        .flat_map(|word| match word.strip_suffix(' ') {
+            Some(rest) => [rest, " "],
+            None => [word, ""],
+        })
+    {
         let mut start = 0;
         let mut current = None;
         for (at, c) in segment.char_indices() {
@@ -157,7 +183,12 @@ pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
                 current
             } else {
                 // A character no font has draws as the first font's missing glyph, as Edge does.
-                Some(chain.order(c).find(|index| charmaps[*index].map(c).is_some()).unwrap_or(0))
+                Some(
+                    chain
+                        .order(c)
+                        .find(|index| charmaps[*index].map(c).is_some())
+                        .unwrap_or(0),
+                )
             };
             if index != current {
                 if let Some(index) = current {
@@ -174,12 +205,27 @@ pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
     let mut pen = 0.0;
     let mut runs = Vec::new();
     for (index, piece) in pieces {
-        let Some(instance) = chain.instances.get(index) else { continue };
+        let Some(instance) = chain.instances.get(index) else {
+            continue;
+        };
         let face = fonts.get(instance.face);
-        let Ok(font) = harfrust::FontRef::new(&face.data) else { continue };
-        let variations: Vec<Variation> = instance.weight.map(|value| Variation { tag: harfrust::Tag::new(b"wght"), value }).into_iter().collect();
+        let Ok(font) = harfrust::FontRef::new(&face.data) else {
+            continue;
+        };
+        let variations: Vec<Variation> = instance
+            .weight
+            .map(|value| Variation {
+                tag: harfrust::Tag::new(b"wght"),
+                value,
+            })
+            .into_iter()
+            .collect();
         let shaper_instance = ShaperInstance::from_variations(&font, &variations);
-        let shaper = face.shaper.shaper(&font).instance(Some(&shaper_instance)).build();
+        let shaper = face
+            .shaper
+            .shaper(&font)
+            .instance(Some(&shaper_instance))
+            .build();
         let mut buffer = UnicodeBuffer::new();
         buffer.push_str(piece);
         buffer.guess_segment_properties();
@@ -189,10 +235,17 @@ pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
         let shaped = shaper.shape(buffer, harfrust::ShapeOptions::new().scale(Some(scale)));
         let mut glyphs = Vec::with_capacity(shaped.len());
         for (info, position) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
-            glyphs.push((info.glyph_id, pen + position.x_offset as f64 / 65536.0, -position.y_offset as f64 / 65536.0));
+            glyphs.push((
+                info.glyph_id,
+                pen + position.x_offset as f64 / 65536.0,
+                -position.y_offset as f64 / 65536.0,
+            ));
             pen += position.x_advance as f64 / 65536.0;
         }
-        runs.push(Run { instance: instance.clone(), glyphs });
+        runs.push(Run {
+            instance: instance.clone(),
+            glyphs,
+        });
     }
     Layout { runs, width: pen }
 }
@@ -202,13 +255,33 @@ pub fn layout(fonts: &Fonts, chain: &Chain, text: &str, size: f32) -> Layout {
 pub fn font_metrics(fonts: &Fonts, instance: &Instance, size: f32) -> FontMetrics {
     let face = fonts.get(instance.face);
     let font = face.font();
-    let upem = font.head().map_or(1000.0, |head| head.units_per_em() as f64);
+    let upem = font
+        .head()
+        .map_or(1000.0, |head| head.units_per_em() as f64);
     let scale = size as f64 / upem;
     // DirectWrite takes a Windows font's ascent and descent from its OS/2 Windows metrics, and Skia takes a web
     // font's from hhea.
-    let windows = font.os2().ok().filter(|_| face.system).map(|os2| (os2.us_win_ascent() as f64, os2.us_win_descent() as f64));
-    let (mut ascent, mut descent) = windows.or_else(|| font.hhea().ok().map(|hhea| (hhea.ascender().to_i16() as f64, -(hhea.descender().to_i16() as f64)))).unwrap_or((0.8 * upem, 0.2 * upem));
-    let typo = font.os2().ok().map(|os2| (os2.s_typo_ascender() as f64, -(os2.s_typo_descender() as f64)));
+    let windows = font
+        .os2()
+        .ok()
+        .filter(|_| face.system)
+        .map(|os2| (os2.us_win_ascent() as f64, os2.us_win_descent() as f64));
+    let (mut ascent, mut descent) = windows
+        .or_else(|| {
+            font.hhea().ok().map(|hhea| {
+                (
+                    hhea.ascender().to_i16() as f64,
+                    -(hhea.descender().to_i16() as f64),
+                )
+            })
+        })
+        .unwrap_or((0.8 * upem, 0.2 * upem));
+    let typo = font.os2().ok().map(|os2| {
+        (
+            os2.s_typo_ascender() as f64,
+            -(os2.s_typo_descender() as f64),
+        )
+    });
     if let Ok(os2) = font.os2()
         && os2.fs_selection().bits() & (1 << 7) != 0
     {
@@ -247,19 +320,42 @@ pub fn ink_bounds(fonts: &Fonts, layout: &Layout, size: f32) -> Option<[f64; 4]>
     let mut bounds: Option<[f64; 4]> = None;
     for run in &layout.runs {
         let font = fonts.get(run.instance.face).font();
-        let coords: Vec<_> = run.instance.coords.iter().map(|bits| skrifa::instance::NormalizedCoord::from_bits(*bits)).collect();
+        let coords: Vec<_> = run
+            .instance
+            .coords
+            .iter()
+            .map(|bits| skrifa::instance::NormalizedCoord::from_bits(*bits))
+            .collect();
         let metrics = font.glyph_metrics(Size::new(size), LocationRef::new(&coords));
         for &(id, x, y) in &run.glyphs {
-            let Some(b) = metrics.bounds(GlyphId::new(id)) else { continue };
+            let Some(b) = metrics.bounds(GlyphId::new(id)) else {
+                continue;
+            };
             if b.x_min >= b.x_max || b.y_min >= b.y_max {
                 continue;
             }
             // A thousandth of a pixel absorbs the outline's float error before rounding out.
-            let out = |v: f32, up: bool| if up { (v as f64 - 1e-3).ceil() } else { (v as f64 + 1e-3).floor() };
-            let glyph = [x + out(b.x_min, false) - 1.0, y - out(b.y_max, true), x + out(b.x_max, true), y - out(b.y_min, false)];
+            let out = |v: f32, up: bool| {
+                if up {
+                    (v as f64 - 1e-3).ceil()
+                } else {
+                    (v as f64 + 1e-3).floor()
+                }
+            };
+            let glyph = [
+                x + out(b.x_min, false) - 1.0,
+                y - out(b.y_max, true),
+                x + out(b.x_max, true),
+                y - out(b.y_min, false),
+            ];
             bounds = Some(match bounds {
                 None => glyph,
-                Some(old) => [old[0].min(glyph[0]), old[1].min(glyph[1]), old[2].max(glyph[2]), old[3].max(glyph[3])],
+                Some(old) => [
+                    old[0].min(glyph[0]),
+                    old[1].min(glyph[1]),
+                    old[2].max(glyph[2]),
+                    old[3].max(glyph[3]),
+                ],
             });
         }
     }

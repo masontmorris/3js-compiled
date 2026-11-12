@@ -29,14 +29,58 @@ impl Face {
 /// The Windows fonts Edge uses for the generic families, for its standard font and for characters a page's fonts
 /// lack, by family name. Each entry is the regular, bold, italic and bold italic file.
 const SYSTEM: &[(&str, [&str; 4])] = &[
-    ("arial", ["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"]),
-    ("times new roman", ["times.ttf", "timesbd.ttf", "timesi.ttf", "timesbi.ttf"]),
-    ("consolas", ["consola.ttf", "consolab.ttf", "consolai.ttf", "consolaz.ttf"]),
-    ("comic sans ms", ["comic.ttf", "comicbd.ttf", "comici.ttf", "comicz.ttf"]),
-    ("impact", ["impact.ttf", "impact.ttf", "impact.ttf", "impact.ttf"]),
-    ("segoe ui", ["segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf"]),
-    ("segoe ui emoji", ["seguiemj.ttf", "seguiemj.ttf", "seguiemj.ttf", "seguiemj.ttf"]),
-    ("segoe ui symbol", ["seguisym.ttf", "seguisym.ttf", "seguisym.ttf", "seguisym.ttf"]),
+    (
+        "arial",
+        ["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"],
+    ),
+    (
+        "times new roman",
+        ["times.ttf", "timesbd.ttf", "timesi.ttf", "timesbi.ttf"],
+    ),
+    (
+        "consolas",
+        [
+            "consola.ttf",
+            "consolab.ttf",
+            "consolai.ttf",
+            "consolaz.ttf",
+        ],
+    ),
+    (
+        "comic sans ms",
+        ["comic.ttf", "comicbd.ttf", "comici.ttf", "comicz.ttf"],
+    ),
+    (
+        "impact",
+        ["impact.ttf", "impact.ttf", "impact.ttf", "impact.ttf"],
+    ),
+    (
+        "segoe ui",
+        [
+            "segoeui.ttf",
+            "segoeuib.ttf",
+            "segoeuii.ttf",
+            "segoeuiz.ttf",
+        ],
+    ),
+    (
+        "segoe ui emoji",
+        [
+            "seguiemj.ttf",
+            "seguiemj.ttf",
+            "seguiemj.ttf",
+            "seguiemj.ttf",
+        ],
+    ),
+    (
+        "segoe ui symbol",
+        [
+            "seguisym.ttf",
+            "seguisym.ttf",
+            "seguisym.ttf",
+            "seguisym.ttf",
+        ],
+    ),
 ];
 
 /// Edge's generic families on Windows.
@@ -68,7 +112,11 @@ pub struct Fonts {
 impl Default for Fonts {
     fn default() -> Self {
         let system_dir = std::env::var_os("WINDIR").map(|dir| PathBuf::from(dir).join("Fonts"));
-        Self { faces: Vec::new(), system: HashMap::new(), system_dir }
+        Self {
+            faces: Vec::new(),
+            system: HashMap::new(),
+            system_dir,
+        }
     }
 }
 
@@ -80,15 +128,28 @@ impl Fonts {
 
     fn add(&mut self, bytes: &[u8], system: bool) -> Result<FaceId> {
         let data = match bytes.get(..4) {
-            Some(b"wOFF") => wuff::decompress_woff1(bytes).map_err(|error| anyhow::anyhow!("WOFF: {error:?}"))?,
-            Some(b"wOF2") => wuff::decompress_woff2(bytes).map_err(|error| anyhow::anyhow!("WOFF2: {error:?}"))?,
+            Some(b"wOFF") => {
+                wuff::decompress_woff1(bytes).map_err(|error| anyhow::anyhow!("WOFF: {error:?}"))?
+            }
+            Some(b"wOF2") => wuff::decompress_woff2(bytes)
+                .map_err(|error| anyhow::anyhow!("WOFF2: {error:?}"))?,
             _ => bytes.to_vec(),
         };
         let font = FontRef::new(&data).context("not a font file")?;
-        let weight_axis = font.axes().iter().find(|axis| axis.tag() == Tag::new(b"wght")).map(|axis| (axis.min_value(), axis.max_value()));
+        let weight_axis = font
+            .axes()
+            .iter()
+            .find(|axis| axis.tag() == Tag::new(b"wght"))
+            .map(|axis| (axis.min_value(), axis.max_value()));
         let color = font.colr().is_ok() || font.cbdt().is_ok() || font.sbix().is_ok();
         let shaper = ShaperData::new(&harfrust::FontRef::new(&data).context("not a font file")?);
-        self.faces.push(Face { data: Arc::new(data), shaper, weight_axis, color, system });
+        self.faces.push(Face {
+            data: Arc::new(data),
+            shaper,
+            weight_axis,
+            color,
+            system,
+        });
         Ok((self.faces.len() - 1) as FaceId)
     }
 
@@ -104,7 +165,11 @@ impl Fonts {
         if let Some(id) = self.system.get(file) {
             return *id;
         }
-        let id = self.system_dir.as_ref().and_then(|dir| std::fs::read(dir.join(file)).ok()).and_then(|bytes| self.add(&bytes, true).ok());
+        let id = self
+            .system_dir
+            .as_ref()
+            .and_then(|dir| std::fs::read(dir.join(file)).ok())
+            .and_then(|bytes| self.add(&bytes, true).ok());
         self.system.insert(file.to_string(), id);
         id
     }

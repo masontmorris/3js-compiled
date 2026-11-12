@@ -23,18 +23,30 @@ pub struct Canvas2d {
 
 fn surface(data: &mut [u8], width: u32, height: u32) -> Result<Surface<'_>, JsErrorBox> {
     let (Ok(w), Ok(h)) = (u16::try_from(width), u16::try_from(height)) else {
-        return Err(JsErrorBox::range_error(format!("a {width}x{height} canvas is larger than the host draws")));
+        return Err(JsErrorBox::range_error(format!(
+            "a {width}x{height} canvas is larger than the host draws"
+        )));
     };
     if data.len() != width as usize * height as usize * 4 {
-        return Err(JsErrorBox::type_error("canvas pixels do not match its size"));
+        return Err(JsErrorBox::type_error(
+            "canvas pixels do not match its size",
+        ));
     }
-    Ok(Surface { data, width: w, height: h })
+    Ok(Surface {
+        data,
+        width: w,
+        height: h,
+    })
 }
 
 /// Loads a TrueType, OpenType, WOFF or WOFF2 font for `FontFace` and returns its face ID.
 #[op2(fast)]
 fn op_canvas2d_font_load(state: &mut OpState, #[buffer] bytes: &[u8]) -> Result<u32, JsErrorBox> {
-    state.borrow_mut::<Canvas2d>().fonts.load(bytes).map_err(|error| JsErrorBox::generic(format!("{error:#}")))
+    state
+        .borrow_mut::<Canvas2d>()
+        .fonts
+        .load(bytes)
+        .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
 }
 
 #[derive(Deserialize)]
@@ -45,18 +57,38 @@ struct RectDraw {
 }
 
 #[op2]
-fn op_canvas2d_fill_rect(state: &mut OpState, #[buffer] pixels: &mut [u8], width: u32, height: u32, #[serde] draw: RectDraw) -> Result<(), JsErrorBox> {
+fn op_canvas2d_fill_rect(
+    state: &mut OpState,
+    #[buffer] pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    #[serde] draw: RectDraw,
+) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let [x, y, w, h] = draw.rect;
-    state.borrow_mut::<Canvas2d>().painter.fill_rect(&mut surface, &draw.style, Rect::new(x, y, x + w, y + h));
+    state.borrow_mut::<Canvas2d>().painter.fill_rect(
+        &mut surface,
+        &draw.style,
+        Rect::new(x, y, x + w, y + h),
+    );
     Ok(())
 }
 
 #[op2]
-fn op_canvas2d_clear_rect(state: &mut OpState, #[buffer] pixels: &mut [u8], width: u32, height: u32, #[serde] draw: RectDraw) -> Result<(), JsErrorBox> {
+fn op_canvas2d_clear_rect(
+    state: &mut OpState,
+    #[buffer] pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    #[serde] draw: RectDraw,
+) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let [x, y, w, h] = draw.rect;
-    state.borrow_mut::<Canvas2d>().painter.clear_rect(&mut surface, draw.style.transform, Rect::new(x, y, x + w, y + h));
+    state.borrow_mut::<Canvas2d>().painter.clear_rect(
+        &mut surface,
+        draw.style.transform,
+        Rect::new(x, y, x + w, y + h),
+    );
     Ok(())
 }
 
@@ -74,11 +106,27 @@ struct ImageDraw {
 }
 
 #[op2]
-fn op_canvas2d_draw_image(state: &mut OpState, #[buffer] pixels: &mut [u8], width: u32, height: u32, #[buffer] image: &[u8], #[serde] draw: ImageDraw) -> Result<(), JsErrorBox> {
+fn op_canvas2d_draw_image(
+    state: &mut OpState,
+    #[buffer] pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    #[buffer] image: &[u8],
+    #[serde] draw: ImageDraw,
+) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let [sx, sy, sw, sh] = draw.source;
-    if image.len() != draw.width as usize * draw.height as usize * 4 || sw == 0 || sh == 0 || sx + sw > draw.width || sy + sh > draw.height || draw.width > u16::MAX as u32 || draw.height > u16::MAX as u32 {
-        return Err(JsErrorBox::type_error("image pixels do not match the source rectangle"));
+    if image.len() != draw.width as usize * draw.height as usize * 4
+        || sw == 0
+        || sh == 0
+        || sx + sw > draw.width
+        || sy + sh > draw.height
+        || draw.width > u16::MAX as u32
+        || draw.height > u16::MAX as u32
+    {
+        return Err(JsErrorBox::type_error(
+            "image pixels do not match the source rectangle",
+        ));
     }
     let [dx, dy, dw, dh] = draw.dest;
     state.borrow_mut::<Canvas2d>().painter.draw_image(
@@ -109,11 +157,19 @@ struct TextDraw {
 }
 
 #[op2]
-fn op_canvas2d_text(state: &mut OpState, #[buffer] pixels: &mut [u8], width: u32, height: u32, #[serde] draw: TextDraw) -> Result<(), JsErrorBox> {
+fn op_canvas2d_text(
+    state: &mut OpState,
+    #[buffer] pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    #[serde] draw: TextDraw,
+) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let Canvas2d { fonts, painter } = state.borrow_mut::<Canvas2d>();
     let chain = text::chain(fonts, &draw.font);
-    let Some(primary) = chain.primary() else { return Ok(()) };
+    let Some(primary) = chain.primary() else {
+        return Ok(());
+    };
     let size = text::used_size(draw.font.size);
     let layout = text::layout(fonts, &chain, &draw.text, size);
     let metrics = text::font_metrics(fonts, primary, size);
@@ -123,7 +179,16 @@ fn op_canvas2d_text(state: &mut OpState, #[buffer] pixels: &mut [u8], width: u32
     };
     let x = draw.x - align_offset(&draw.align, layout.width * x_scale);
     let y = draw.y + text::baseline_shift(&metrics, &draw.baseline);
-    painter.draw_text(&mut surface, fonts, &layout, size, (x, y), x_scale, &draw.style, draw.stroke);
+    painter.draw_text(
+        &mut surface,
+        fonts,
+        &layout,
+        size,
+        (x, y),
+        x_scale,
+        &draw.style,
+        draw.stroke,
+    );
     Ok(())
 }
 
@@ -167,7 +232,20 @@ fn measure(fonts: &mut Fonts, measure: &Measure) -> Metrics {
     let chain = text::chain(fonts, &measure.font);
     let size = text::used_size(measure.font.size);
     let Some(primary) = chain.primary() else {
-        return Metrics { width: 0.0, actual_bounding_box_left: 0.0, actual_bounding_box_right: 0.0, actual_bounding_box_ascent: 0.0, actual_bounding_box_descent: 0.0, font_bounding_box_ascent: 0.0, font_bounding_box_descent: 0.0, em_height_ascent: 0.0, em_height_descent: 0.0, hanging_baseline: 0.0, alphabetic_baseline: 0.0, ideographic_baseline: 0.0 };
+        return Metrics {
+            width: 0.0,
+            actual_bounding_box_left: 0.0,
+            actual_bounding_box_right: 0.0,
+            actual_bounding_box_ascent: 0.0,
+            actual_bounding_box_descent: 0.0,
+            font_bounding_box_ascent: 0.0,
+            font_bounding_box_descent: 0.0,
+            em_height_ascent: 0.0,
+            em_height_descent: 0.0,
+            hanging_baseline: 0.0,
+            alphabetic_baseline: 0.0,
+            ideographic_baseline: 0.0,
+        };
     };
     let layout = text::layout(fonts, &chain, &measure.text, size);
     let font = text::font_metrics(fonts, primary, size);
@@ -199,7 +277,12 @@ fn op_canvas2d_measure(state: &mut OpState, #[serde] request: Measure) -> Metric
 /// Copies premultiplied pixels to straight alpha, for uploads and `getImageData`.
 #[op2(fast)]
 fn op_canvas2d_unpremultiply(#[buffer] from: &[u8], #[buffer] to: &mut [u8]) {
-    for (source, target) in from.chunks_exact(4).zip(to.chunks_exact_mut(4)) {
+    for (source, target) in from
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(to.as_chunks_mut::<4>().0)
+    {
         let a = source[3] as u32;
         if a == 0 {
             target.fill(0);
