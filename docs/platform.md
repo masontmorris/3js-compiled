@@ -50,7 +50,7 @@ The input router turns each host input fact into the events Edge fires for it:
 
 ## Window
 
-`devicePixelRatio` is the window's display scale. `innerWidth` and `innerHeight` are the window's size in CSS pixels. A resize fires one `resize` at the window and then `change` at each `MediaQueryList` whose result changed. `matchMedia` evaluates width, height, aspect ratio, orientation and resolution in their plain, `min-`, `max-` and range forms, and answers Edge's defaults for a desktop with a mouse, a light color scheme and no reduced motion, including the boolean forms. `navigator.userAgent` is Edge's on Windows.
+`devicePixelRatio` is the window's display scale. `innerWidth` and `innerHeight` are the window's size in CSS pixels. A resize fires one `resize` at the window and then `change` at each `MediaQueryList` with a change listener whose result changed. A list's `matches` reads the window as it is. `matchMedia` evaluates width, height, aspect ratio, orientation and resolution in their plain, `min-`, `max-` and range forms, and answers Edge's defaults for a desktop with a mouse, a light color scheme and no reduced motion, including the boolean forms. `navigator.userAgent` is Edge's on Windows.
 
 `window.open()` opens an `http:` or `https:` URL in the system's default browser, refuses any other URL and logs it, and returns `null`, as Edge does for a `noopener` open.
 
