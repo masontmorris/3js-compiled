@@ -129,17 +129,52 @@ async function runNative() {
   return log.split(/\r?\n/).filter(line => line.startsWith('E ') || /error/i.test(line) && !line.startsWith('E '));
 }
 
-const strip = line => line.replace(/^E f=\d+ /, 'E ');
+// An E line as its event and target, which align the two logs, and its fields, which compare once aligned.
+function parse(line) {
+  const text = line.replace(/^E f=\d+ /, 'E ');
+  const fields = Object.fromEntries([...text.matchAll(/ ([\w-]+)=("(?:[^"\\]|\\.)*"|\S*)/g)].map(match => [match[1], match[2]]));
+  const key = text.replace(/ [\w-]+=("(?:[^"\\]|\\.)*"|\S*)/g, '');
+  return { text, key: `${key} ${fields.target ?? ''}`, fields };
+}
+// Aligns the logs by their longest common run of keys, then lists each aligned pair whose fields differ, and each
+// line only one side has.
+export function compareLogs(edgeLines, nativeLines) {
+  const a = edgeLines.map(parse);
+  const b = nativeLines.map(parse);
+  const lengths = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) {
+    lengths[i][j] = a[i].key === b[j].key ? lengths[i + 1][j + 1] + 1 : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
+  }
+  const rows = [];
+  let aligned = 0;
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i].key === b[j].key) {
+      aligned++;
+      const names = [...new Set([...Object.keys(a[i].fields), ...Object.keys(b[j].fields)])];
+      const differ = names.filter(name => a[i].fields[name] !== b[j].fields[name]);
+      if (differ.length) rows.push(`edge #${i} native #${j} ${a[i].key}: ${differ.map(name => `${name} ${a[i].fields[name]} -> ${b[j].fields[name]}`).join(', ')}`);
+      i++;
+      j++;
+    } else if (j < b.length && (i >= a.length || lengths[i][j + 1] >= lengths[i + 1][j])) {
+      rows.push(`native only #${j}: ${b[j].text}`);
+      j++;
+    } else {
+      rows.push(`edge only #${i}: ${a[i].text}`);
+      i++;
+    }
+  }
+  return { aligned, rows, summary: `${a.length} Edge lines, ${b.length} native lines, ${aligned} aligned, ${rows.length} differences` };
+}
+
 const edge = args.includes('--native-only') ? null : await runEdge();
 if (edge) await writeFile(join(out, 'edge.log'), edge.join('\n') + '\n');
 const native = args.includes('--edge-only') ? null : await runNative();
 if (native) await writeFile(join(out, 'native.log'), native.join('\n') + '\n');
 if (edge && native) {
-  const a = edge.filter(line => line.startsWith('E ')).map(strip);
-  const b = native.filter(line => line.startsWith('E ')).map(strip);
-  const rows = [];
-  for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) rows.push(`#${i}\n  edge:   ${a[i] ?? '(none)'}\n  native: ${b[i] ?? '(none)'}`);
-  const summary = `${scene}: ${a.length} Edge lines, ${b.length} native lines, ${rows.length} differ`;
+  const { rows, summary: counts } = compareLogs(edge.filter(line => line.startsWith('E ')), native.filter(line => line.startsWith('E ')));
+  const summary = `${scene}: ${counts}`;
   await writeFile(join(out, 'diff.txt'), [summary, ...rows].join('\n') + '\n');
   console.log(summary);
   for (const row of rows.slice(0, 20)) console.log(row);
