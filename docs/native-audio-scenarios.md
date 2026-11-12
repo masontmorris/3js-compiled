@@ -1,16 +1,16 @@
 # Web Audio scenario table
 
-Each row is one step that `tools/audio-parity/scenarios.mjs` logs. Edge's value comes from Edg/157.0.0.0 headless, muted, in `scenarios.edge.json`. The host's value comes from `node tools/audio-parity/host.mjs scenarios` with the host playing to Steam Streaming Speakers. A row passes when the values are equal, unless its rule says otherwise. `node tools/audio-parity/scenario-table.mjs <scenarios.host.json>` rewrites this file.
+Each row is one step that `tools/audio-parity/scenarios.mjs` logs. Edge's value comes from Edg/157.0.0.0 headless, muted, in `scenarios.edge.json`. The host's value comes from `node tools/audio-parity/host.mjs scenarios` with the host playing to Steam Streaming Speakers, and for the rows marked "(no device)" with `--audio-device none`. A row passes when the values are equal, unless its rule says otherwise. `node tools/audio-parity/scenario-table.mjs <scenarios.host.json>` rewrites this file.
 
-146 of 146 judged rows pass; rows marked info are not judged.
+154 of 154 judged rows pass; rows marked info are not judged.
 
 | Scenario | Step | Edge | Host | Rule | Verdict |
 | --- | --- | --- | --- | --- | --- |
 | context-start | state at construction | `["running"]` | `["running"]` | equal | pass |
 | context-start | state | `["running"]` | `["running"]` | equal | pass |
 | context-start | sampleRate is the device rate | `[true]` | `[true]` | equal | pass |
-| context-start | baseLatency | `[0.01]` | `[0.01]` | The device period, which Edge reports for its own device. | pass |
-| context-start | latency under 50 ms | `[true]` | `[false]` | Information only. Read at startup on different devices; lane 5 judges latency. | info |
+| context-start | baseLatency | `[0.01]` | `[0]` | The device period, which Edge reports for its own device. The host reads 0 until its first callback. | pass |
+| context-start | latency under 50 ms | `[true]` | `[true]` | Information only. Read at startup on different devices; lane 5 judges latency. | info |
 | context-start | statechange | `["running"]` | `["running"]` | equal | pass |
 | context-start | currentTime advances | `[true]` | `[true]` | equal | pass |
 | context-start | destination | `[true,2,1,0]` | `[true,2,1,0]` | equal | pass |
@@ -153,3 +153,11 @@ Each row is one step that `tools/audio-parity/scenarios.mjs` logs. Edge's value 
 | statechange-timing | order | `[[["statechange","running"],["settled","running"],["suspend called","suspended"],["suspend resolved","suspended"],["statechange","suspended"],["resume called","suspended"],["resume resolved","running"],["statechange","running"],["suspend then resume called","suspended"],["suspend 2 resolved","suspended"],["statechange","suspended"],["resume 2 resolved","running"],["statechange","running"],["close called","closed"],["close resolved","closed"],["statechange","closed"]]]` | `[[["statechange","running"],["settled","running"],["suspend called","suspended"],["suspend resolved","suspended"],["statechange","suspended"],["resume called","suspended"],["resume resolved","running"],["statechange","running"],["suspend then resume called","suspended"],["suspend 2 resolved","suspended"],["statechange","suspended"],["resume 2 resolved","running"],["statechange","running"],["close called","closed"],["close resolved","closed"],["statechange","closed"]]]` | equal | pass |
 | statechange-timing | took under 3 s | `[true]` | `[true]` | equal | pass |
 | statechange-races | order | `[[["close at once","closed","closed"],["close at once","statechange","closed"],["close at once","statechange","closed"],["resume then close","statechange","running"],["resume then close","statechange","suspended"],["resume then close","resumed","running"],["resume then close","closed","closed"],["resume then close","statechange","closed"],["resume then close","statechange","closed"],["suspend at once","suspended","suspended"],["suspend at once","statechange","suspended"],["suspend at once","statechange","suspended"],["suspend at once","statechange","closed"]]]` | `[[["close at once","closed","closed"],["close at once","statechange","closed"],["close at once","statechange","closed"],["resume then close","statechange","running"],["resume then close","statechange","suspended"],["resume then close","resumed","running"],["resume then close","closed","closed"],["resume then close","statechange","closed"],["resume then close","statechange","closed"],["suspend at once","suspended","suspended"],["suspend at once","statechange","suspended"],["suspend at once","statechange","suspended"],["suspend at once","statechange","closed"]]]` | equal | pass |
+| current-time | at construction | `[0]` | `[0]` | Edge returns before its first render quantum, so it reads 0. The host starts rendering inside the constructor, so it reads the milliseconds the constructor took. | pass |
+| current-time | running: advances, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |
+| current-time | suspended: holds, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |
+| current-time | resumed: advances again, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |
+| current-time (no device) | at construction | `[0]` | `[0]` | Edge returns before its first render quantum, so it reads 0. The host starts rendering inside the constructor, so it reads the milliseconds the constructor took. | pass |
+| current-time (no device) | running: advances, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |
+| current-time (no device) | suspended: holds, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |
+| current-time (no device) | resumed: advances again, in whole render quanta | `[true,true]` | `[true,true]` | equal | pass |

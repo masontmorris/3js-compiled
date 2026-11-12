@@ -228,10 +228,12 @@ function lane7() {
 function scenarioLanes() {
   const host = JSON.parse(read(at('scenarios', 'scenarios.host.json')));
   const edge = JSON.parse(read('tools/audio-parity/scenarios.edge.json')).scenarios;
-  // context-start's latency row is read at startup, before the device reports its latency, so it is information only;
-  // lane 5 judges latency in steady state on one device.
+  // context-start's latency rows are read at startup, on different devices: `baseLatency` is the device period, which
+  // Edge reports before the host's first callback, and the 50 ms row is read before the device reports. They are
+  // information only, as the scenario table's rules say; lane 5 judges latency in steady state on one device.
   const INFO = 'latency under 50 ms';
-  const judged = log => log?.filter(entry => entry[0] !== INFO);
+  const STARTUP = new Set([INFO, 'baseLatency']);
+  const judged = log => log?.filter(entry => !STARTUP.has(entry[0]));
   const same = name => JSON.stringify(judged(host[name])) === JSON.stringify(judged(edge[name]));
   const loopback = readWav(at('scenarios', 'loopback.wav'));
   const rate = loopback.sampleRate;

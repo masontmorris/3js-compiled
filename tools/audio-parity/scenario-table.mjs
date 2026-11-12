@@ -13,7 +13,8 @@ const runs = [...Object.entries(edge.scenarios).map(([name, log]) => [name, name
 // Rows whose rule is not equality with Edge, and why.
 const RULES = {
   'unsupported-methods': 'Throws a NotSupportedError that names the method; Edge supports it.',
-  'context-start/baseLatency': 'The device period, which Edge reports for its own device.',
+  'context-start/baseLatency': 'The device period, which Edge reports for its own device. The host reads 0 until its first callback.',
+  'current-time/at construction': 'Edge returns before its first render quantum, so it reads 0. The host starts rendering inside the constructor, so it reads the milliseconds the constructor took.',
 };
 // Rows that are information only: read at startup, on different devices. Lane 5 judges latency in steady state, on
 // one device, against Edge's reading there.
@@ -44,6 +45,8 @@ for (const [label, name, edgeLog, hostLog] of runs) {
     const rule = RULES[name] ?? RULES[`${name}/${step}`];
     let verdict;
     if (name === 'unsupported-methods') verdict = step === 'still playing' ? JSON.stringify(e) === JSON.stringify(h) : h?.[2] === 'NotSupportedError' && String(h?.[3]).includes(step.split('.').at(-1));
+    else if (`${name}/${step}` === 'current-time/at construction') verdict = typeof h?.[1] === 'number' && h[1] >= 0 && h[1] < 0.05;
+    else if (`${name}/${step}` === 'context-start/baseLatency') verdict = typeof h?.[1] === 'number' && h[1] >= 0 && h[1] <= 0.02;
     else if (rule) verdict = typeof h?.[1] === 'number' && h[1] > 0 && h[1] <= 0.02;
     else verdict = JSON.stringify(e) === JSON.stringify(h);
     total++;
