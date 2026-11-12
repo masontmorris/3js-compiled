@@ -142,7 +142,9 @@ globalThis.setTimeout = (callback, delay, ...args) => schedule(callback, delay, 
 globalThis.setInterval = (callback, delay, ...args) => schedule(callback, delay, args, true);
 globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(id | 0); };
 // Runs due timers until `cap`, or once `shared` has passed and the frame is due, which is when the render thread has
-// caught up and `pacedAt`, the frame's display refresh, has come. A turn runs at least one due timer, and an idle wait
+// caught up and `pacedAt`, the frame's display refresh, has come. With vsync off a turn does not wait for the render
+// thread, so the frame records while the render thread draws the one before; the idle wait before the handover still
+// does. A turn runs at least one due timer, and an idle wait
 // (`turn` false) none once the frame is due. While nothing is due and the frame is not, it sleeps until the next timer
 // falls due, the frame does, or `cap` comes, so a timer that falls due while the host waits for the frame runs then, as
 // a browser runs its tasks between renderings.
@@ -150,7 +152,7 @@ function runTimers(cap, shared, pacedAt, turn) {
   for (let ran = !turn; ;) {
     const now = performance.now();
     const rendered = ops.op_frame_due();
-    const frameDue = rendered && now >= pacedAt;
+    const frameDue = (rendered || (turn && !globalThis.__vsync)) && now >= pacedAt;
     if (ran && (now >= cap || (now >= shared && frameDue))) return;
     const due = takeDue(now);
     if (!due) {
@@ -236,6 +238,8 @@ globalThis.__displayInterval = 1000 / 60;
 // A frame interval in ms that the host forces for testing, as at 60 Hz on a faster display, or null: a frame is then
 // due no sooner than this long after the frame before began its callbacks.
 globalThis.__framePacing = null;
+// Whether the display paces frames, as with vsync on; the host sets it.
+globalThis.__vsync = true;
 let framesBegan = -Infinity;
 // When the next frame may begin: with a forced frame rate, that interval after the frame before began. Otherwise a
 // frame begins no sooner than the first display refresh after the frame before began, as a browser begins frames on its

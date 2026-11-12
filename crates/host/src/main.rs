@@ -214,6 +214,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let interval = forced.unwrap_or_else(|| display_interval(&window));
     log(log_file, &format!("display interval {interval:.4} ms"))?;
     game.set_display_interval(interval)?;
+    game.set_vsync(options.vsync)?;
     if let Some(ms) = forced {
         game.set_frame_pacing(ms)?;
     }
