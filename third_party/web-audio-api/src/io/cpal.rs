@@ -227,14 +227,15 @@ impl AudioBackendManager for CpalBackend {
                 )
             })?
         } else {
+            // An unknown sink id is an error, never the default device, so audio meant for one
+            // device does not reach another.
             cpal_device_for_id(&host, MediaDeviceInfoKind::AudioOutput, &options.sink_id)?
-                .or_else(|| host.default_output_device())
                 .ok_or_else(|| {
                     AudioBackendError::new(
                         AudioBackendErrorKind::DeviceUnavailable,
                         "cpal",
                         "select_output_device",
-                        "No output device available",
+                        "No output device has the requested sink id",
                     )
                 })?
         };
