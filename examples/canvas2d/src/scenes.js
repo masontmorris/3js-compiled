@@ -189,32 +189,30 @@ export const SCENES = {
     context.textBaseline = 'middle';
     const shown = show(element, 20, 20);
     let frames = 0;
-    const times = [];
     return () => {
       frames++;
-      const start = performance.now();
       context.fillStyle = '#000000';
       context.fillRect(0, 0, 192, 32);
       context.fillStyle = '#ffffff';
       context.fillText(String(frames).padStart(6, '0'), 96, 16);
-      times.push(performance.now() - start);
       shown.texture.needsUpdate = true;
-      if (frames % 300 === 0) {
-        const sorted = [...times].sort((a, b) => a - b);
-        log(`dynamic frames=${frames} draw median ms=${round(sorted[sorted.length >> 1])} p95 ms=${round(sorted[Math.floor(sorted.length * 0.95)])} max ms=${round(sorted.at(-1))}`);
-        times.length = 0;
-      }
       globalThis.__frameNumber = frames;
+      if (frames % 300 === 0) log(`dynamic drawn frames=${frames}`);
     };
   },
-  // Draws folio's ten canvases at load, timed, then again warm.
+  // Draws folio's ten canvases at load, then again warm. The app times the whole load, from the font work through
+  // the last texture's first upload.
   perf({ show, log }) {
-    for (let run = 0; run < 6; run++) {
-      const start = performance.now();
-      const drawn = FOLIO_CANVASES.map(({ draw }) => { const element = document.createElement('canvas'); draw(element); return element; });
-      const elapsed = performance.now() - start;
-      log(`perf load run=${run} ms=${round(elapsed)} canvases=${drawn.length}`);
-      if (run === 0) drawn.forEach((element, i) => show(element, 10 + (i % 3) * 420, 10 + Math.floor(i / 3) * 140));
-    }
+    const start = performance.now();
+    const drawn = FOLIO_CANVASES.map(({ draw }) => { const element = document.createElement('canvas'); draw(element); return element; });
+    log(`perf load run=0 ms=${round(performance.now() - start)} canvases=${drawn.length}`);
+    drawn.forEach((element, i) => show(element, 10 + (i % 3) * 420, 10 + Math.floor(i / 3) * 140));
+    let warm = 0;
+    return () => {
+      if (++warm > 5) return;
+      const started = performance.now();
+      for (const { draw } of FOLIO_CANVASES) draw(document.createElement('canvas'));
+      log(`perf warm run=${warm} ms=${round(performance.now() - started)}`);
+    };
   },
 };

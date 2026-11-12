@@ -43,9 +43,11 @@ async function measured(body) {
 }
 
 function parse(lines) {
-  const loads = lines.map(line => /perf load run=(\d+) ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[2]));
-  const dynamic = lines.map(line => /dynamic frames=(\d+) draw median ms=([\d.]+) p95 ms=([\d.]+) max ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => ({ frames: Number(m[1]), median: Number(m[2]), p95: Number(m[3]), max: Number(m[4]) }));
-  return { loads, dynamic };
+  const draws = lines.map(line => /perf load run=0 ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
+  const spans = lines.map(line => /perf loadspan ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
+  const firstFrames = lines.map(line => /perf frame1 ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
+  const dynamic = lines.map(line => /dynamic frames=(\d+) draw median ms=([\d.]+) p95 ms=([\d.]+) max ms=([\d.]+) span median ms=([\d.]+) p95 ms=([\d.]+) max ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => ({ frames: Number(m[1]), median: Number(m[2]), p95: Number(m[3]), max: Number(m[4]), spanMedian: Number(m[5]), spanP95: Number(m[6]), spanMax: Number(m[7]) }));
+  return { loads: spans, draws, firstFrames, dynamic };
 }
 
 async function edgePage(scene, waitFrames, ids) {
@@ -93,7 +95,7 @@ sampler.stdin.end();
 await writeFile(join(out, 'perf.json'), JSON.stringify(rows, null, 1));
 const counted = rows.filter(row => !row.void);
 for (const side of ['edge', 'native']) {
-  const loads = counted.filter(row => row.side === side && row.scene === 'perf').map(row => row.loads[0]);
-  const dynamic = counted.filter(row => row.side === side && row.scene === 'dynamic').flatMap(row => row.dynamic.slice(1).map(d => d.median));
-  console.log(`${side}: load ms ${loads.join(', ')}; dynamic median ms per 300 frames ${dynamic.join(', ')}`);
+  const perf = counted.filter(row => row.side === side && row.scene === 'perf');
+  const dynamic = counted.filter(row => row.side === side && row.scene === 'dynamic').flatMap(row => row.dynamic.slice(1));
+  console.log(`${side}: loadspan ms ${perf.map(row => row.loads[0]).filter(v => v !== undefined).join(', ')}; load draw-only ms ${perf.map(row => row.draws[0]).filter(v => v !== undefined).join(', ')}; first frame ms ${perf.map(row => row.firstFrames[0]).filter(v => v !== undefined).join(', ')}; dynamic span p95 ms ${dynamic.map(d => d.spanP95).join(', ')}; dynamic span max ms ${dynamic.map(d => d.spanMax).join(', ')}`);
 }

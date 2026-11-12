@@ -11,6 +11,26 @@ const native = typeof globalThis.submitGpuCommands === 'function';
 const scene = native ? (globalThis.__sceneName ?? 'folio') : (new URL(location.href).searchParams.get('scene') ?? 'folio');
 const pallyBase = new URLSearchParams(location.hash.slice(1)).get('pally');
 const log = line => console.log(`R ${line}`);
+const round = value => Math.round(value * 1000) / 1000;
+
+// The load span starts before the FontFace work, so the parse is inside it, and ends at the last canvas upload.
+const loadStart = scene === 'perf' ? performance.now() : null;
+
+// Times a CanvasTexture upload: `copyExternalImageToTexture` returns after the canvas has been read.
+let upload = null;
+function measureUploads(queue) {
+  const copy = queue.copyExternalImageToTexture;
+  queue.copyExternalImageToTexture = function (source, ...rest) {
+    if (source?.source?.getContext) {
+      const start = performance.now();
+      const result = copy.call(this, source, ...rest);
+      upload = { start, end: performance.now() };
+      return result;
+    }
+    return copy.call(this, source, ...rest);
+  };
+}
+if (!native && globalThis.GPUQueue) measureUploads(GPUQueue.prototype);
 
 function fontURL(file) {
   return new URL(`fonts/${file}`, location.href).href;
@@ -34,6 +54,9 @@ const backend = native ? new NativeBackend({ canvas }, { features: ['core-featur
 const renderer = new THREE.WebGPURenderer({ canvas, backend, antialias: false });
 renderer.setSize(innerWidth, innerHeight, false);
 await renderer.init();
+if (native) {
+  try { measureUploads(backend.recordingDevice.queue); } catch (error) { log(`upload timing unavailable: ${error.message}`); }
+}
 const world = new THREE.Scene();
 world.background = new THREE.Color(0x404040);
 const camera = new THREE.OrthographicCamera(0, innerWidth, 0, -innerHeight, -1, 1);
@@ -67,12 +90,41 @@ try {
 log(`scene ${scene} ready`);
 
 let frame = 0;
+let loadLogged = false;
+let firstFrame = false;
+const drawTimes = [];
+const spanTimes = [];
+function summary(values) {
+  if (!values.length) return 'none';
+  const sorted = [...values].sort((a, b) => a - b);
+  return `median ms=${round(sorted[sorted.length >> 1])} p95 ms=${round(sorted[Math.floor(sorted.length * 0.95)])} max ms=${round(sorted.at(-1))}`;
+}
 function draw() {
   try {
     frame++;
+    upload = null;
+    const frameStart = performance.now();
     update();
+    const drawEnd = performance.now();
     renderer.render(world, camera);
     if (native) globalThis.submitGpuCommands(backend.takeFrame());
+    if (scene === 'dynamic') {
+      if (upload) {
+        drawTimes.push(drawEnd - frameStart);
+        spanTimes.push(upload.end - frameStart);
+      }
+      if (frame % 300 === 0) {
+        log(`dynamic frames=${frame} draw ${summary(drawTimes)} span ${summary(spanTimes)}`);
+        drawTimes.length = 0;
+        spanTimes.length = 0;
+      }
+    }
+    if (scene === 'perf') {
+      const now = performance.now();
+      if (!firstFrame) { firstFrame = true; log(`perf frame1 ms=${round(now - frameStart)}`); }
+      if (!loadLogged) { loadLogged = true; log(`perf loadspan ms=${round((upload?.end ?? now) - loadStart)}`); }
+    }
+    globalThis.__frameNumber = frame;
     if (frame === 3) globalThis.__sceneReady = true;
     requestAnimationFrame(draw);
   } catch (error) {
