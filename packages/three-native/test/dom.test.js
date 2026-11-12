@@ -235,3 +235,23 @@ test('click, auxclick and contextmenu carry no pressure, as in Edge', () => {
   router.pointer({ type: 'pointerup', clientX: 1, clientY: 1, button: 2 });
   assert.deepEqual(seen, ['auxclick 1 0', 'contextmenu 1 0']);
 });
+
+test('the router checkpoints promise jobs after each listener it calls, through a whole input sequence', async () => {
+  const { setCheckpoint } = await import('../src/platform/events.js');
+  const { window, document } = page();
+  document.body.append(document.createElement('canvas'));
+  const router = new InputRouter(window, document);
+  const order = [];
+  setCheckpoint(() => order.push('checkpoint'));
+  window.addEventListener('keydown', () => order.push('A'));
+  window.addEventListener('keydown', () => { order.push('B'); document.body.dispatchEvent(new Event('nested')); });
+  document.body.addEventListener('nested', () => order.push('nested'));
+  router.key({ type: 'keydown', code: 'KeyZ', key: 'z', ctrl: true });
+  assert.deepEqual(order, ['A', 'checkpoint', 'B', 'nested', 'checkpoint'], 'a script dispatch inside a listener does not checkpoint');
+  order.length = 0;
+  window.addEventListener('pointerdown', () => order.push('pointerdown'));
+  window.addEventListener('mousedown', () => order.push('mousedown'));
+  router.pointer({ type: 'pointerdown', clientX: 1, clientY: 1, button: 0 });
+  assert.deepEqual(order.filter(item => item !== 'checkpoint' || true).slice(0, 4), ['pointerdown', 'checkpoint', 'mousedown', 'checkpoint']);
+  setCheckpoint(null);
+});

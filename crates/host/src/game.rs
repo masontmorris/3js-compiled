@@ -1557,4 +1557,39 @@ mod tests {
         std::fs::remove_dir_all(&dir)?;
         Ok(())
     }
+
+    #[test]
+    fn threes_loaders_fetch_files_with_an_abort_signal() -> Result<()> {
+        let log = run_until_green(
+            "loaders",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/loaders.js"),
+            None,
+        )?;
+        assert_eq!(result(&log, "json"), r#"{"ok":true,"name":"e5"}"#);
+        assert_eq!(result(&log, "arraybuffer"), "124");
+        assert_eq!(result(&log, "bitmap"), "7x5");
+        assert_eq!(result(&log, "missing"), "HttpError 404");
+        Ok(())
+    }
+
+    #[test]
+    fn promise_jobs_run_after_each_input_listener() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path = std::env::temp_dir().join(format!("threejsc-jobs-listener-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/listener-jobs.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.event(&serde_json::json!({"type": "keydown", "code": "KeyA", "key": "a", "repeat": false}))?;
+        game.event(&serde_json::json!({"type": "pointerdown", "clientX": 5, "clientY": 5, "button": 0}))?;
+        game.event(&serde_json::json!({"type": "pointerup", "clientX": 5, "clientY": 5, "button": 0}))?;
+        game.js.execute_script("host:report", "globalThis.__report()")?;
+        let log = std::fs::read_to_string(log_path)?;
+        // Edge's orders, from C:jsc\swarm\e5-v1\lane-a2\edge.log.
+        assert_eq!(result(&log, "jobs-key"), "keydown-A|keydown-A-job|keydown-B");
+        assert_eq!(result(&log, "jobs-pointer"), "pointerdown|pointerdown-job|mousedown|pointerup|pointerup-job|mouseup");
+        Ok(())
+    }
 }
