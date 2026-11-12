@@ -1,6 +1,7 @@
 // DOM events as Edge dispatches them: Event and its input subclasses, EventTarget with capture, target and bubble
 // phases, and event handler attributes. Listener state lives under symbols, so the window, which no constructor
 // makes, can be an EventTarget too.
+import { platformError } from './errors.js';
 const LISTENERS = Symbol('listeners');
 // A mouse event's exact pointer position, from which its offset is rounded.
 const EXACT = Symbol('exact position');
@@ -150,7 +151,7 @@ export function hasListener(node, type, active = false) {
 }
 export function dispatchEvent(event) {
   if (!(event instanceof Event)) throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
-  if (event[STATE].phase) throw new DOMException("Failed to execute 'dispatchEvent' on 'EventTarget': The event is already being dispatched.", 'InvalidStateError');
+  if (event[STATE].phase) throw platformError("Failed to execute 'dispatchEvent' on 'EventTarget': The event is already being dispatched.", 'InvalidStateError');
   return dispatch(this, event);
 }
 
@@ -335,11 +336,11 @@ export class InputRouter {
     }
   }
   capture(element, pointerId) {
-    if (pointerId !== POINTER.pointerId) throw new DOMException("Failed to execute 'setPointerCapture' on 'Element': No active pointer with the given id is found.", 'NotFoundError');
+    if (pointerId !== POINTER.pointerId) throw platformError("Failed to execute 'setPointerCapture' on 'Element': No active pointer with the given id is found.", 'NotFoundError');
     if (this.buttons) this.pendingCapture = element;
   }
   release(element, pointerId) {
-    if (pointerId !== POINTER.pointerId) throw new DOMException("Failed to execute 'releasePointerCapture' on 'Element': No active pointer with the given id is found.", 'NotFoundError');
+    if (pointerId !== POINTER.pointerId) throw platformError("Failed to execute 'releasePointerCapture' on 'Element': No active pointer with the given id is found.", 'NotFoundError');
     if (this.pendingCapture === element) this.pendingCapture = null;
   }
   captured(pointerId) { return pointerId === POINTER.pointerId ? this.pendingCapture : null; }

@@ -1,6 +1,7 @@
 // Window-level APIs a game reaches that need no DOM: document.cookie, crypto, media queries and window.open, each as
 // Edge 157 has them.
 import { logOnce } from './dom.js';
+import { platformError, withStack } from './errors.js';
 
 // document.cookie for one game. Cookies come back in the order they were last set, longest path first, as in Edge.
 // The jar honors path, expires and max-age, ignores domain, secure, samesite and httponly, and keeps session
@@ -65,9 +66,9 @@ export class Crypto {
     if (!INTEGER_ARRAYS.some(Type => array instanceof Type)) {
       const type = ArrayBuffer.isView(array) ? array.constructor.name.replace(/Array$/, '') : typeof array;
       if (!ArrayBuffer.isView(array)) throw new TypeError("Failed to execute 'getRandomValues' on 'Crypto': parameter 1 is not of type 'ArrayBufferView'.");
-      throw new DOMException(`Failed to execute 'getRandomValues' on 'Crypto': The provided ArrayBufferView is of type '${type}', which is not an integer array type.`, 'TypeMismatchError');
+      throw platformError(`Failed to execute 'getRandomValues' on 'Crypto': The provided ArrayBufferView is of type '${type}', which is not an integer array type.`, 'TypeMismatchError');
     }
-    if (array.byteLength > 65536) throw new QuotaExceededError(`Failed to execute 'getRandomValues' on 'Crypto': The ArrayBufferView's byte length (${array.byteLength}) exceeds the number of bytes of entropy available via this API (65536).`);
+    if (array.byteLength > 65536) throw withStack(new QuotaExceededError(`Failed to execute 'getRandomValues' on 'Crypto': The ArrayBufferView's byte length (${array.byteLength}) exceeds the number of bytes of entropy available via this API (65536).`));
     this.#fill(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
     return array;
   }
@@ -180,7 +181,7 @@ export function btoa(...args) {
   for (let i = 0; i < text.length; i += 3) {
     const codes = [text.charCodeAt(i), text.charCodeAt(i + 1), text.charCodeAt(i + 2)];
     if (codes.some(code => code > 255)) {
-      throw new DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", 'InvalidCharacterError');
+      throw platformError("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", 'InvalidCharacterError');
     }
     const [a, b = 0, c = 0] = codes.map(code => Number.isNaN(code) ? undefined : code);
     const bits = (a << 16) | (b << 8) | c;
@@ -194,7 +195,7 @@ export function atob(...args) {
   let text = String(args[0]).replace(/[\t\n\f\r ]/g, '');
   if (text.length % 4 === 0) text = text.replace(/==?$/, '');
   if (text.length % 4 === 1 || /[^A-Za-z0-9+/]/.test(text)) {
-    throw new DOMException("Failed to execute 'atob' on 'Window': The string to be decoded is not correctly encoded.", 'InvalidCharacterError');
+    throw platformError("Failed to execute 'atob' on 'Window': The string to be decoded is not correctly encoded.", 'InvalidCharacterError');
   }
   let out = '';
   let bits = 0;

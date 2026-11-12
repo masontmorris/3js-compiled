@@ -10,6 +10,7 @@ import { CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageD
 import { EVENT_HANDLERS } from './dom-methods.js';
 import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
+import { MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry, updateIntersections } from './observers.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -148,6 +149,7 @@ Object.assign(window, {
   ...Object.fromEntries(['Event', 'CustomEvent', 'ErrorEvent', 'PromiseRejectionEvent', 'UIEvent', 'FocusEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'WheelEvent', 'EventTarget'].map(name => [name, events[name]])),
   Node, Element, HTMLElement, HTMLCanvasElement, HTMLInputElement, HTMLTextAreaElement, HTMLImageElement, Text, Document,
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
+  MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
   AbortController, AbortSignal, CanvasGradient, CanvasRenderingContext2D, FontFace, FontFaceSet, ImageData, TextMetrics,
   DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
@@ -173,6 +175,11 @@ Object.assign(window, {
   confirm(message) { ops.op_log(`confirm: ${message}`); return false; },
   prompt(message) { ops.op_log(`prompt: ${message}`); return null; },
 });
+
+// HTML's update-the-rendering step: IntersectionObserver checks its targets after each frame's callbacks and delivers
+// an entry in a task before the next frame.
+const hostFrame = globalThis.__hostFrame;
+globalThis.__hostFrame = () => { hostFrame(); updateIntersections(); };
 
 // HTML's unhandled promise rejections: a trusted, cancelable unhandledrejection event at the window, and Edge's
 // console line unless a listener cancels it. The handler always reports the rejection as handled, so deno_core never
