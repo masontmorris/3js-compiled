@@ -225,7 +225,7 @@ fn finish(
     Ok(())
 }
 /// Runs the entry module's script with no window, GPU or input until its top level finishes, for at most 30 seconds,
-/// then `frames` more frames, for tests of the platform shims.
+/// then `frames` more frames, for tests of the platform shims. Each frame's GPU command stream is dropped.
 fn headless(options: &Options, frames: u32) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -251,10 +251,12 @@ fn headless(options: &Options, frames: u32) -> Result<()> {
             bail!("the entry module did not finish in 30 seconds");
         }
         game.frame()?;
+        game.take_commands();
         std::thread::sleep(Duration::from_millis(1));
     }
     for _ in 0..frames {
         game.frame()?;
+        game.take_commands();
     }
     Ok(())
 }
