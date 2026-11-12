@@ -137,9 +137,10 @@ function step(every) {
     result(`${mode} ticks`, ticks);
     result(`${mode} frames with 0/1/2/3+ ticks`, perFrame.join('/'));
     result(`${mode} behind schedule at the last tick ms`, lastRun === null ? 'n/a' : (lastRun - (t0 + every * ticks)).toFixed(1));
-    // Ticks against the schedule's points in the frames a stall did not stretch (a gap up to 1.5 times the median).
+    // Ticks against the schedule's points in the frames a stall did not stretch: a gap up to 1.15 times the median, since
+    // a frame stretched by a whole period legitimately skips a tick.
     const m = median(frameLog.map(([gap]) => gap));
-    const calm = frameLog.filter(([gap]) => gap <= 1.5 * m);
+    const calm = frameLog.filter(([gap]) => gap <= 1.15 * m);
     const ran = calm.reduce((sum, [, , n]) => sum + n, 0), due = calm.reduce((sum, [gap]) => sum + gap / every, 0);
     result(`${mode} ticks per scheduled tick in unstalled frames`, due ? (ran / due).toFixed(3) : 'n/a');
   };
