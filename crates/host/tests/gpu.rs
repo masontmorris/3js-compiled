@@ -302,11 +302,12 @@ fn with_vsync_off_frames_are_not_paced_to_the_display() {
     // With vsync off the swap chain presents at once, so an acquire that waits does so for the
     // GPU, not for a display refresh. 881734c took such waits for refreshes and paced frames to
     // the display: 169 fps on a 169 Hz display, where 9638647 draws the 2,000-mesh scene at
-    // 1,720 (C:\3jsc\swarm\e3-r18\kit\out\runs\perf). The canvas-size page draws every frame and
-    // resizes its canvas every 10 frames.
+    // 1,720 (C:\3jsc\swarm\e3-r18\kit\out\runs\perf). The counter page only sets the clear colour,
+    // so the host outruns the display many times over and its swap chain's queue fills, which
+    // makes acquires wait. (The canvas-size page, at 4.6 ms a frame, is too slow to tell.)
     let dir = workdir("vsync-off");
-    let steps = serde_json::json!([{"type": "wait", "frames": 600}, {"type": "close"}]);
-    let (status, log) = host(&dir, &bundle("canvas-size"), &steps, &["--vsync", "off"]);
+    let steps = serde_json::json!([{"type": "wait", "frames": 2000}, {"type": "close"}]);
+    let (status, log) = host(&dir, &bundle("counter"), &steps, &["--vsync", "off"]);
     assert!(status.success(), "host exited with {status}\n{log}");
     let display: f64 = log
         .lines()
@@ -320,7 +321,7 @@ fn with_vsync_off_frames_are_not_paced_to_the_display() {
     let frames = std::fs::read_to_string(dir.join("frames.csv")).unwrap();
     let mut intervals: Vec<f64> = frames
         .lines()
-        .skip(51)
+        .skip(101)
         .filter_map(|line| line.split(',').nth(2)?.parse().ok())
         .collect();
     intervals.sort_by(f64::total_cmp);
