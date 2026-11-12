@@ -2179,6 +2179,7 @@ dependencies = [
  "deno_core",
  "deno_error",
  "image",
+ "moxcms",
  "pollster",
  "sdl3",
  "serde",
