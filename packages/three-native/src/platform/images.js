@@ -9,8 +9,19 @@ export const PIXELS = Symbol.for('threejsc.pixels');
 
 const SPECIAL = new Set(['http:', 'https:', 'file:', 'ws:', 'wss:', 'ftp:']);
 const DEFAULT_PORTS = { 'http:': '80', 'https:': '443', 'ws:': '80', 'wss:': '443', 'ftp:': '21' };
-// Percent-encodes what URL's path, query and fragment encode sets do not allow, and leaves existing escapes.
-const encode = (text, extra) => text.replace(new RegExp(`[\\u0000-\\u0020\\u007f-\\uffff"<>\`${extra}]`, 'gu'), char => encodeURIComponent(char));
+// WHATWG URL's percent-encode sets. Each encodes C0 controls, space, every code point above U+007E as UTF-8, and
+// the characters it names, and leaves existing escapes.
+const ENCODE_SETS = { path: '"#<>?`{}^', query: '"#<>\'', fragment: '"<>`' };
+function encode(text, set) {
+  let out = '';
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    if (code > 0x7e) out += encodeURIComponent(char);
+    else if (code <= 0x20 || ENCODE_SETS[set].includes(char)) out += `%${code.toString(16).toUpperCase().padStart(2, '0')}`;
+    else out += char;
+  }
+  return out;
+}
 function removeDots(path) {
   const output = [];
   const segments = path.split('/');
@@ -113,7 +124,7 @@ export class URL {
     }
     if (!base) return null;
     if (base.opaque) {
-      if (input.startsWith('#')) return { ...base, hash: encode(input, '') };
+      if (input.startsWith('#')) return { ...base, hash: encode(input, 'fragment') };
       return null;
     }
     return URL.#relative(SPECIAL.has(base.protocol) ? input.replace(/\\/g, '/') : input, base);
@@ -138,7 +149,7 @@ export class URL {
     if (protocol === 'file:' && host === 'localhost') host = '';
     path = path.replace(/^\/([a-zA-Z])\|/, '/$1:');
     if (SPECIAL.has(protocol) && !path) path = '/';
-    return { protocol, host, port, path: encode(removeDots(path), ''), search: encode(search, "'"), hash: encode(hash, ''), opaque: false };
+    return { protocol, host, port, path: encode(removeDots(path), 'path'), search: encode(search, 'query'), hash: encode(hash, 'fragment'), opaque: false };
   }
   static #relative(input, base) {
     if (input.startsWith('//')) return URL.#hierarchical(base.protocol, input, null);
@@ -151,13 +162,13 @@ export class URL {
     let path;
     if (!rest) path = base.path;
     else if (rest.startsWith('/')) path = base.protocol === 'file:' && /^\/[a-zA-Z]:/.test(base.path) && !/^\/[a-zA-Z][:|]/.test(rest) ? base.path.slice(0, 3) + rest : rest;
-    else if (base.protocol === 'file:' && /^[a-zA-Z][:|]/.test(rest)) path = `/${rest}`;
+    else if (base.protocol === 'file:' && /^[a-zA-Z][:|](?:$|[/?#])/.test(rest)) path = `/${rest}`;
     else path = base.path.slice(0, base.path.lastIndexOf('/') + 1) + rest;
     return {
       ...base,
-      path: encode(removeDots(path), ''),
-      search: search === null ? (rest ? '' : base.search) : encode(search, "'"),
-      hash: encode(hash, ''),
+      path: encode(removeDots(path), 'path'),
+      search: search === null ? (rest ? '' : base.search) : encode(search, 'query'),
+      hash: encode(hash, 'fragment'),
     };
   }
   get href() {
@@ -171,15 +182,15 @@ export class URL {
   get hostname() { return this.#parts.host; }
   get port() { return this.#parts.port; }
   get pathname() { return this.#parts.path; }
-  set pathname(value) { if (!this.#parts.opaque) this.#parts.path = encode(removeDots(String(value).startsWith('/') ? String(value) : `/${value}`), ''); }
+  set pathname(value) { if (!this.#parts.opaque) this.#parts.path = encode(removeDots(String(value).startsWith('/') ? String(value) : `/${value}`), 'path'); }
   get search() { return this.#parts.search.length > 1 ? this.#parts.search : ''; }
   set search(value) {
     value = String(value);
-    this.#parts.search = value ? encode(value.startsWith('?') ? value : `?${value}`, "'") : '';
+    this.#parts.search = value ? encode(value.startsWith('?') ? value : `?${value}`, 'query') : '';
     if (this.#params) URLSearchParams.reparse(this.#params, this.#parts.search);
   }
   get hash() { return this.#parts.hash.length > 1 ? this.#parts.hash : ''; }
-  set hash(value) { value = String(value); this.#parts.hash = value ? encode(value.startsWith('#') ? value : `#${value}`, '') : ''; }
+  set hash(value) { value = String(value); this.#parts.hash = value ? encode(value.startsWith('#') ? value : `#${value}`, 'fragment') : ''; }
   get username() { return ''; }
   get password() { return ''; }
   get origin() {
@@ -346,7 +357,8 @@ function decodeBase64(text) {
   return bytes.subarray(0, index);
 }
 
-// The host's file reader and image decoder, which the platform sets.
+// The host's file reader and image decoder, which the platform sets. `decode(bytes, convert)` converts the image's
+// declared color space to sRGB when `convert` is set.
 let host = {
   readFile: async () => null,
   decode: async () => { throw new Error('No image decoder'); },
@@ -360,9 +372,21 @@ export function filePath(url) {
 }
 
 // fetch for file, blob and data URLs. A missing file answers 404, as a dev server does. Network URLs reject with
-// the TypeError Edge gives a failed request.
-export async function fetch(input, init) {
+// the TypeError Edge gives a failed request. It rejects with its signal's reason when the signal aborts before the
+// response, as in Edge.
+export function fetch(input, init) {
   const request = new Request(input, init);
+  const signal = request.signal;
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  const response = fetchResponse(request);
+  if (!signal) return response;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    response.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+async function fetchResponse(request) {
   const url = new URL(request.url);
   const respond = (bytes, type, status = 200) => {
     const response = new Response(bytes, { status, statusText: STATUS[status] ?? '', headers: type ? { 'content-type': type, 'content-length': String(bytes.byteLength) } : {} });
@@ -412,7 +436,7 @@ export function premultiply(data) {
 async function decodeURL(src) {
   const response = await fetch(src);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return host.decode(await response.bytes());
+  return host.decode(await response.bytes(), true);
 }
 
 export class HTMLImageElement extends HTMLElement {
@@ -485,12 +509,14 @@ export class ImageBitmap {
 }
 
 // createImageBitmap from a Blob, a decoded image element, an ImageBitmap or ImageData, with a crop rectangle,
-// imageOrientation and premultiplyAlpha. A canvas source and resize options are not implemented.
+// imageOrientation, premultiplyAlpha and colorSpaceConversion, which for a Blob converts to sRGB unless it is 'none',
+// as in Edge. An image element's pixels are already converted. A canvas source and resize options are not
+// implemented.
 export async function createImageBitmap(source, ...rest) {
   const options = (typeof rest.at(-1) === 'object' && rest.at(-1) !== null ? rest.pop() : undefined) ?? {};
   let pixels;
   if (source instanceof Blob) {
-    try { pixels = await host.decode(source[BYTES]); } catch { throw new DOMException('The source image could not be decoded.', 'InvalidStateError'); }
+    try { pixels = await host.decode(source[BYTES], options.colorSpaceConversion !== 'none'); } catch { throw new DOMException('The source image could not be decoded.', 'InvalidStateError'); }
   } else if (source?.[PIXELS]) {
     pixels = source[PIXELS];
   } else if (source instanceof HTMLImageElement || source instanceof ImageBitmap) {

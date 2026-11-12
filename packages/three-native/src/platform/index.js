@@ -5,12 +5,14 @@ import { Document, DocumentFragment, Element, HTMLElement, HTMLCanvasElement, HT
 import { Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator, Gamepads } from './gamepad.js';
 import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
+import { AbortController, AbortSignal } from './abort.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
 const window = globalThis;
 
 setLog(message => ops.op_log(message));
+events.setCheckpoint(() => ops.op_run_microtasks());
 globalThis.TextEncoder ??= class TextEncoder {
   get encoding() { return 'utf-8'; }
   encode(text = '') { return Deno.core.encode(String(text)); }
@@ -35,8 +37,8 @@ setHost({
     const bytes = await ops.op_read_file(path);
     return bytes ? new Uint8Array(bytes) : null;
   },
-  decode: async bytes => {
-    const decoded = await ops.op_image_decode(bytes);
+  decode: async (bytes, convert) => {
+    const decoded = await ops.op_image_decode(bytes, convert);
     return { width: decoded.width, height: decoded.height, data: new Uint8Array(decoded.data), premultiplied: false };
   },
 });
@@ -161,6 +163,7 @@ Object.assign(window, {
   Node, Element, HTMLElement, HTMLCanvasElement, HTMLInputElement, HTMLTextAreaElement, HTMLImageElement, Text, Document,
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
+  AbortController, AbortSignal,
   fetch, createImageBitmap, document, navigator, screen, localStorage,
   sessionStorage: new Storage(),
   location: locationObject,
@@ -193,14 +196,14 @@ const facts = {
   pointerleave: () => router.leave(),
   wheel: fact => router.wheel(fact),
   focus: fact => router.focus(fact),
-  gamepads: fact => gamepads.update(fact.pads, performance.now()),
-  resize: fact => {
+  gamepads: fact => events.asHost(() => gamepads.update(fact.pads, performance.now())),
+  resize: fact => events.asHost(() => {
     window.innerWidth = window.outerWidth = fact.width;
     window.innerHeight = window.outerHeight = fact.height;
     window.devicePixelRatio = fact.ratio ?? window.devicePixelRatio;
     window.dispatchEvent(events.trusted(new events.Event('resize')));
     updateMedia();
-  },
+  }),
   'gpu-response': fact => {
     for (const response of fact.responses) {
       if (response.type === 'readback') response.bytes = ops.op_gpu_readback(response.request);

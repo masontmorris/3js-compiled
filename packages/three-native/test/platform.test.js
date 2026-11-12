@@ -79,7 +79,7 @@ test('createImageBitmap flips, premultiplies and crops', async () => {
 test('copyExternalImageToTexture bytes follow flipY, premultipliedAlpha, the origin and the format', () => {
   const pixels = { width: 2, height: 2, data: new Uint8Array([10, 20, 30, 255, 200, 100, 50, 128, 1, 2, 3, 4, 5, 6, 7, 8]) };
   assert.deepEqual([...externalImageBytes(pixels, { width: 2, height: 2, format: 'rgba8unorm' })], [...pixels.data]);
-  assert.deepEqual([...externalImageBytes(pixels, { width: 1, height: 1, flipY: true, format: 'rgba8unorm-srgb' })], [1, 2, 3, 4]);
+  assert.deepEqual([...externalImageBytes(pixels, { width: 1, height: 1, flipY: true, format: 'rgba8unorm-srgb' })], [10, 20, 30, 255]);
   assert.deepEqual([...externalImageBytes(pixels, { from: { x: 1, y: 0 }, width: 1, height: 1, premultiplied: true, format: 'bgra8unorm' })], [25, 50, 100, 128]);
   assert.throws(() => externalImageBytes(pixels, { from: { x: 1 }, width: 2, height: 2, format: 'rgba8unorm' }), { name: 'OperationError' });
   assert.throws(() => externalImageBytes(pixels, { width: 2, height: 2, format: 'rgba16float' }), /not implemented/);
