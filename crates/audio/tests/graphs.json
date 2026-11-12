@@ -356,6 +356,305 @@
    ]
   },
   {
+   "name": "gain-set-value-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.4,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.9,
+     0.1000137
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.1,
+     0.30000001
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-linear-ramp-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.3,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.9,
+     0.2000313
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.2,
+     0.3500077
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-exponential-ramp-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.05,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "exponentialRampToValueAtTime",
+     0.9,
+     0.2000313
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-set-target-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0.2,
+     0.1000137,
+     0.02
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0.7,
+     0.3000071,
+     0.05
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-value-curve-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueCurveAtTime",
+     [
+      0,
+      0.8,
+      0.2,
+      1,
+      0.5,
+      0.05,
+      0.9
+     ],
+     0.1000071,
+     0.2000033
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
    "name": "gain-cancel-scheduled",
    "lane": "graph",
    "sampleRate": 48000,
@@ -1462,6 +1761,84 @@
    ]
   },
   {
+   "name": "rate-1.5-context-44100",
+   "lane": "graph",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 1.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-start-end-context-44100",
+   "lane": "graph",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.05,
+      "loopEnd": 0.12
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.010007
+    ]
+   ]
+  },
+  {
    "name": "oscillator-sine-1k",
    "lane": "graph",
    "sampleRate": 48000,
@@ -2342,6 +2719,56 @@
      "linearRampToValueAtTime",
      1,
      0.5
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-context-44100",
+   "lane": "pan",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 22050,
+      "sampleRate": 44100,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.35
+     }
     ],
     [
      "connect",
@@ -4349,6 +4776,30 @@
   }
  ],
  "decodes": [
+  {
+   "name": "decode-tone-stereo-44100-bare-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-44100-bare.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-tone-stereo-44100-bare-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-44100-bare.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-tone-mono-22050-bare-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-22050-bare.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-tone-mono-22050-bare-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-22050-bare.mp3",
+   "sampleRate": 48000
+  },
   {
    "name": "decode-mp3-1ch-22050-to-44100",
    "lane": "decode",

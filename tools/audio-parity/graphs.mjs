@@ -18,8 +18,11 @@ export function clipName(format, channels, rate) {
   return `tone-${channels === 1 ? 'mono' : 'stereo'}-${rate}.${format}`;
 }
 
+// MP3s with no LAME or Xing header, so no encoder delay or padding to trim.
+export const bareClips = ['tone-stereo-44100-bare.mp3', 'tone-mono-22050-bare.mp3'];
+
 export function decodeCases() {
-  const cases = [];
+  const cases = bareClips.flatMap(file => decodeRates.map(sampleRate => ({ name: `decode-${file.replace('.mp3', '')}-to-${sampleRate}`, lane: 'decode', file, sampleRate })));
   for (const format of clipFormats) {
     for (const channels of [1, 2]) {
       for (const rate of clipRates) {
@@ -59,6 +62,11 @@ function gainGraphs() {
     constantThroughGain('gain-exponential-ramp', [['setValueAtTime', 0.01, 0.05], ['exponentialRampToValueAtTime', 1, 0.25], ['exponentialRampToValueAtTime', 0.001, 0.45]]),
     constantThroughGain('gain-set-target', [['setTargetAtTime', 0, 0.05, 0.03], ['setTargetAtTime', 0.8, 0.25, 0.1]]),
     constantThroughGain('gain-value-curve', [['setValueCurveAtTime', curve, 0.1, 0.3]]),
+    constantThroughGain('gain-set-value-fractional', [['setValueAtTime', 0.4, 0.0500091], ['setValueAtTime', 0.9, 0.1000137], ['setValueAtTime', 0.1, 0.30000001]]),
+    constantThroughGain('gain-linear-ramp-fractional', [['setValueAtTime', 0.3, 0.0500091], ['linearRampToValueAtTime', 0.9, 0.2000313], ['linearRampToValueAtTime', 0.2, 0.3500077]]),
+    constantThroughGain('gain-exponential-ramp-fractional', [['setValueAtTime', 0.05, 0.0500091], ['exponentialRampToValueAtTime', 0.9, 0.2000313]]),
+    constantThroughGain('gain-set-target-fractional', [['setTargetAtTime', 0.2, 0.1000137, 0.02], ['setTargetAtTime', 0.7, 0.3000071, 0.05]]),
+    constantThroughGain('gain-value-curve-fractional', [['setValueCurveAtTime', curve, 0.1000071, 0.2000033]]),
     constantThroughGain('gain-cancel-scheduled', [['setValueAtTime', 0, 0], ['linearRampToValueAtTime', 1, 0.4], ['cancelScheduledValues', 0.2]]),
     constantThroughGain('gain-cancel-and-hold', [['setValueAtTime', 0, 0], ['linearRampToValueAtTime', 1, 0.4], ['cancelAndHoldAtTime', 0.2]]),
     // Howler's fade: setValueAtTime(current, now) then linearRampToValueAtTime(target, now + duration).
@@ -107,6 +115,8 @@ function sourceGraphs() {
   graphs.push(sourceGraph('loop-stop', { loop: true, loopStart: 0.01, loopEnd: 0.2 }, [0], [['stop', 's', 0.37]]));
   // Howler plays a sprite as start(0, offset, duration) on a looping source with loopStart and loopEnd.
   graphs.push(sourceGraph('howler-sprite-loop', { loop: true, loopStart: 0.03, loopEnd: 0.09 }, [0, 0.03, 86400]));
+  graphs.push({ ...sourceGraph('rate-1.5-context-44100', { playbackRate: 1.5 }, [0]), name: 'rate-1.5-context-44100', sampleRate: 44100, length: 22050 });
+  graphs.push({ ...sourceGraph('loop-start-end-context-44100', { loop: true, loopStart: 0.05, loopEnd: 0.12 }, [0.010007]), name: 'loop-start-end-context-44100', sampleRate: 44100, length: 22050 });
   graphs.push(graph('graph', 'oscillator-sine-1k', [
     ['node', 'o', 'Oscillator', { type: 'sine', frequency: 1000 }],
     ['node', 'g', 'Gain', { gain: 0.5 }],
@@ -147,6 +157,14 @@ function panGraphs() {
     ['connect', 'p', 'out'],
     ['start', 's', 0],
   ]));
+  graphs.push(graph('pan', 'stereo-panner-context-44100', [
+    ['buffer', 'b', { channels: 1, length: 22050, sampleRate: 44100, signal: 'mix' }],
+    ['node', 's', 'AudioBufferSource', { buffer: 'b' }],
+    ['node', 'p', 'StereoPanner', { pan: 0.35 }],
+    ['connect', 's', 'p'],
+    ['connect', 'p', 'out'],
+    ['start', 's', 0],
+  ], { sampleRate: 44100, length: 22050 }));
   for (const distanceModel of ['linear', 'inverse', 'exponential']) {
     positions.forEach(([x, y, z], i) => {
       const scale = 1 + i * 1.7;

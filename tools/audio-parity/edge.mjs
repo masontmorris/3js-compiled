@@ -35,15 +35,17 @@ try {
     writeWav(join(out, `${name}.wav`), data, sampleRate, { float: true });
     index.renders[name] = { sampleRate, channels: data.length, length: data[0].length };
   };
+  // page.evaluate takes no timeout of its own.
+  const evaluate = (fn, arg) => Promise.race([page.evaluate(fn, arg), new Promise((_, reject) => setTimeout(() => reject(new Error(`edge.mjs: ${step} took over 60 s`)), 60_000).unref())]);
   const encode = `const encode = a => { const b = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768)); return btoa(s); };`;
   for (const spec of referenceGraphs().filter(g => g.name.includes(filter))) {
     step = spec.name;
-    const channels = await page.evaluate(new Function('spec', `${encode} return import('/run-graph.mjs').then(m => m.renderGraph(spec)).then(cs => cs.map(encode));`), spec);
+    const channels = await evaluate(new Function('spec', `${encode} return import('/run-graph.mjs').then(m => m.renderGraph(spec)).then(cs => cs.map(encode));`), spec);
     save(spec.name, spec.sampleRate, channels);
   }
   for (const c of decodeCases().filter(g => g.name.includes(filter))) {
     step = c.name;
-    const result = await page.evaluate(new Function('c', `${encode} return fetch('/clips/' + c.file).then(r => r.arrayBuffer()).then(b => import('/run-graph.mjs').then(m => m.decodeClip(b, c.sampleRate))).then(d => ({ sampleRate: d.sampleRate, channels: d.channels.map(encode) }));`), c);
+    const result = await evaluate(new Function('c', `${encode} return fetch('/clips/' + c.file).then(r => r.arrayBuffer()).then(b => import('/run-graph.mjs').then(m => m.decodeClip(b, c.sampleRate))).then(d => ({ sampleRate: d.sampleRate, channels: d.channels.map(encode) }));`), c);
     save(c.name, result.sampleRate, result.channels);
   }
   writeFileSync(join(out, 'index.json'), `${JSON.stringify(index, null, 1)}\n`);
