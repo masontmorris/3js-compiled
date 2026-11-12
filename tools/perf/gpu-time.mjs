@@ -11,9 +11,9 @@
 // samples and 300 native ones. Edge runs with
 // --enable-webgpu-developer-features, which turns off its 100-microsecond timestamp quantization.
 // nvidia-smi records the graphics and memory clocks every 50 ms. tools/perf/gpu-time-rule.mjs judges each pair: it
-// counts unless native's median graphics clock is more than 5 percent above Edge's or a side has under 10 clock
-// samples, and the rule fails when the native chain median of the counted runs exceeds Edge's by more than --margin
-// (0.1). CPU load does not drive a GPU duration, so each run's background load, the machine's total less the run's own
+// is void when the two sides' median graphics clocks differ by more than 5 percent either way or a side has under 10
+// clock samples. The verdict needs at least 3 counted pairs, and the rule fails when the native chain median of the
+// counted runs exceeds Edge's by more than --margin (0.1). CPU load does not drive a GPU duration, so each run's background load, the machine's total less the run's own
 // processes, is only recorded.
 // Usage, from the repository root, under the GPU lease and C:\3jsc\tools\quiet_run.py:
 //   node tools/perf/gpu-time.mjs [--scene post] [--runs 3] [--warmup 120] [--frames 600] [--width 1920] [--height 1080]
@@ -245,5 +245,5 @@ try {
 const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, vsync: options.vsync, ...judge(results, options.margin) };
 for (const pair of verdict.pairs) console.log(`pair ${pair.run}: ${pair.counted ? 'counted' : `not counted, ${pair.reason}`}`);
 const ms = value => value === null ? 'none' : `${value.toFixed(4)} ms`;
-console.log(`Chain GPU time p50 over ${verdict.counted} counted pairs: Edge ${ms(verdict.edge.chainP50)}, native ${ms(verdict.native.chainP50)}, limit ${ms(verdict.limit)}: ${verdict.outcome}; whole frame Edge ${ms(verdict.edge.wholeP50)}, native ${ms(verdict.native.wholeP50)}`);
+console.log(`Chain GPU time p50 over ${verdict.counted} counted pairs: Edge ${ms(verdict.edge.chainP50)}, native ${ms(verdict.native.chainP50)}, limit ${ms(verdict.limit)}: ${verdict.outcome}${verdict.reason ? ` (${verdict.reason})` : ''}; whole frame Edge ${ms(verdict.edge.wholeP50)}, native ${ms(verdict.native.wholeP50)}`);
 await writeFile(resolve(out, 'gpu-time.json'), JSON.stringify({ options, results, verdict }, null, 2));
