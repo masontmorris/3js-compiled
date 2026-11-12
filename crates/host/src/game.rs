@@ -323,14 +323,25 @@ impl<'a> Game<'a> {
             ..Default::default()
         });
         let mut storage = Vec::new();
+        let mut cookies = serde_json::json!([]);
         if let Some(path) = &page.storage {
-            let file = Mutex::new(log.borrow().try_clone()?);
-            let (store, entries) = platform::storage::Store::open(path.clone(), move |message| {
-                let _ = writeln!(file.lock().expect("the log is not poisoned"), "{message}");
-                eprintln!("{message}");
-            })?;
+            let logger = |log: &Log| -> Result<_> {
+                let file = Mutex::new(log.borrow().try_clone()?);
+                Ok(move |message: String| {
+                    let _ = writeln!(file.lock().expect("the log is not poisoned"), "{message}");
+                    eprintln!("{message}");
+                })
+            };
+            let (store, entries) = platform::storage::Store::open(path.clone(), logger(&log)?)?;
             js.op_state().borrow_mut().put(store);
             storage = entries.into_iter().collect();
+            // Cookies live beside localStorage, in cookies.json.
+            let (store, entries) =
+                platform::storage::Store::open(path.with_file_name("cookies.json"), logger(&log)?)?;
+            js.op_state().borrow_mut().put(platform::Cookies(store));
+            if let Some(saved) = entries.get("cookies") {
+                cookies = serde_json::from_str(saved).unwrap_or(cookies);
+            }
         }
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
@@ -354,6 +365,7 @@ impl<'a> Game<'a> {
         let config = serde_json::json!({
             "href": href.as_str(),
             "storage": storage,
+            "cookies": cookies,
             "ratio": page.ratio,
             "screen": [page.screen.0, page.screen.1],
             "cores": std::thread::available_parallelism().map_or(4, std::num::NonZero::get),
@@ -1533,6 +1545,8 @@ mod tests {
             ("matchMedia", "true false false"),
             ("navigator", "Win32 true 8"),
             ("localStorage runs", "1"),
+            ("cookie before", "\"\""),
+            ("crypto", "true true"),
             ("fetch", "image/png 124"),
             ("createImageBitmap", "7x5"),
             ("image", "7x5 true"),
@@ -1554,6 +1568,7 @@ mod tests {
         );
         let second = run_platform(&runtime, &storage, 2)?;
         assert_eq!(result(&second, "localStorage runs"), "2");
+        assert_eq!(result(&second, "cookie before"), "\"visits=1\"");
         std::fs::remove_dir_all(&dir)?;
         Ok(())
     }

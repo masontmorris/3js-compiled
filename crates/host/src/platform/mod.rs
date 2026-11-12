@@ -31,7 +31,8 @@ const MODULES: &[(&str, &str)] = modules!(
     "gamepad.js",
     "storage.js",
     "images.js",
-    "abort.js"
+    "abort.js",
+    "window.js"
 );
 
 /// Loads the platform modules from the host binary and every other module from the file system.
@@ -126,6 +127,33 @@ async fn op_read_file(#[string] path: String) -> Result<Option<ToJsBuffer>, JsEr
     }
 }
 
+/// The store that holds a game's cookies, as one JSON array under the key `cookies`.
+pub struct Cookies(pub storage::Store);
+
+#[op2(fast)]
+fn op_cookies_save(state: &mut OpState, #[string] cookies: String) {
+    if let Some(Cookies(store)) = state.try_borrow::<Cookies>() {
+        store.change(storage::Change::Set("cookies".into(), cookies));
+    }
+}
+
+/// Fills `bytes` from the operating system's random source.
+#[op2(fast)]
+fn op_random_fill(#[buffer] bytes: &mut [u8]) -> Result<(), JsErrorBox> {
+    getrandom::fill(bytes).map_err(|error| JsErrorBox::generic(error.to_string()))
+}
+
+/// Opens an http or https URL in the default browser.
+#[op2(fast)]
+fn op_open_url(#[string] url: &str) -> Result<(), JsErrorBox> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(JsErrorBox::type_error(format!(
+            "not an http or https URL: {url}"
+        )));
+    }
+    sdl3::url::open_url(url).map_err(|error| JsErrorBox::generic(error.to_string()))
+}
+
 fn change(state: &OpState, change: storage::Change) {
     if let Some(store) = state.try_borrow::<storage::Store>() {
         store.change(change);
@@ -151,7 +179,10 @@ deno_core::extension!(
         op_read_file,
         op_storage_set,
         op_storage_remove,
-        op_storage_clear
+        op_storage_clear,
+        op_cookies_save,
+        op_random_fill,
+        op_open_url
     ]
 );
 pub use platform_ext as extension;
