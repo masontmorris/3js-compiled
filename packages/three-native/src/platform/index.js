@@ -7,7 +7,8 @@ import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
 import { EVENT_HANDLERS } from './dom-methods.js';
-import { CookieJar, Crypto, QuotaExceededError, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
+import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
+import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -134,12 +135,12 @@ const locationObject = {
 };
 
 Object.assign(window, {
-  ...Object.fromEntries(['Event', 'CustomEvent', 'ErrorEvent', 'UIEvent', 'FocusEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'WheelEvent', 'EventTarget'].map(name => [name, events[name]])),
+  ...Object.fromEntries(['Event', 'CustomEvent', 'ErrorEvent', 'PromiseRejectionEvent', 'UIEvent', 'FocusEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'WheelEvent', 'EventTarget'].map(name => [name, events[name]])),
   Node, Element, HTMLElement, HTMLCanvasElement, HTMLInputElement, HTMLTextAreaElement, HTMLImageElement, Text, Document,
   DocumentFragment, DOMTokenList, CSSStyleDeclaration, Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
-  AbortController, AbortSignal,
-  fetch, createImageBitmap, document, navigator, screen, localStorage, QuotaExceededError, Crypto,
+  AbortController, AbortSignal, DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
+  atob, btoa, fetch, createImageBitmap, document, navigator, screen, localStorage, QuotaExceededError, Crypto,
   crypto: new Crypto(bytes => ops.op_random_fill(bytes)),
   sessionStorage: new Storage(),
   location: locationObject,
@@ -160,6 +161,39 @@ Object.assign(window, {
   alert(message) { ops.op_log(`alert: ${message}`); },
   confirm(message) { ops.op_log(`confirm: ${message}`); return false; },
   prompt(message) { ops.op_log(`prompt: ${message}`); return null; },
+});
+
+// HTML's unhandled promise rejections: a trusted, cancelable unhandledrejection event at the window, and Edge's
+// console line unless a listener cancels it. The handler always reports the rejection as handled, so deno_core never
+// turns it into an error that stops the game. rejectionhandled, for a rejection handled later, is not implemented.
+Deno.core.setUnhandledPromiseRejectionHandler((promise, reason) => {
+  const event = events.trusted(new events.PromiseRejectionEvent('unhandledrejection', { promise, reason, cancelable: true }));
+  try { window.dispatchEvent(event); } catch (error) { console.error(error?.stack ?? String(error)); }
+  if (!event.defaultPrevented) {
+    let text;
+    try { text = reason instanceof Error ? reason.stack ?? String(reason) : String(reason); } catch { text = 'exception'; }
+    console.error(`Uncaught (in promise) ${text}`);
+  }
+  return true;
+});
+
+// WebAssembly.compileStreaming and instantiateStreaming over the shim's Response: V8 hands each source to this
+// callback, which checks it as Edge does and feeds the whole body to the streaming compiler at once.
+Deno.core.setWasmStreamingCallback(async (source, rid) => {
+  const fail = message => new TypeError(`Failed to execute 'compile' on 'WebAssembly': ${message}`);
+  try {
+    const response = await source;
+    if (!(response instanceof Response)) throw fail('An argument must be provided, which must be a Response or Promise<Response> object.');
+    const type = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    if (type !== 'application/wasm') throw fail("Incorrect response MIME type. Expected 'application/wasm'.");
+    if (!response.ok) throw fail('HTTP status code is not ok.');
+    if (response.bodyUsed) throw fail('Cannot compile WebAssembly.Module from an already read Response.');
+    if (response.url) ops.op_wasm_streaming_set_url(rid, response.url);
+    ops.op_wasm_streaming_feed(rid, await response.bytes());
+    Deno.core.close(rid);
+  } catch (error) {
+    Deno.core.abortWasmStreaming(rid, error);
+  }
 });
 
 // The host's input facts, one per window or script event, become the DOM events Edge fires.

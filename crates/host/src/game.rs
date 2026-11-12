@@ -1641,8 +1641,16 @@ mod tests {
             "PromiseRejectionEvent unhandledrejection Error: not handled true true true | PromiseRejectionEvent unhandledrejection Error: prevented true true true"
         );
         assert_eq!(result(&log, "frames after the rejections"), "10");
-        assert_eq!(log.matches("Uncaught (in promise) Error: not handled").count(), 1, "{log}");
-        assert!(!log.contains("Uncaught (in promise) Error: prevented"), "{log}");
+        assert_eq!(
+            log.matches("Uncaught (in promise) Error: not handled")
+                .count(),
+            1,
+            "{log}"
+        );
+        assert!(
+            !log.contains("Uncaught (in promise) Error: prevented"),
+            "{log}"
+        );
         Ok(())
     }
 }

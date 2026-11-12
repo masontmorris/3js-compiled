@@ -1,7 +1,8 @@
 // A stand-in DOM for game code: an inert element tree with attributes, classList, style, dataset, selectors, focus
 // and listeners. Nothing lays out or paints. A canvas in the document fills the window, as a game's canvas does.
 import { EventTarget, Event, FocusEvent, MouseEvent, trusted, defineHandlers, INPUT } from './events.js';
-import { DOM_METHODS, EVENT_HANDLERS } from './dom-methods.js';
+import { DOM_METHODS, EVENT_HANDLERS, CSS_PROPERTIES } from './dom-methods.js';
+import { DOMRect } from './geometry.js';
 
 const ATTRIBUTES = Symbol('attributes');
 const CHILDREN = Symbol('children');
@@ -74,34 +75,63 @@ export class DOMTokenList {
   toString() { return this.value; }
 }
 
-// An element's inline style. Properties read and write in camel case, and the declaration methods take CSS names.
+// An element's inline style, kept in step with its style attribute as in Edge: setting the attribute parses it into
+// the declaration, and changing the declaration writes its text back. Every CSS property Edge knows, in camel case or
+// hyphenated, reads '' while unset; other names are plain expandos. Nothing checks that a value is valid CSS.
+const DECLARATIONS = Symbol('declarations');
+const OWNER = Symbol('owner');
+const cssName = key => key === 'cssFloat' ? 'float' : key.startsWith('-') ? key : kebab(key).replace(/^webkit-/, '-webkit-');
 export class CSSStyleDeclaration {
-  setProperty(name, value, priority = '') {
-    name = String(name);
-    if (value === null || value === '') return this.removeProperty(name);
-    this[name.startsWith('--') ? name : camel(name)] = String(value) + (priority === 'important' ? ' !important' : '');
+  constructor(element = null) {
+    this[DECLARATIONS] = new Map();
+    this[OWNER] = element;
+    return new Proxy(this, {
+      get: (target, key, receiver) => typeof key === 'string' && !(key in target) && CSS_PROPERTIES.has(key)
+        ? target.getPropertyValue(cssName(key)) : Reflect.get(target, key, receiver),
+      set: (target, key, value, receiver) => {
+        if (typeof key !== 'string' || key in target || !CSS_PROPERTIES.has(key)) return Reflect.set(target, key, value, receiver);
+        target.setProperty(cssName(key), value);
+        return true;
+      },
+      has: (target, key) => (typeof key === 'string' && CSS_PROPERTIES.has(key)) || key in target,
+    });
   }
-  getPropertyValue(name) {
-    name = String(name);
-    return this[name.startsWith('--') ? name : camel(name)] ?? '';
-  }
-  getPropertyPriority(name) { return this.getPropertyValue(name).endsWith('!important') ? 'important' : ''; }
-  removeProperty(name) {
-    const key = String(name).startsWith('--') ? String(name) : camel(String(name));
-    const value = this[key] ?? '';
-    delete this[key];
-    return value;
-  }
-  #names() { return Object.keys(this).filter(key => typeof this[key] === 'string' && this[key] !== ''); }
-  get length() { return this.#names().length; }
-  item(index) { const name = this.#names()[index]; return name === undefined ? '' : (name.startsWith('--') ? name : kebab(name)); }
-  get cssText() { return this.#names().map(name => `${name.startsWith('--') ? name : kebab(name)}: ${this[name]};`).join(' '); }
-  set cssText(text) {
-    for (const name of this.#names()) delete this[name];
+  // Writes the declaration's text to the owner's style attribute.
+  [MARKUP]() { this[OWNER]?.[ATTRIBUTES].set('style', this.cssText); }
+  // Replaces the declarations with those parsed from `text`, without touching the attribute.
+  [STYLE](text) {
+    this[DECLARATIONS].clear();
     for (const declaration of String(text).split(';')) {
       const colon = declaration.indexOf(':');
-      if (colon > 0) this.setProperty(declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim());
+      if (colon <= 0) continue;
+      const value = declaration.slice(colon + 1).trim();
+      const important = /\s*!\s*important$/i.exec(value);
+      const name = declaration.slice(0, colon).trim();
+      if (value) this[DECLARATIONS].set(name.startsWith('--') ? name : name.toLowerCase(), { value: important ? value.slice(0, important.index) : value, priority: important ? 'important' : '' });
     }
+  }
+  setProperty(name, value, priority = '') {
+    name = String(name);
+    if (value === null || value === '') return void this.removeProperty(name);
+    this[DECLARATIONS].set(name.startsWith('--') ? name : name.toLowerCase(), { value: String(value), priority: priority === 'important' ? 'important' : '' });
+    this[MARKUP]();
+  }
+  getPropertyValue(name) { return this[DECLARATIONS].get(String(name).startsWith('--') ? String(name) : String(name).toLowerCase())?.value ?? ''; }
+  getPropertyPriority(name) { return this[DECLARATIONS].get(String(name).startsWith('--') ? String(name) : String(name).toLowerCase())?.priority ?? ''; }
+  removeProperty(name) {
+    const key = String(name).startsWith('--') ? String(name) : String(name).toLowerCase();
+    const value = this.getPropertyValue(key);
+    if (this[DECLARATIONS].delete(key)) this[MARKUP]();
+    return value;
+  }
+  get length() { return this[DECLARATIONS].size; }
+  item(index) { return [...this[DECLARATIONS].keys()][index] ?? ''; }
+  get cssText() {
+    return [...this[DECLARATIONS]].map(([name, { value, priority }]) => `${name}: ${value}${priority ? ' !important' : ''};`).join(' ');
+  }
+  set cssText(text) {
+    this[STYLE](text);
+    this[MARKUP]();
   }
 }
 
@@ -371,8 +401,16 @@ export class Element extends Node {
   get nodeName() { return this.tagName; }
   get namespaceURI() { return 'http://www.w3.org/1999/xhtml'; }
   getAttribute(name) { return this[ATTRIBUTES].get(String(name).toLowerCase()) ?? null; }
-  setAttribute(name, value) { this[ATTRIBUTES].set(String(name).toLowerCase(), String(value)); }
-  removeAttribute(name) { this[ATTRIBUTES].delete(String(name).toLowerCase()); }
+  setAttribute(name, value) {
+    name = String(name).toLowerCase();
+    if (name === 'style') this.style[STYLE](value);
+    this[ATTRIBUTES].set(name, String(value));
+  }
+  removeAttribute(name) {
+    name = String(name).toLowerCase();
+    if (name === 'style') this[STYLE]?.[STYLE]('');
+    this[ATTRIBUTES].delete(name);
+  }
   hasAttribute(name) { return this[ATTRIBUTES].has(String(name).toLowerCase()); }
   hasAttributes() { return this[ATTRIBUTES].size > 0; }
   getAttributeNames() { return [...this[ATTRIBUTES].keys()]; }
@@ -389,7 +427,7 @@ export class Element extends Node {
   set className(value) { this.setAttribute('class', value); }
   get classList() { return this[CLASSES] ??= new DOMTokenList(this, 'class'); }
   set classList(value) { this.classList.value = value; }
-  get style() { return this[STYLE] ??= new CSSStyleDeclaration(); }
+  get style() { return this[STYLE] ??= new CSSStyleDeclaration(this); }
   set style(value) { this.style.cssText = value; }
   get dataset() {
     return this[DATASET] ??= new Proxy({}, {
@@ -447,7 +485,7 @@ export class Element extends Node {
   // the body and the root element otherwise fill the window, and every other element has no box.
   getBoundingClientRect() {
     const { x, y, width, height } = this.isConnected ? inlineBox(this) ?? fills(this) : { x: 0, y: 0, width: 0, height: 0 };
-    return { x, y, left: x, top: y, width, height, right: x + width, bottom: y + height, toJSON() { return { ...this }; } };
+    return new DOMRect(x, y, width, height);
   }
   get clientWidth() { return Math.round(this.getBoundingClientRect().width); }
   get clientHeight() { return Math.round(this.getBoundingClientRect().height); }
