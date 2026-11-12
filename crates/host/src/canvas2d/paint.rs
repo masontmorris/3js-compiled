@@ -344,7 +344,7 @@ impl Painter {
                 } else {
                     ImageQuality::Low
                 },
-                alpha: style.alpha,
+                alpha: 1.0,
             },
         };
         self.begin(surface.width, surface.height);
@@ -354,7 +354,14 @@ impl Painter {
             Affine::translate((dest.x0, dest.y0))
                 * Affine::scale_non_uniform(dest.width() / sw as f64, dest.height() / sh as f64),
         );
+        // vello_cpu 0.2 does not apply a sampler's alpha to images, so global alpha goes through a layer.
+        if style.alpha < 1.0 {
+            self.context.push_opacity_layer(style.alpha);
+        }
         self.context.fill_rect(&dest);
+        if style.alpha < 1.0 {
+            self.context.pop_layer();
+        }
         self.finish(surface);
     }
 
