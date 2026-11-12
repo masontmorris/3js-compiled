@@ -6,6 +6,7 @@ import { Gamepad, GamepadButton, GamepadEvent, GamepadHapticActuator, Gamepads }
 import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
+import { EVENT_HANDLERS } from './dom-methods.js';
 import { CookieJar, Crypto, QuotaExceededError, evaluateMedia as evaluate, openWindow } from './window.js';
 
 const ops = Deno.core.ops;
@@ -22,7 +23,8 @@ globalThis.TextEncoder ??= class TextEncoder {
 window.addEventListener = (type, callback, options) => events.addEventListener.call(window, type, callback, options);
 window.removeEventListener = (type, callback, options) => events.removeEventListener.call(window, type, callback, options);
 window.dispatchEvent = event => events.dispatchEvent.call(window, event);
-events.defineHandlers(window, [...events.HANDLER_TYPES, 'beforeunload', 'gamepadconnected', 'gamepaddisconnected', 'hashchange', 'pagehide', 'pageshow', 'storage', 'unload']);
+// bootstrap.js reads window.onerror itself when it reports an exception, so it stays a plain property.
+events.defineHandlers(window, EVENT_HANDLERS.window.filter(type => type !== 'error'));
 
 const document = new Document(window);
 const cookies = new CookieJar(config.cookies ?? [], new URL(config.href).pathname, () => Date.now(), saved => ops.op_cookies_save(JSON.stringify(saved)));

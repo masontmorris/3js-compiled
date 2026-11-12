@@ -260,13 +260,6 @@ export function defineHandlers(target, types) {
   }
 }
 
-export const HANDLER_TYPES = [
-  'abort', 'auxclick', 'blur', 'click', 'contextmenu', 'dblclick', 'focus', 'gotpointercapture', 'input', 'keydown',
-  'keypress', 'keyup', 'load', 'lostpointercapture', 'mousedown', 'mouseenter', 'mouseleave', 'mousemove', 'mouseout',
-  'mouseover', 'mouseup', 'pointercancel', 'pointerdown', 'pointerenter', 'pointerleave', 'pointermove', 'pointerout',
-  'pointerover', 'pointerup', 'resize', 'scroll', 'wheel',
-];
-
 // The document's input router, which elements reach for pointer capture.
 export const INPUT = Symbol('input');
 

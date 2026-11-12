@@ -33,3 +33,61 @@ export const DOM_METHODS = new Set([
   'webkitExitFullscreen', 'webkitMatchesSelector', 'webkitRequestFullScreen', 'webkitRequestFullscreen', 'when',
   'write', 'writeln'
 ]);
+
+// The event handler attributes Edge defines on elements, the document and the window.
+export const EVENT_HANDLERS = {
+  element: [
+    'abort', 'animationcancel', 'animationend', 'animationiteration', 'animationstart', 'auxclick', 'beforecopy',
+    'beforecut', 'beforeinput', 'beforematch', 'beforepaste', 'beforetoggle', 'beforexrselect', 'blur', 'cancel',
+    'canplay', 'canplaythrough', 'change', 'click', 'close', 'command', 'contentvisibilityautostatechange',
+    'contextlost', 'contextmenu', 'contextrestored', 'copy', 'cuechange', 'cut', 'dblclick', 'drag', 'dragend',
+    'dragenter', 'dragleave', 'dragover', 'dragstart', 'drop', 'durationchange', 'emptied', 'ended', 'error',
+    'focus', 'formdata', 'fullscreenchange', 'fullscreenerror', 'gotpointercapture', 'input', 'invalid', 'keydown',
+    'keypress', 'keyup', 'load', 'loadeddata', 'loadedmetadata', 'loadstart', 'lostpointercapture', 'mousedown',
+    'mouseenter', 'mouseleave', 'mousemove', 'mouseout', 'mouseover', 'mouseup', 'mousewheel', 'paste', 'pause',
+    'play', 'playing', 'pointercancel', 'pointerdown', 'pointerenter', 'pointerleave', 'pointermove', 'pointerout',
+    'pointerover', 'pointerup', 'progress', 'ratechange', 'reset', 'resize', 'scroll', 'scrollend',
+    'scrollsnapchange', 'scrollsnapchanging', 'search', 'securitypolicyviolation', 'seeked', 'seeking', 'select',
+    'selectionchange', 'selectstart', 'slotchange', 'stalled', 'submit', 'suspend', 'timeupdate', 'toggle',
+    'transitioncancel', 'transitionend', 'transitionrun', 'transitionstart', 'volumechange', 'waiting',
+    'webkitanimationend', 'webkitanimationiteration', 'webkitanimationstart', 'webkitfullscreenchange',
+    'webkitfullscreenerror', 'webkittransitionend', 'wheel'
+  ],
+  document: [
+    'abort', 'animationcancel', 'animationend', 'animationiteration', 'animationstart', 'auxclick', 'beforecopy',
+    'beforecut', 'beforeinput', 'beforematch', 'beforepaste', 'beforetoggle', 'beforexrselect', 'blur', 'cancel',
+    'canplay', 'canplaythrough', 'change', 'click', 'close', 'command', 'contentvisibilityautostatechange',
+    'contextlost', 'contextmenu', 'contextrestored', 'copy', 'cuechange', 'cut', 'dblclick', 'drag', 'dragend',
+    'dragenter', 'dragleave', 'dragover', 'dragstart', 'drop', 'durationchange', 'emptied', 'ended', 'error',
+    'focus', 'formdata', 'freeze', 'fullscreenchange', 'fullscreenerror', 'gotpointercapture', 'input', 'invalid',
+    'keydown', 'keypress', 'keyup', 'load', 'loadeddata', 'loadedmetadata', 'loadstart', 'lostpointercapture',
+    'mousedown', 'mouseenter', 'mouseleave', 'mousemove', 'mouseout', 'mouseover', 'mouseup', 'mousewheel',
+    'paste', 'pause', 'play', 'playing', 'pointercancel', 'pointerdown', 'pointerenter', 'pointerleave',
+    'pointerlockchange', 'pointerlockerror', 'pointermove', 'pointerout', 'pointerover', 'pointerup',
+    'prerenderingchange', 'progress', 'ratechange', 'readystatechange', 'reset', 'resize', 'resume', 'scroll',
+    'scrollend', 'scrollsnapchange', 'scrollsnapchanging', 'search', 'securitypolicyviolation', 'seeked',
+    'seeking', 'select', 'selectionchange', 'selectstart', 'slotchange', 'stalled', 'submit', 'suspend',
+    'timeupdate', 'toggle', 'transitioncancel', 'transitionend', 'transitionrun', 'transitionstart',
+    'visibilitychange', 'volumechange', 'waiting', 'webkitanimationend', 'webkitanimationiteration',
+    'webkitanimationstart', 'webkitfullscreenchange', 'webkitfullscreenerror', 'webkittransitionend', 'wheel'
+  ],
+  window: [
+    'abort', 'afterprint', 'animationcancel', 'animationend', 'animationiteration', 'animationstart',
+    'appinstalled', 'auxclick', 'beforeinput', 'beforeinstallprompt', 'beforematch', 'beforeprint', 'beforetoggle',
+    'beforeunload', 'beforexrselect', 'blur', 'cancel', 'canplay', 'canplaythrough', 'change', 'click', 'close',
+    'command', 'contentvisibilityautostatechange', 'contextlost', 'contextmenu', 'contextrestored', 'cuechange',
+    'dblclick', 'drag', 'dragend', 'dragenter', 'dragleave', 'dragover', 'dragstart', 'drop', 'durationchange',
+    'emptied', 'ended', 'error', 'focus', 'formdata', 'gamepadconnected', 'gamepaddisconnected',
+    'gotpointercapture', 'hashchange', 'input', 'invalid', 'keydown', 'keypress', 'keyup', 'languagechange',
+    'load', 'loadeddata', 'loadedmetadata', 'loadstart', 'lostpointercapture', 'message', 'messageerror',
+    'mousedown', 'mouseenter', 'mouseleave', 'mousemove', 'mouseout', 'mouseover', 'mouseup', 'mousewheel',
+    'offline', 'online', 'pagehide', 'pagereveal', 'pageshow', 'pageswap', 'pause', 'play', 'playing',
+    'pointercancel', 'pointerdown', 'pointerenter', 'pointerleave', 'pointermove', 'pointerout', 'pointerover',
+    'pointerup', 'popstate', 'progress', 'ratechange', 'rejectionhandled', 'reset', 'resize', 'scroll',
+    'scrollend', 'scrollsnapchange', 'scrollsnapchanging', 'search', 'securitypolicyviolation', 'seeked',
+    'seeking', 'select', 'selectionchange', 'selectstart', 'slotchange', 'stalled', 'storage', 'submit', 'suspend',
+    'timeupdate', 'toggle', 'transitioncancel', 'transitionend', 'transitionrun', 'transitionstart',
+    'unhandledrejection', 'unload', 'volumechange', 'waiting', 'webkitanimationend', 'webkitanimationiteration',
+    'webkitanimationstart', 'webkittransitionend', 'wheel'
+  ],
+};

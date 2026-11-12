@@ -1,7 +1,7 @@
 // A stand-in DOM for game code: an inert element tree with attributes, classList, style, dataset, selectors, focus
 // and listeners. Nothing lays out or paints. A canvas in the document fills the window, as a game's canvas does.
-import { EventTarget, Event, FocusEvent, MouseEvent, trusted, defineHandlers, HANDLER_TYPES, INPUT } from './events.js';
-import { DOM_METHODS } from './dom-methods.js';
+import { EventTarget, Event, FocusEvent, MouseEvent, trusted, defineHandlers, INPUT } from './events.js';
+import { DOM_METHODS, EVENT_HANDLERS } from './dom-methods.js';
 
 const ATTRIBUTES = Symbol('attributes');
 const CHILDREN = Symbol('children');
@@ -495,7 +495,7 @@ export class HTMLElement extends Element {
     this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: globalThis, detail: 1 }));
   }
 }
-defineHandlers(HTMLElement.prototype, HANDLER_TYPES);
+defineHandlers(HTMLElement.prototype, EVENT_HANDLERS.element);
 
 // Inputs keep their value and type, so a game's guard on text fields can read them.
 export class HTMLInputElement extends HTMLElement {
@@ -599,7 +599,7 @@ export class Document extends Node {
     }
   }
 }
-defineHandlers(Document.prototype, HANDLER_TYPES.filter(type => type !== 'resize'));
+defineHandlers(Document.prototype, EVENT_HANDLERS.document);
 
 // Lookups that miss every class in an element's or the document's prototype chain end here. A name Edge defines as
 // a DOM method returns a stub that logs the method once and returns undefined, so a game that calls one keeps
