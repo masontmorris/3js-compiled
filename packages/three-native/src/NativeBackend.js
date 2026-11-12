@@ -242,7 +242,7 @@ export function externalImageBytes(pixels, { from = {}, flipY = false, width, he
   const multiply = premultiplied && !pixels.premultiplied;
   const divide = !premultiplied && pixels.premultiplied;
   for (let row = 0; row < height; row++) {
-    const sourceRow = flipY ? pixels.height - 1 - (y + row) : y + row;
+    const sourceRow = flipY ? y + height - 1 - row : y + row;
     let i = (sourceRow * pixels.width + x) * 4;
     let o = row * width * 4;
     for (let column = 0; column < width; column++, i += 4, o += 4) {
