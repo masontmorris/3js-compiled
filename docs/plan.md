@@ -672,6 +672,7 @@ The spikes live in `spikes/` at commit `896e785` of the engine repo. Each folder
 - `spikes/host` shows that V8 and Servo in one executable need a V8 pin and a linker override, so that layout can't ship.
 - `spikes/xproc` shows Servo in its own process. The game pays about 0.03 ms per frame, a round trip takes 1 frame, and state reaches HUD pixels in about 4 frames at vsync.
 - `spikes/folio-2025-assessment.md` lists folio's renderer needs, platform gaps, and UI coupling.
+- `spikes/canvas2d` compares two canvas 2D pipelines on folio's canvases against Edge 157. Both shape with harfrust 0.12.0, the Rust port of HarfBuzz. vello_cpu 0.2.0 drawing glyphs through glifo 0.3.0, hinted, differs from Edge's software canvas by 0.44% mean over folio's twelve text canvases, and skrifa 0.44.0 outlines filled by tiny-skia 0.11.4 by 0.52%. Both need Skia's glyph mask gamma (2.3) for that, and differ by 0.80% and 0.83% without it. E6 keeps vello_cpu with glifo.
 - A Modal probe on a T4, run twice, found that the NVIDIA Vulkan driver fails at `vkCreateInstance`. The only working Vulkan device there is Mesa llvmpipe, so Modal lanes check correctness and never GPU parity or perf.
 
 - The Azure for Students subscription allows 5 regions (Canada Central, Sweden Central, Norway East, Spain Central, Denmark East) and 6 vCPUs per region. Checked on 2026-11-09 with `az vm list-usage`. The only GPU families with quota are retired sizes and NVSv4 at 2 vCPUs, so no GPU VM can start until a quota request is approved. The smallest usable sizes are `Standard_NV6ads_A10_v5` at $0.821 per hour on Windows in Canada Central and `Standard_NG8ads_V620_v1` at $1.194 per hour on Windows in Sweden Central.
@@ -680,7 +681,6 @@ The spikes live in `spikes/` at commit `896e785` of the engine repo. Each folder
 These questions stay unproven:
 
 - Whether an Azure NGads V620 VM can cover the AMD path that `spikes/xproc` never tested.
-- Which canvas 2D rasterizer matches Edge closely enough. E6 settles it with its first box.
 - Servo on AMD and Intel GPUs, on two-GPU laptops, and at other DPI scales.
 - Pointer forwarding into a Servo page. E2 lanes 5 and 6 settle it.
 - The GPU import path on Linux and macOS.

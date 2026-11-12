@@ -25,7 +25,7 @@ SPIKE_GAMMA=2.3 SPIKE_CONTRAST=1 cargo run --release --manifest-path spikes/canv
 
 ## Results
 
-Over the twelve text canvases, against Edge's software canvas (`--no-gpu`):
+Over the twelve text canvases, against Edge's software canvas (`--no-gpu`), with Skia's pen placement:
 
 | Pipeline | Hinted | Mask gamma | Mean difference | Pixels over 2/255 |
 |---|---|---|---|---|
@@ -38,7 +38,7 @@ Over the twelve text canvases, against Edge's software canvas (`--no-gpu`):
 
 - The signed mean was negative on every text canvas, nearly equal to the mean: Edge's glyph edges are brighter. A white-on-black pixel that is a quarter covered shows at about 140 of 255 in Edge. Fitting Skia's mask gamma table to the white text gave gamma 2.3, where contrast has no effect. Contrast 1 then fit the green altar text best.
 - Quarter-pixel pens on a whole-pixel baseline beat every other placement for both pipelines.
-- `measureText` widths from harfrust at 16.16 fixed point match Edge's to 0.0002 px for Amatic SC. Nunito, a variable font, missed by up to 0.03 px at the font's own units, which 16.16 fixed point fixes.
+- Widths from harfrust match Edge's to 0.0002 px for Amatic SC. Nunito at its fractional sizes missed by up to 0.03 px. The host closes that gap as Blink does, by shaping at 16.16 fixed point and truncating the font size to 1/100 px.
 - The two gradient canvases differ by under 0.2% in either pipeline, with no pixel over 2/255.
 
 Vello with glifo is the closer pipeline, so E6 keeps it, with the mask gamma. tiny-skia ports Skia's older supersampling rasterizer, while Skia now uses analytic coverage, as vello_cpu does.
