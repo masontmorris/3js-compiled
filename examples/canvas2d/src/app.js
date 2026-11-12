@@ -13,8 +13,9 @@ const pallyBase = new URLSearchParams(location.hash.slice(1)).get('pally');
 const log = line => console.log(`R ${line}`);
 const round = value => Math.round(value * 1000) / 1000;
 
-// The load span starts before the FontFace work, so the parse is inside it, and ends at the last canvas upload.
-const loadStart = scene === 'perf' ? performance.now() : null;
+// The load span starts before the FontFace work and ends at the last canvas upload, after the renderer's device
+// setup, so it covers the game's label load rather than the renderer's one-time cost.
+let loadStart = null;
 
 // Times a CanvasTexture upload: `copyExternalImageToTexture` returns after the canvas has been read.
 let upload = null;
@@ -44,7 +45,6 @@ if (pallyBase) {
   }
 }
 for (const font of fonts) document.fonts.add(font);
-await Promise.all(fonts.map(font => font.load().catch(error => log(`font ${font.family} ${font.weight} failed: ${error.message}`))));
 
 const canvas = document.createElement('canvas');
 canvas.width = innerWidth;
@@ -57,6 +57,8 @@ await renderer.init();
 if (native) {
   try { measureUploads(backend.recordingDevice.queue); } catch (error) { log(`upload timing unavailable: ${error.message}`); }
 }
+loadStart = scene === 'perf' ? performance.now() : null;
+await Promise.all(fonts.map(font => font.load().catch(error => log(`font ${font.family} ${font.weight} failed: ${error.message}`))));
 const world = new THREE.Scene();
 world.background = new THREE.Color(0x404040);
 const camera = new THREE.OrthographicCamera(0, innerWidth, 0, -innerHeight, -1, 1);

@@ -85,6 +85,7 @@ for (let run = 1; run <= runs; run++) {
     for (const [scene, waitFrames] of [['perf', 10], ['dynamic', frames]]) {
       const result = await measured(ids => (side === 'edge' ? edgePage(scene, waitFrames, ids) : nativePage(scene, waitFrames, ids, join(out, `${side}-${scene}-${run}`))));
       const parsed = parse(result.lines);
+      await writeFile(join(out, `${side}-${scene}-${run}.log`), result.lines.join('\n') + '\n');
       const row = { run, side, scene, ...parsed, otherPercent: result.otherPercent, ownCores: result.ownCores, void: result.otherPercent > 40 };
       rows.push(row);
       console.log(JSON.stringify(row));
