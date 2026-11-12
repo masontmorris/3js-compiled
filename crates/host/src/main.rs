@@ -193,7 +193,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         &runtime,
         options.scene.as_deref(),
         size,
-        Some(&target.adapter_limits()),
+        Some((&target.adapter_limits(), target.adapter_features())),
     )?;
     game.set_display_interval(display_interval(&window))?;
     let progress = Arc::new(RenderProgress::default());
