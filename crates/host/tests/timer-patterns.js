@@ -161,6 +161,7 @@ function report() {
   result(`${mode} longest frame gap ms`, Math.round(maxGap));
   result(`${mode} frame gaps over 12 ms`, longFrames);
   result(`${mode} median frame interval ms`, frameLog.length ? median(frameLog.map(([gap]) => gap)).toFixed(2) : 'n/a');
+  result(`${mode} tenth-percentile frame interval ms`, frameLog.length ? [...frameLog.map(([gap]) => gap)].sort((x, y) => x - y)[Math.floor(frameLog.length / 10)].toFixed(2) : 'n/a');
   for (const [name, value] of Object.entries(R)) console.log(`R ${name}: ${value}`);
 }
 
