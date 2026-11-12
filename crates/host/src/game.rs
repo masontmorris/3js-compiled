@@ -48,6 +48,18 @@ impl Default for RenderProgress {
 }
 
 impl RenderProgress {
+    /// When the display last took a frame that the render thread waited for, on the page's clock
+    /// that starts at `start`, or None.
+    fn refreshed(&self, start: Instant) -> Option<f64> {
+        let nanos = self.refreshed.load(Ordering::Acquire);
+        (nanos > 0).then(|| {
+            let at = self.epoch + std::time::Duration::from_nanos(nanos);
+            match at.checked_duration_since(start) {
+                Some(after) => after.as_secs_f64() * 1000.0,
+                None => -(start - at).as_secs_f64() * 1000.0,
+            }
+        })
+    }
     /// Records that the display took a frame at `at`, which the render thread waited for.
     pub fn refreshed_at(&self, at: Instant) {
         let nanos =
@@ -68,6 +80,18 @@ fn op_frame_due(state: &mut OpState) -> bool {
         .render
         .as_ref()
         .is_some_and(|render| render.caught_up())
+}
+
+/// The latest display refresh the render thread waited for, in ms on the page's clock, or NaN if
+/// it has waited for none, as with vsync off or no render thread.
+#[op2(fast)]
+fn op_refreshed(state: &mut OpState) -> f64 {
+    let state = state.borrow::<State>();
+    state
+        .render
+        .as_ref()
+        .and_then(|render| render.refreshed(state.start))
+        .unwrap_or(f64::NAN)
 }
 
 /// Sleeps until `until` ms on the page's clock or, with `render`, until the render thread has
@@ -148,6 +172,7 @@ extension!(
         op_gpu_submit,
         op_gpu_submitted,
         op_frame_due,
+        op_refreshed,
         op_wait,
         op_host_alive,
         op_gpu_readback,

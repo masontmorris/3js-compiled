@@ -214,6 +214,9 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         || Ok(Renderer::new(target)),
         move |renderer, frame| {
             let rendered = renderer.frame(frame);
+            if let Some(at) = rendered.as_ref().ok().and_then(|rendered| rendered.refresh) {
+                rendering.refreshed_at(at);
+            }
             rendering.finished.fetch_add(1, Ordering::Release);
             rendered
         },

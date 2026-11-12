@@ -22,6 +22,9 @@ pub struct Rendered {
     pub cpu: Duration,
     /// From the frame's start on the game thread, where it polls input, to the return of present.
     pub latency: Duration,
+    /// When the surface texture was acquired, if acquiring it waited for the display to take a
+    /// frame: a display refresh.
+    pub refresh: Option<Instant>,
 }
 
 /// The window's raw handles, from which the render thread makes a surface for a new device.
@@ -73,6 +76,7 @@ struct Presenter {
 struct Shown {
     surface: wgpu::SurfaceTexture,
     acquire_wait: Duration,
+    acquired: Instant,
     capture: Option<wgpu::Buffer>,
 }
 impl WindowHandles {
@@ -279,6 +283,7 @@ impl Renderer {
             replay,
             cpu: started.elapsed() - shown.acquire_wait,
             latency: frame.started.elapsed(),
+            refresh: (shown.acquire_wait >= Duration::from_micros(250)).then_some(shown.acquired),
         })
     }
 }
@@ -315,6 +320,7 @@ impl Presenter {
             | wgpu::CurrentSurfaceTexture::Suboptimal(surface) => Ok(Shown {
                 surface,
                 acquire_wait: started.elapsed(),
+                acquired: Instant::now(),
                 capture: None,
             }),
             other => bail!("surface texture unavailable: {other:?}"),
