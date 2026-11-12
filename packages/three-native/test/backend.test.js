@@ -1117,3 +1117,46 @@ test('a shader that fails to compile gets its compilation message, and its uncap
   device.receiveResponses([{ type: 'error', request: null, filter: 'validation', message: 'shader : wgsl:1:1 invalid' }]);
   assert.deepEqual(errors.map(error => [error.constructor.name, error.message]), [['GPUValidationError', 'shader : wgsl:1:1 invalid']]);
 });
+
+// F1's G4 (C:\3jsc\swarm\f1\gaps\g4-capabilities.js): in Edge, getMaxAnisotropy() returns 16 and getUniformBufferLimit()
+// returns the device's maxUniformBufferBindingSize.
+test('a native backend keeps three\'s capabilities, so instanced meshes and anisotropy work as in Edge', async () => {
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  const backend = new NativeBackend({ canvas }, { features: ['core-features-and-limits'], limits: { maxUniformBufferBindingSize: 65536 } });
+  const renderer = new WebGPURenderer({ canvas, backend });
+  await renderer.init();
+  assert.equal(renderer.getMaxAnisotropy(), 16);
+  assert.equal(backend.capabilities.getUniformBufferLimit(), 65536);
+  await renderer.dispose();
+});
+
+// F1's G8: wgpu has no texture-formats-tier1, and D3D12 on the RTX 3060 has no clip-distances, so a device that asked for
+// either kept none of its features. As in a browser, a request for a feature the adapter lacks rejects with a TypeError.
+test('a device request for a feature the adapter lacks throws a TypeError and records nothing', () => {
+  const output = { handles: { allocate: () => 1 }, commands: { requestDevice() { throw new Error('recorded a request'); } }, frame: 0, canvasSize: null };
+  for (const feature of ['texture-formats-tier1', 'clip-distances']) {
+    assert.throws(() => new RecordingDevice({ features: ['core-features-and-limits', feature] }, output, null, ['core-features-and-limits', 'timestamp-query']),
+      { name: 'TypeError', message: new RegExp(feature) });
+  }
+  const device = new RecordingDevice({ features: ['timestamp-query'] }, undefined, null, ['core-features-and-limits', 'timestamp-query']);
+  assert.deepEqual([...device.features], ['timestamp-query'], 'a device has exactly the features it was given');
+  const request = JSON.parse(new TextDecoder().decode(decodeAll(device.takeFrame()).find(record => record.opcode === Opcode.REQUEST_DEVICE).payload));
+  assert.deepEqual(request.features, ['timestamp-query']);
+});
+
+test('a native backend that names no features asks for the adapter\'s, and init() rejects one the adapter lacks', async () => {
+  const canvas = { width: 1, height: 1, style: {}, addEventListener() {}, removeEventListener() {} };
+  globalThis.__gpuAdapterFeatures = ['core-features-and-limits', 'timestamp-query', 'shader-f16'];
+  try {
+    const backend = new NativeBackend({ canvas });
+    const renderer = new WebGPURenderer({ canvas, backend });
+    await renderer.init();
+    assert.deepEqual([...backend.recordingDevice.features].sort(), ['core-features-and-limits', 'shader-f16', 'timestamp-query']);
+    assert.equal(renderer.hasFeature('timestamp-query'), true);
+    await renderer.dispose();
+    const refused = new NativeBackend({ canvas }, { features: ['texture-formats-tier2'] });
+    await assert.rejects(new WebGPURenderer({ canvas, backend: refused }).init(), { name: 'TypeError', message: /texture-formats-tier2/ });
+  } finally {
+    delete globalThis.__gpuAdapterFeatures;
+  }
+});
