@@ -255,3 +255,44 @@ test('the router checkpoints promise jobs after each listener it calls, through 
   assert.deepEqual(order.filter(item => item !== 'checkpoint' || true).slice(0, 4), ['pointerdown', 'checkpoint', 'mousedown', 'checkpoint']);
   setCheckpoint(null);
 });
+
+test('movement, offsets and isPrimary take the values Edge 157 gives the same DevTools input', () => {
+  const { window, document } = page();
+  document.body.append(document.createElement('canvas'));
+  const router = new InputRouter(window, document);
+  const seen = [];
+  for (const type of ['pointermove', 'mousemove', 'pointerdown', 'mousedown', 'click']) {
+    window.addEventListener(type, event => seen.push(`${type} ${event.movementX},${event.movementY} ${event.offsetX} ${event.isPrimary}`));
+  }
+  router.pointer({ type: 'pointermove', clientX: 100, clientY: 100, button: 0 });
+  router.pointer({ type: 'pointermove', clientX: 300.5, clientY: 200.25, button: 0 });
+  router.pointer({ type: 'pointerdown', clientX: 640, clientY: 360, button: 0 });
+  router.pointer({ type: 'pointermove', clientX: 650, clientY: 370, button: 0 });
+  router.pointer({ type: 'pointerup', clientX: 650, clientY: 370, button: 0 });
+  assert.deepEqual(seen, [
+    'pointermove 0,0 100 true', 'mousemove 0,0 100 undefined',
+    'pointermove 200,100 300.5 true', 'mousemove 200,100 301 undefined',
+    'pointerdown 0,0 640 true', 'mousedown 0,0 640 undefined',
+    'pointermove 10,10 650 true', 'mousemove 10,10 650 undefined',
+    'click 0,0 650 false',
+  ]);
+});
+
+test('an element whose inline style fixes its box measures that box, as in Edge 157 at 1280x720', () => {
+  const { document } = page();
+  const box = style => {
+    const element = document.createElement('div');
+    element.style.cssText = style;
+    document.body.append(element);
+    const rect = element.getBoundingClientRect();
+    return [rect.x, rect.y, rect.width, rect.height, element.offsetWidth, element.offsetHeight, element.clientWidth, element.clientHeight].join(',');
+  };
+  assert.equal(box('position:fixed;inset:0'), '0,0,1280,720,1280,720,1280,720');
+  assert.equal(box('position:fixed;top:0;left:0;width:100%;height:100%'), '0,0,1280,720,1280,720,1280,720');
+  assert.equal(box('position:absolute;left:10px;top:20px;width:50%;height:100px'), '10,20,640,100,640,100,640,100');
+  assert.equal(box('position:fixed;left:5vw;top:10vh;width:50vw;height:25vh'), '64,72,640,180,640,180,640,180');
+  assert.equal(box('position:fixed;right:10px;bottom:20px;width:100px;height:50px'), '1170,650,100,50,100,50,100,50');
+  assert.equal(box('position:fixed;left:10px;right:30px;top:0;bottom:0'), '10,0,1240,720,1240,720,1240,720');
+  assert.equal(box('position:fixed;left:10.5px;top:0;width:100.25px;height:10px'), '10.5,0,100.25,10,100,10,100,10');
+  assert.equal(box('width:100px;height:50px'), '0,0,0,0,0,0,0,0', 'a box in the flow needs layout, which the stand-in does not do');
+});
