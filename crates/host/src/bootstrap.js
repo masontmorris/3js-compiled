@@ -4,13 +4,6 @@ let nextFrame = 1;
 globalThis.window = globalThis;
 globalThis.self = globalThis;
 globalThis.devicePixelRatio = 1;
-globalThis.AbortController ??= class AbortController {
-  signal = { aborted: false, reason: undefined, addEventListener() {}, removeEventListener() {} };
-  abort(reason) {
-    this.signal.aborted = true;
-    this.signal.reason = reason;
-  }
-};
 // WebIDL's DOMException, which WebGPU throws its OperationErrors as, with its legacy codes. As in Edge, its name and
 // code come from the prototype, and one a script constructs carries no stack.
 const domExceptionCodes = {

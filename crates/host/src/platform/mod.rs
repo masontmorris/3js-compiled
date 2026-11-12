@@ -30,7 +30,8 @@ const MODULES: &[(&str, &str)] = modules!(
     "dom-methods.js",
     "gamepad.js",
     "storage.js",
-    "images.js"
+    "images.js",
+    "abort.js"
 );
 
 /// Loads the platform modules from the host binary and every other module from the file system.
@@ -92,11 +93,17 @@ struct Decoded {
     data: ToJsBuffer,
 }
 
-/// Decodes a PNG, JPEG or WebP image to straight-alpha RGBA8 on the blocking pool.
+/// Decodes a PNG, JPEG or WebP image to straight-alpha RGBA8 on the blocking pool, converting its declared color
+/// space to sRGB when `convert` is set.
 #[op2]
 #[serde]
-async fn op_image_decode(#[buffer] bytes: JsBuffer) -> Result<Decoded, JsErrorBox> {
-    let pixels = tokio::task::spawn_blocking(move || images::decode(&bytes))
+async fn op_image_decode(#[buffer] bytes: JsBuffer, convert: bool) -> Result<Decoded, JsErrorBox> {
+    let colors = if convert {
+        images::Colors::Convert
+    } else {
+        images::Colors::Keep
+    };
+    let pixels = tokio::task::spawn_blocking(move || images::decode(&bytes, colors))
         .await
         .map_err(|error| JsErrorBox::generic(error.to_string()))?
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
