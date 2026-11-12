@@ -1,20 +1,21 @@
 // Compares the GPU time of a scene's frames in Edge and in the native host, from three's timestamp queries. Runs
 // alternate Edge and native. Each run draws --warmup frames and then --frames measured frames at --width x --height,
 // with Edge in a window. --vsync on (the default) paces both sides to the display. --vsync off runs both uncapped, Edge
-// with vsync and its frame rate limit off and the host with --vsync off, which loads the CPU more. A frame's GPU time is the sum of its render passes' timestamp spans, which
+// with vsync and its frame rate limit off and the host with --vsync off, which keeps the GPU's clocks up. A frame's
+// GPU time is the sum of its render passes' timestamp spans, which
 // renderer.resolveTimestampsAsync() reports for the last frame each resolution covers, so each side samples the
 // measured frames its resolutions reach. Edge runs with --enable-webgpu-developer-features, which turns off its
-// 100-microsecond timestamp quantization. nvidia-smi records the GPU's performance state through every run.
-// typeperf records the machine's total CPU load each second, and a run whose mean load is over 40 percent is void,
-// because other work on the machine can skew it. The rule uses the runs that are not void, and it fails when the
-// native median exceeds Edge's by more than --margin (default 0.1).
+// 100-microsecond timestamp quantization. nvidia-smi records the graphics and memory clocks every 500 ms, and the runs
+// count only when both sides' median graphics clocks are within 5 percent. The rule then fails when the native median
+// exceeds Edge's by more than --margin (default 0.1). CPU load does not drive a GPU duration, so the tool records each
+// run's background load, the machine's total less the run's own processes, only for the record.
 // Usage, from the repository root, under the GPU lease:
 //   node tools/perf/gpu-time.mjs [--scene post] [--runs 3] [--warmup 120] [--frames 600] [--width 1920] [--height 1080]
 //     [--host C:/3jsc/target/release/host.exe] [--out target/gpu-time] [--margin 0.1] [--vsync on]
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { extname, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -56,13 +57,21 @@ const script = native => `globalThis.__gpuTime = {
   },
 };`;
 
+// GPU graphics and memory clocks every 500 ms, stamped on arrival.
 const gpuSamples = [];
-const smi = spawn('nvidia-smi', ['--query-gpu=pstate,clocks.gr', '--format=csv,noheader,nounits', '-lms', '250'], { stdio: ['ignore', 'pipe', 'ignore'] });
+const smi = spawn('nvidia-smi', ['--query-gpu=clocks.gr,clocks.mem', '--format=csv', '-lms', '500'], { stdio: ['ignore', 'pipe', 'ignore'] });
 smi.on('error', () => {});
 createInterface({ input: smi.stdout }).on('line', line => {
-  const [pstate, clock] = line.split(',').map(part => part.trim());
-  gpuSamples.push({ at: Date.now(), pstate, clock: Number(clock) });
+  const [graphics, memory] = [...line.matchAll(/(\d+) MHz/g)].map(match => Number(match[1]));
+  if (memory !== undefined) gpuSamples.push({ at: Date.now(), graphics, memory });
 });
+const gpuDuring = (from, to) => {
+  const window = gpuSamples.filter(sample => sample.at >= from && sample.at <= to);
+  const median = key => window.length ? quantile(window.map(sample => sample[key]), 0.5) : null;
+  return { samples: window.length, graphicsMedian: median('graphics'), memoryMedian: median('memory') };
+};
+// The machine's total CPU load each second, and the CPU seconds of every host and msedge process each second, so a
+// run's background load is the total less its own processes' share.
 const cpuSamples = [];
 const cpu = spawn('typeperf', ['\\Processor(_Total)\\% Processor Time', '-si', '1'], { stdio: ['ignore', 'pipe', 'ignore'] });
 cpu.on('error', () => {});
@@ -70,13 +79,27 @@ createInterface({ input: cpu.stdout }).on('line', line => {
   const value = Number(/^"[^"]*","([\d.]+)"/.exec(line)?.[1]);
   if (Number.isFinite(value)) cpuSamples.push({ at: Date.now(), value });
 });
-const cpuDuring = (from, to) => {
-  const window = cpuSamples.filter(sample => sample.at >= from && sample.at <= to).map(sample => sample.value);
-  return window.length ? window.reduce((a, b) => a + b, 0) / window.length : null;
-};
-const gpuDuring = (from, to) => {
-  const window = gpuSamples.filter(sample => sample.at >= from && sample.at <= to);
-  return { samples: window.length, p0: window.filter(sample => sample.pstate === 'P0').length, clockMedian: window.length ? quantile(window.map(sample => sample.clock), 0.5) : null };
+const processSamples = [];
+const processes = spawn('powershell', ['-NoProfile', '-Command', 'while ($true) { $t = [DateTimeOffset]::Now.ToUnixTimeMilliseconds(); Get-Process host, msedge -ErrorAction SilentlyContinue | ForEach-Object { "$t $($_.Id) $($_.CPU)" }; Start-Sleep -Milliseconds 1000 }'], { stdio: ['ignore', 'pipe', 'ignore'] });
+processes.on('error', () => {});
+createInterface({ input: processes.stdout }).on('line', line => {
+  const [at, pid, seconds] = line.trim().split(' ').map(Number);
+  if (Number.isFinite(seconds)) processSamples.push({ at, pid, seconds });
+});
+const cores = availableParallelism();
+const cpuDuring = (from, to, pids) => {
+  const total = cpuSamples.filter(sample => sample.at >= from && sample.at <= to).map(sample => sample.value);
+  if (!total.length) return { total: null, own: null, background: null };
+  let ownSeconds = 0;
+  for (const pid of pids) {
+    const mine = processSamples.filter(sample => sample.pid === pid);
+    const first = mine.findLast(sample => sample.at <= from) ?? mine.find(sample => sample.at >= from);
+    const last = mine.find(sample => sample.at >= to) ?? mine.findLast(sample => sample.at <= to);
+    if (first && last) ownSeconds += last.seconds - first.seconds;
+  }
+  const totalMean = total.reduce((a, b) => a + b, 0) / total.length;
+  const own = ownSeconds / ((to - from) / 1000) / cores * 100;
+  return { total: totalMean, own, background: Math.max(0, totalMean - own) };
 };
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.glb': 'model/gltf-binary' };
@@ -103,10 +126,15 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
 
-const summary = (side, run, samples, from, to, extra = {}) => {
+const summary = (side, run, samples, from, to, pids, extra = {}) => {
   const times = samples.map(([, ms]) => ms);
-  const cpuLoad = cpuDuring(from, to);
-  return { side, run, samples: times.length, p50: quantile(times, 0.5), p95: quantile(times, 0.95), min: Math.min(...times), max: Math.max(...times), gpu: gpuDuring(from, to), cpuLoad, void: cpuLoad === null || cpuLoad > 40, ...extra };
+  return { side, run, samples: times.length, p50: quantile(times, 0.5), p95: quantile(times, 0.95), min: Math.min(...times), max: Math.max(...times), gpu: gpuDuring(from, to), cpu: cpuDuring(from, to, pids), ...extra };
+};
+// The PIDs of the Edge that uses `profile`.
+const edgePids = profile => {
+  const name = profile.split(/[\\/]/).pop();
+  const found = spawnSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${name}*' } | ForEach-Object ProcessId`], { encoding: 'utf8' });
+  return found.stdout.split(/\s+/).filter(Boolean).map(Number);
 };
 
 async function edge(run) {
@@ -139,7 +167,7 @@ async function edge(run) {
         size: `${globalThis.__scene?.renderer.domElement.width}x${globalThis.__scene?.renderer.domElement.height}`,
       })));
       if (error || errors.length) throw new Error(`Edge scene failed: ${error ?? errors.join('; ')}`);
-      return summary('edge', run, samples, from, to, { drawingBuffer: size, userAgent: await call('userAgent', tab.evaluate(() => navigator.userAgent)) });
+      return summary('edge', run, samples, from, to, edgePids(profile), { drawingBuffer: size, userAgent: await call('userAgent', tab.evaluate(() => navigator.userAgent)) });
     } finally {
       await Promise.race([context.close(), new Promise(ok => setTimeout(ok, 20000))]);
     }
@@ -181,7 +209,7 @@ async function native(run) {
     measured = JSON.parse(/gpu-time (\{.*\})/.exec(log)?.[1] ?? 'null');
   }
   if (!measured) throw new Error(`Native run ${run} printed no GPU times; see ${dir}/host.log`);
-  return summary('native', run, measured.samples, measured.from, measured.to);
+  return summary('native', run, measured.samples, measured.from, measured.to, [child.pid]);
 }
 
 const results = [];
@@ -196,15 +224,17 @@ try {
 } finally {
   smi.kill();
   cpu.kill();
+  processes.kill();
   server.close();
 }
-const counted = side => results.filter(result => result.side === side && !result.void);
-const medianOf = side => quantile(counted(side).map(result => result.p50), 0.5);
-const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, edgeP50: medianOf('edge'), nativeP50: medianOf('native') };
-verdict.limit = verdict.edgeP50 === undefined ? undefined : verdict.edgeP50 * (1 + options.margin);
-verdict.counted = { edge: counted('edge').length, native: counted('native').length };
-verdict.pass = verdict.counted.edge > 0 && verdict.counted.native > 0 && verdict.nativeP50 <= verdict.limit;
-const ms = value => value === undefined ? 'none' : `${value.toFixed(3)} ms`;
-const outcome = verdict.counted.edge && verdict.counted.native ? (verdict.pass ? 'PASS' : 'FAIL') : 'INCONCLUSIVE';
-console.log(`GPU time p50 over ${verdict.counted.edge} Edge and ${verdict.counted.native} native runs under 40% CPU of ${options.runs} each: Edge ${ms(verdict.edgeP50)}, native ${ms(verdict.nativeP50)}, limit ${ms(verdict.limit)}: ${outcome}`);
+const ofSide = side => results.filter(result => result.side === side);
+const medianOf = (side, value) => quantile(ofSide(side).map(value), 0.5);
+const verdict = { scene: options.scene, size: `${options.width}x${options.height}`, vsync: options.vsync, edgeP50: medianOf('edge', result => result.p50), nativeP50: medianOf('native', result => result.p50) };
+verdict.limit = verdict.edgeP50 * (1 + options.margin);
+// The runs count only when the GPU ran at about the same graphics clock for both sides.
+verdict.graphicsClock = { edge: medianOf('edge', result => result.gpu.graphicsMedian), native: medianOf('native', result => result.gpu.graphicsMedian) };
+verdict.clocksMatch = Math.abs(verdict.graphicsClock.edge - verdict.graphicsClock.native) <= 0.05 * Math.max(verdict.graphicsClock.edge, verdict.graphicsClock.native);
+verdict.pass = verdict.clocksMatch && verdict.nativeP50 <= verdict.limit;
+const outcome = !verdict.clocksMatch ? 'INCONCLUSIVE, the graphics clocks differ by more than 5%' : verdict.pass ? 'PASS' : 'FAIL';
+console.log(`GPU time p50 over ${options.runs} runs each: Edge ${verdict.edgeP50.toFixed(3)} ms, native ${verdict.nativeP50.toFixed(3)} ms, limit ${verdict.limit.toFixed(3)} ms; median graphics clock Edge ${verdict.graphicsClock.edge} MHz, native ${verdict.graphicsClock.native} MHz: ${outcome}`);
 await writeFile(resolve(out, 'gpu-time.json'), JSON.stringify({ options, results, verdict }, null, 2));
