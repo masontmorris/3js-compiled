@@ -16,7 +16,7 @@ The host runs browser game code on shims that behave as headless Edge does for w
 
 ## Events
 
-`events.js` has `Event`, `CustomEvent`, `ErrorEvent`, `UIEvent`, `FocusEvent`, `KeyboardEvent`, `MouseEvent`, `PointerEvent` and `WheelEvent`, and `EventTarget` with capture, target and bubble phases, `once`, `passive`, `signal`, `stopImmediatePropagation()` and event handler attributes such as `onclick`. The window is an `EventTarget`.
+`events.js` has `Event`, `CustomEvent`, `ErrorEvent`, `UIEvent`, `FocusEvent`, `KeyboardEvent`, `MouseEvent`, `PointerEvent` and `WheelEvent`, and `EventTarget` with capture, target and bubble phases, every event handler attribute Edge 157 defines on elements, the document and the window (from `tools/platform/dom-methods.mjs`), `once`, `passive`, `signal`, `stopImmediatePropagation()` and event handler attributes such as `onclick`. The window is an `EventTarget`.
 
 The input router turns each host input fact into the events Edge fires for it:
 
@@ -41,7 +41,7 @@ The input router turns each host input fact into the events Edge fires for it:
 ## Images and loading
 
 - `fetch` reads `file:` URLs from disk, answers a missing file with status 404 as a development server does, and serves `blob:` and `data:` URLs. Network URLs reject with a `TypeError`, as a failed request does in Edge.
-- `location` is the entry module's `file:` URL with the `--hash` fragment. Setting `location.hash` fires `hashchange`. Navigation is not implemented.
+- `location` is the entry module's `file:` URL with the `--hash` fragment, and its origin is `file://`, as Edge gives a file page. A blob URL made there starts `blob:null/`, as in Edge. Setting `location.hash` fires `hashchange`. Navigation is not implemented.
 - `URL` parses and resolves URLs as WHATWG URL does for the file, blob, data and HTTP schemes, with its percent-encode sets for paths, queries and fragments, and `URL.createObjectURL()` makes blob URLs.
 - `Blob`, `File`, `Headers`, `Request`, `Response`, `AbortController` and `AbortSignal` cover what three's `FileLoader` and `ImageBitmapLoader` use, including `AbortSignal.any()`, `abort()` and `timeout()`. `fetch` rejects with the signal's reason when the signal aborts first. An abort removes each listener added for the signal's callback, including one added again without the signal, as Edge 157 does. Bodies are not streams.
 - The image element and `new Image()` load their `src` and fire `load` or `error`. `createImageBitmap()` takes a `Blob`, a loaded image, an `ImageBitmap` or `ImageData`, with a crop rectangle, `imageOrientation: 'flipY'` and `premultiplyAlpha: 'premultiply'`.
@@ -50,7 +50,7 @@ The input router turns each host input fact into the events Edge fires for it:
 
 ## Window
 
-`devicePixelRatio` is the window's display scale. `innerWidth` and `innerHeight` are the window's size in CSS pixels. A resize fires one `resize` at the window and then `change` at each `MediaQueryList` with a change listener whose result changed. A list's `matches` reads the window as it is. `matchMedia` evaluates width, height, aspect ratio, orientation and resolution in their plain, `min-`, `max-` and range forms, and answers Edge's defaults for a desktop with a mouse, a light color scheme and no reduced motion, including the boolean forms. `navigator.userAgent` is Edge's on Windows.
+`devicePixelRatio` is the window's display scale. `innerWidth` and `innerHeight` are the window's size in CSS pixels. A resize fires one `resize` at the window and then `change` at each `MediaQueryList` with a change listener whose result changed. A list's `matches` reads the window as it is, so a `resize` listener already sees the new answer, and its `media` is serialized as Edge does, for example `(min-aspect-ratio: 3 / 2)`. `matchMedia` evaluates width, height, aspect ratio, orientation and resolution in their plain, `min-`, `max-` and range forms, and answers Edge's defaults for a desktop with a mouse, a light color scheme and no reduced motion, including the boolean forms. `navigator.userAgent` is Edge's on Windows.
 
 `window.open()` opens an `http:` or `https:` URL in the system's default browser, refuses any other URL and logs it, and returns `null`, as Edge does for a `noopener` open.
 

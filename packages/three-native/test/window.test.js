@@ -61,3 +61,16 @@ test('window.open sends http and https URLs to the default browser and returns n
   assert.deepEqual(opened, ['https://example.com/a?b=1']);
   assert.equal(logged.length, 2);
 });
+
+test('MediaQueryList.media serializes as Edge 157 does', async () => {
+  const { serializeMedia } = await import('../src/platform/window.js');
+  const expected = {
+    '(MIN-WIDTH:100PX)': '(min-width: 100px)', '(min-width:100px) and (max-width : 200px)': '(min-width: 100px) and (max-width: 200px)',
+    'screen  and (orientation:landscape)': 'screen and (orientation: landscape)', '(min-aspect-ratio: 3/2)': '(min-aspect-ratio: 3 / 2)',
+    'not all and (monochrome)': 'not all and (monochrome)', '(width >= 1000px)': '(width >= 1000px)', 'only screen': 'only screen',
+    '(400px<=width<=2000px)': '(400px <= width <= 2000px)', SCREEN: 'screen', '(hover)': '(hover)', '(min-width: 10em)': '(min-width: 10em)',
+    all: 'all', '(min-resolution: 2dppx)': '(min-resolution: 2dppx)',
+    '(prefers-color-scheme:dark), (min-width:5px)': '(prefers-color-scheme: dark), (min-width: 5px)', 'garbage((': 'garbage((',
+  };
+  for (const [query, media] of Object.entries(expected)) assert.equal(serializeMedia(query), media, query);
+});

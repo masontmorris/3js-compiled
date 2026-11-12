@@ -315,3 +315,20 @@ test('click events floor their coordinates, and implicit release fires lostpoint
   router.pointer({ type: 'pointerup', clientX: 210, clientY: 210, button: 2 });
   assert.deepEqual(seen.map(line => line.split(' ')[0] + ' ' + line.split(' ').at(-1)), ['gotpointercapture -1', 'pointerup 2', 'lostpointercapture 2', 'mouseup 2', 'auxclick 2', 'contextmenu 2']);
 });
+
+test('elements, the document and images have every event handler attribute Edge 157 has', async () => {
+  const { EVENT_HANDLERS } = await import('../src/platform/dom-methods.js');
+  const { HTMLImageElement } = await import('../src/platform/images.js');
+  const { document } = page();
+  for (const name of ['error', 'load', 'click', 'transitionend', 'animationend', 'change', 'input', 'focusin']) assert.ok(EVENT_HANDLERS.element.includes(name) === (name !== 'focusin'), name);
+  const image = document.createElement('img');
+  assert.ok(image instanceof HTMLImageElement);
+  for (const name of EVENT_HANDLERS.element) assert.ok(`on${name}` in HTMLImageElement.prototype, `on${name}`);
+  for (const name of EVENT_HANDLERS.document) assert.ok(`on${name}` in Object.getPrototypeOf(document), `document.on${name}`);
+  const seen = [];
+  image.onerror = event => seen.push(event.type);
+  image.onload = event => seen.push(event.type);
+  image.dispatchEvent(new Event('error'));
+  image.dispatchEvent(new Event('load'));
+  assert.deepEqual(seen, ['error', 'load']);
+});

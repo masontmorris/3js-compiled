@@ -193,10 +193,12 @@ export class URL {
   set hash(value) { value = String(value); this.#parts.hash = value ? encode(value.startsWith('#') ? value : `#${value}`, 'fragment') : ''; }
   get username() { return ''; }
   get password() { return ''; }
+  // Edge gives a file URL the origin file://, though WHATWG URL makes it opaque.
   get origin() {
     const { protocol } = this.#parts;
     if (protocol === 'blob:') { try { return new URL(this.pathname).origin; } catch { return 'null'; } }
-    return SPECIAL.has(protocol) && protocol !== 'file:' ? `${protocol}//${this.host}` : 'null';
+    if (protocol === 'file:') return 'file://';
+    return SPECIAL.has(protocol) ? `${protocol}//${this.host}` : 'null';
   }
   get searchParams() {
     if (!this.#params) {
@@ -209,7 +211,9 @@ export class URL {
   toJSON() { return this.href; }
   static createObjectURL(blob) {
     if (!(blob instanceof Blob)) throw new TypeError("Failed to execute 'createObjectURL' on 'URL': Overload resolution failed.");
-    const url = `blob:${globalThis.location?.origin ?? 'null'}/${randomId()}`;
+    // A file page's blob URLs carry the opaque origin null in Edge.
+    const origin = globalThis.location?.origin;
+    const url = `blob:${!origin || origin === 'file://' ? 'null' : origin}/${randomId()}`;
     objectURLs.set(url, blob);
     return url;
   }
