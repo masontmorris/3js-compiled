@@ -214,6 +214,8 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         .enable_all()
         .build()?;
     let _entered = runtime.enter();
+    // Gamepads keep reporting while the window is in the background, as Edge reads them while the page is visible.
+    sdl3::hint::set("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
     let sdl = sdl3::init().map_err(anyhow::Error::msg)?;
     let video = sdl.video().map_err(anyhow::Error::msg)?;
     let mut window = video
