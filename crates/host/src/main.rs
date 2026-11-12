@@ -221,12 +221,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let progress = Arc::new(RenderProgress::default());
     game.set_render_progress(progress.clone());
     let rendering = progress.clone();
+    // With vsync off the swap chain presents at once, so an acquire that waits does so for the
+    // GPU, not for a display refresh, and paces nothing.
+    let vsync = options.vsync;
     let mut render = Worker::spawn(
         "render",
         || Ok(Renderer::new(target)),
         move |renderer, frame| {
             let rendered = renderer.frame(frame);
-            if let Some(at) = rendered.as_ref().ok().and_then(|rendered| rendered.refresh) {
+            if let Some(at) = rendered.as_ref().ok().and_then(|rendered| rendered.refresh)
+                && vsync
+            {
                 rendering.refreshed_at(at);
             }
             rendering.finished.fetch_add(1, Ordering::Release);
