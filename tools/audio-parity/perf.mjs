@@ -78,7 +78,7 @@ for (const [i, mode] of order.entries()) {
     row.quanta = audio.length;
     row.quantumUsP50 = percentile(audio.map(a => a.quantum_us), 0.5);
     row.quantumUsP99 = percentile(audio.map(a => a.quantum_us), 0.99);
-    row.quantumUsMax = Math.max(...audio.map(a => a.quantum_us));
+    row.quantumUsMax = audio.reduce((max, a) => Math.max(max, a.quantum_us), 0);
     row.underruns = new Set(audio.filter(a => a.underrun === 1).map(a => a.callback)).size;
     const late = audio.filter(a => a.late === 1);
     row.lateCallbacks = late.length;

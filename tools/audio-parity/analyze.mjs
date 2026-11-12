@@ -87,7 +87,7 @@ function graphLanes() {
   const byLane = {};
   for (const row of report) (byLane[row.lane] ??= []).push({ ...row, verdict: rule(row) });
   const count = rows => rows.reduce((c, r) => ({ ...c, [r.verdict]: (c[r.verdict] ?? 0) + 1 }), {});
-  const worst = rows => Math.max(...rows.filter(r => r.diffDb !== undefined && r.lane !== 'hrtf').map(r => r.diffDb));
+  const worst = rows => rows.filter(r => r.diffDb !== undefined && r.lane !== 'hrtf').reduce((max, r) => Math.max(max, r.diffDb), -Infinity);
   verdicts.lane2 = { pass: byLane.decode.every(r => r.verdict === 'pass'), counts: count(byLane.decode), worstDiffDb: worst(byLane.decode), failing: byLane.decode.filter(r => r.verdict !== 'pass') };
   verdicts.lane3 = { pass: byLane.graph.every(r => r.verdict === 'pass'), counts: count(byLane.graph), worstDiffDb: worst(byLane.graph), failing: byLane.graph.filter(r => r.verdict !== 'pass') };
   verdicts.lane4 = {
@@ -153,7 +153,7 @@ function lane6() {
   const order = list => list.map(l => l.replace(/^(play-call #\d+) [\d.]+$/, '$1'));
   const rows = csv(at('lane6', 'audio.csv'));
   // Howler closes its first context on unlock and plays every sound on the next one, which has its own capture file.
-  const context = Math.max(...rows.map(r => r.context));
+  const context = rows.reduce((max, r) => Math.max(max, r.context), 1);
   const capture = readWav(at('lane6', context === 1 ? 'out.wav' : `out-${context}.wav`));
   const rate = capture.sampleRate;
   const loud = i => capture.channels.some(c => Math.abs(c[i]) > 0.01);
