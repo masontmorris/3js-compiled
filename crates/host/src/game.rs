@@ -31,9 +31,63 @@ struct State {
 /// waited for the display to take a frame, a display refresh, in nanoseconds after `epoch`, or 0.
 pub struct RenderProgress {
     pub submitted: AtomicU64,
-    pub finished: AtomicU64,
+    finished: AtomicU64,
     refreshed: AtomicU64,
     epoch: Instant,
+    // What a game thread waiting in `op_wait` wakes for, rung by the render thread when it finishes
+    // a frame and by `alarm` at a timer's deadline.
+    wake: std::sync::Mutex<Wake>,
+    signal: std::sync::Condvar,
+}
+
+/// The deadline a game thread waiting for the render thread has set, if any, and whether it came.
+#[derive(Default)]
+struct Wake {
+    deadline: Option<Instant>,
+    rung: bool,
+}
+
+/// Rings the deadline that `op_wait` sets: sleeps until it, as `op_wait` sleeps without a render
+/// thread, and wakes the game thread. A condition variable's own timeout wakes several ms late on
+/// Windows, so the game thread waits for this or for the render thread without one. Ends once
+/// `progress` is gone.
+fn alarm(progress: std::sync::Weak<RenderProgress>) {
+    while let Some(progress) = progress.upgrade() {
+        let deadline = {
+            let mut wake = progress.wake();
+            if wake.deadline.is_none() || wake.rung {
+                wake = progress
+                    .signal
+                    .wait_timeout(wake, std::time::Duration::from_millis(50))
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .0;
+            }
+            if wake.rung { None } else { wake.deadline }
+        };
+        let Some(deadline) = deadline else {
+            continue;
+        };
+        loop {
+            let now = Instant::now();
+            if now >= deadline || progress.wake().deadline != Some(deadline) {
+                break;
+            }
+            let left = deadline - now;
+            if left > std::time::Duration::from_millis(1) {
+                std::thread::sleep(
+                    (left - std::time::Duration::from_millis(1))
+                        .min(std::time::Duration::from_micros(250)),
+                );
+            } else {
+                std::thread::yield_now();
+            }
+        }
+        let mut wake = progress.wake();
+        if wake.deadline == Some(deadline) && Instant::now() >= deadline {
+            wake.rung = true;
+            progress.signal.notify_all();
+        }
+    }
 }
 
 impl Default for RenderProgress {
@@ -43,11 +97,24 @@ impl Default for RenderProgress {
             finished: AtomicU64::default(),
             refreshed: AtomicU64::default(),
             epoch: Instant::now(),
+            wake: std::sync::Mutex::default(),
+            signal: std::sync::Condvar::new(),
         }
     }
 }
 
 impl RenderProgress {
+    /// Counts a frame the render thread has finished and wakes a game thread waiting for it.
+    pub fn finish(&self) {
+        let _wake = self.wake();
+        self.finished.fetch_add(1, Ordering::Release);
+        self.signal.notify_all();
+    }
+    fn wake(&self) -> std::sync::MutexGuard<'_, Wake> {
+        self.wake
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
     /// When the display last took a frame that the render thread waited for, on the page's clock
     /// that starts at `start`, or None.
     fn refreshed(&self, start: Instant) -> Option<f64> {
@@ -103,6 +170,26 @@ fn op_wait(state: &mut OpState, until: f64, render: bool) -> bool {
     let Some(progress) = state.render.as_ref() else {
         return false;
     };
+    if render {
+        // Waits for the render thread to ring when it finishes a frame, as a wait on its result
+        // would, or for `alarm` to ring at `until`, rather than polling in sleeps, which wake late
+        // on Windows: the game thread then begins the next frame as soon as the render thread is
+        // done.
+        let deadline = (until.is_finite() && until > 0.0)
+            .then(|| state.start + std::time::Duration::from_secs_f64(until / 1000.0));
+        let mut wake = progress.wake();
+        wake.deadline = deadline;
+        wake.rung = false;
+        progress.signal.notify_all();
+        while !progress.caught_up() && !wake.rung && deadline.is_none_or(|at| Instant::now() < at) {
+            wake = progress
+                .signal
+                .wait(wake)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        wake.deadline = None;
+        return true;
+    }
     loop {
         if render && progress.caught_up() {
             return true;
@@ -245,6 +332,11 @@ impl<'a> Game<'a> {
     }
     /// Lets the frame's turn of timers end once the render thread has caught up with `render`.
     pub fn set_render_progress(&mut self, render: Arc<RenderProgress>) {
+        let progress = Arc::downgrade(&render);
+        std::thread::Builder::new()
+            .name("timer alarm".into())
+            .spawn(move || alarm(progress))
+            .expect("the timer alarm thread starts");
         self.js.op_state().borrow_mut().borrow_mut::<State>().render = Some(render);
     }
     /// Sets the display's refresh interval in ms, which ends a frame's turn of timers when no
@@ -497,7 +589,7 @@ mod tests {
                 if let Some(at) = refresh {
                     render.refreshed_at(at);
                 }
-                render.finished.fetch_add(1, Ordering::Release);
+                render.finish();
             }));
         }
         Ok(std::fs::read_to_string(log_path)?)
@@ -711,7 +803,7 @@ mod tests {
                 while Instant::now() < finish {
                     std::hint::spin_loop();
                 }
-                render.finished.fetch_add(1, Ordering::Release);
+                render.finish();
             }));
         }
         let log = std::fs::read_to_string(log_path)?;
@@ -763,7 +855,7 @@ mod tests {
             // 60 Hz.
             game.idle()?;
             progress.submitted.fetch_add(1, Ordering::Release);
-            progress.finished.fetch_add(1, Ordering::Release);
+            progress.finish();
         }
         let log = std::fs::read_to_string(log_path)?;
         // Other work on the PC stalls frames and ticks alike, so the checks are what a stall does

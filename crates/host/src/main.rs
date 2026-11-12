@@ -234,7 +234,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             {
                 rendering.refreshed_at(at);
             }
-            rendering.finished.fetch_add(1, Ordering::Release);
+            rendering.finish();
             rendered
         },
     )?;
