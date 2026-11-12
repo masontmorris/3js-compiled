@@ -671,6 +671,69 @@ mod tests {
     }
 
     #[test]
+    fn the_game_thread_wakes_as_the_render_thread_finishes() -> Result<()> {
+        // With vsync off nothing paces frames, so a frame begins as soon as the render thread has
+        // finished the one before. A host that polled for that in 0.25 ms sleeps woke 0.5 to 1 ms
+        // late on Windows, and drew the 2,000-mesh scene at 791 fps where 9638647, blocking until
+        // the render thread finished, drew 1,502 (C:\3jsc\swarm\e3-r18\kit\out\runs\perf). Here
+        // each render job takes 0.5 ms, nothing records a display refresh, and the page's frames
+        // do no work, so frames begin about 0.5 ms apart.
+        let _timing = timing();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path = std::env::temp_dir().join(format!(
+            "threejsc-frame-rate-unpaced-{}.log",
+            std::process::id()
+        ));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/frame-rate.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.set_display_interval(1000.0 / 60.0)?;
+        let progress = Arc::new(RenderProgress::default());
+        game.set_render_progress(progress.clone());
+        let started = Instant::now();
+        let mut rendering: Option<std::thread::JoinHandle<()>> = None;
+        while game.frame()? != [0.0, 1.0, 0.0, 1.0] {
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "the page never turned green"
+            );
+            game.idle()?;
+            if let Some(previous) = rendering.take() {
+                previous.join().expect("the render thread finishes");
+            }
+            progress.submitted.fetch_add(1, Ordering::Release);
+            let render = progress.clone();
+            rendering = Some(std::thread::spawn(move || {
+                let finish = Instant::now() + std::time::Duration::from_micros(500);
+                while Instant::now() < finish {
+                    std::hint::spin_loop();
+                }
+                render.finished.fetch_add(1, Ordering::Release);
+            }));
+        }
+        let log = std::fs::read_to_string(log_path)?;
+        let starts: Vec<f64> = result(&log, "frame starts")
+            .split(' ')
+            .map(str::parse)
+            .collect::<Result<_, _>>()?;
+        let mut gaps: Vec<f64> = starts
+            .windows(2)
+            .skip(20)
+            .map(|pair| pair[1] - pair[0])
+            .collect();
+        gaps.sort_by(f64::total_cmp);
+        let median = gaps[gaps.len() / 2];
+        assert!(
+            median <= 0.8,
+            "frames {median:.3} ms apart behind a 0.5 ms render job"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn a_forced_frame_rate_paces_frames_and_keeps_intervals_on_schedule() -> Result<()> {
         // THREEJSC_DISPLAY_HZ=60 on a faster display: the host paces frames to 60 Hz, and a 10 ms
         // interval still keeps its schedule of 300 ticks in 3 s.
