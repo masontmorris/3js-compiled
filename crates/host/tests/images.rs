@@ -33,22 +33,33 @@ fn other_formats_and_broken_files_fail_to_decode() {
 #[test]
 fn embedded_color_profiles_convert_as_edge_converts_them() {
     let reference: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/color/reference.json")).expect("the reference parses");
+        serde_json::from_str(include_str!("fixtures/color/reference.json"))
+            .expect("the reference parses");
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/color");
     let mut worst = Vec::new();
     for (name, paths) in reference["samples"].as_object().expect("samples") {
         let bytes = std::fs::read(dir.join(name)).expect("the fixture exists");
-        for (path, colors) in [("image", Colors::Convert), ("bitmapDefault", Colors::Convert), ("bitmapNone", Colors::Keep)] {
+        for (path, colors) in [
+            ("image", Colors::Convert),
+            ("bitmapDefault", Colors::Convert),
+            ("bitmapNone", Colors::Keep),
+        ] {
             let pixels = decode(&bytes, colors).expect("the fixture decodes");
             for (block, expected) in paths[path].as_array().expect("samples").iter().enumerate() {
                 let (x, y) = ((block % 4) * 16 + 8, (block / 4) * 16 + 8);
                 let at = (y * 64 + x) * 4;
                 let difference = (0..4)
-                    .map(|c| (i64::from(pixels.data[at + c]) - expected[c].as_i64().expect("a byte")).abs())
+                    .map(|c| {
+                        (i64::from(pixels.data[at + c]) - expected[c].as_i64().expect("a byte"))
+                            .abs()
+                    })
                     .max()
                     .unwrap_or(0);
                 if difference > 1 {
-                    worst.push(format!("{name} {path} block {block}: {:?} against Edge's {expected}", &pixels.data[at..at + 4]));
+                    worst.push(format!(
+                        "{name} {path} block {block}: {:?} against Edge's {expected}",
+                        &pixels.data[at..at + 4]
+                    ));
                 }
             }
         }
