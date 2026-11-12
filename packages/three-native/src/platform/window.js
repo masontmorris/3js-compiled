@@ -130,6 +130,22 @@ function condition(text, env) {
   }
   return ['all', 'screen'].includes(text);
 }
+// A media query list's text as Edge serializes it: lowercase, single spaces, `: ` after a feature name, spaces around
+// a ratio's slash and around range operators, and `, ` between queries. Text that is not a media query stays as it is.
+export function serializeMedia(query) {
+  const text = String(query);
+  if (!/^[\w\s(),:<>=./+-]*$/.test(text) || /\(\(|\)\(/.test(text) || (text.match(/\(/g) ?? []).length !== (text.match(/\)/g) ?? []).length) return text;
+  return text
+    .split(',')
+    .map(part => part.trim().toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/\(\s*/g, '(').replace(/\s*\)/g, ')')
+      .replace(/\s*:\s*/g, ': ')
+      .replace(/\s*(<=|>=|<|>|=)\s*/g, ' $1 ')
+      .replace(/(\d)\s*\/\s*(\d)/g, '$1 / $2'))
+    .join(', ');
+}
+
 export function evaluateMedia(query, env) {
   return String(query).split(',').some(part => {
     let text = part.trim().toLowerCase();

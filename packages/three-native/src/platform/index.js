@@ -7,7 +7,7 @@ import { Storage } from './storage.js';
 import { URL, URLSearchParams, Blob, File, Headers, Request, Response, fetch, HTMLImageElement, ImageBitmap, createImageBitmap, imageConstructor, setHost } from './images.js';
 import { AbortController, AbortSignal } from './abort.js';
 import { EVENT_HANDLERS } from './dom-methods.js';
-import { CookieJar, Crypto, QuotaExceededError, evaluateMedia as evaluate, openWindow } from './window.js';
+import { CookieJar, Crypto, QuotaExceededError, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -56,7 +56,7 @@ const watched = new Map();
 class MediaQueryList extends events.EventTarget {
   constructor(media) {
     super();
-    this.media = String(media);
+    this.media = serializeMedia(media);
   }
   get matches() { return evaluateMedia(this.media); }
   addEventListener(type, callback, options) {
