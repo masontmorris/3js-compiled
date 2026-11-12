@@ -78,6 +78,8 @@ struct Link {
     /// The size ui-host was last asked to render at.
     requested: (u32, u32),
     shown: bool,
+    /// The publication on screen.
+    shown_pub: u64,
     sent_patches: VecDeque<(u64, Instant)>,
     rtt_ms: Vec<f64>,
     last_report: Instant,
@@ -297,6 +299,7 @@ fn launch(
         import: None,
         requested: size,
         shown: false,
+        shown_pub: 0,
         sent_patches: VecDeque::new(),
         rtt_ms: Vec::new(),
         last_report: Instant::now(),
@@ -782,6 +785,7 @@ impl Ui {
             } else {
                 let ready = unsafe { self.d3d.ready.GetCompletedValue() };
                 if let Some(pub_id) = link.rings.pick(ready) {
+                    link.shown_pub = pub_id;
                     if !link.shown {
                         link.shown = true;
                         self.notes
@@ -885,6 +889,13 @@ impl Ui {
             pointers::Route::Game => false,
             pointers::Route::Page(at) => {
                 if let Some(link) = link {
+                    let (w, h) = shown.unwrap_or_default();
+                    self.notes.push(format!(
+                        "page pointer {action} at ({x}, {y}): publication {} on screen at \
+                         {w}x{h}, hit-tested on the rects of reply {}",
+                        link.shown_pub,
+                        self.pointers.reply_at(shown).unwrap_or(0)
+                    ));
                     let _ = link.tx.send(Msg::Pointer(place::Pointer {
                         action,
                         x: x as f32,

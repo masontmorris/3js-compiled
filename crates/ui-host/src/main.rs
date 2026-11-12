@@ -94,8 +94,12 @@ impl WebViewDelegate for Delegate {
     }
 }
 
-/// Gives Servo a placed pointer event.
-fn give(webview: &WebView, unhandled: &Cell<u32>, pointer: proto::place::Placed) {
+/// Gives Servo a placed pointer event, after the page's reply number `reply`.
+fn give(webview: &WebView, unhandled: &Cell<u32>, pointer: proto::place::Placed, reply: u64) {
+    eprintln!(
+        "[ui-host] pointer {} given to Servo at ({}, {}) after reply {reply}",
+        pointer.action, pointer.x, pointer.y
+    );
     let point = DevicePoint::new(pointer.x, pointer.y).into();
     let input = if pointer.action == 0 {
         InputEvent::MouseMove(MouseMoveEvent::new(point))
@@ -554,6 +558,10 @@ fn main() {
     let new_frame = Rc::new(Cell::new(false));
     let input_handled = Rc::new(Cell::new(false));
     let unhandled = Rc::new(Cell::new(0));
+    // The replies sent so far, numbered as the host numbers them, and the number sent before each
+    // of the latest publications.
+    let replies = Rc::new(Cell::new(0u64));
+    let mut after_reply: VecDeque<(u64, u64)> = VecDeque::new();
     let webview = WebViewBuilder::new(&servo, ctx.clone())
         .url(Url::from_file_path(&hud).expect("hud path"))
         .hidpi_scale_factor(Scale::new(1.0))
@@ -624,8 +632,15 @@ fn main() {
                     unshown.picked(pub_id);
                 }
                 Event::Msg(Msg::Pointer(pointer)) => {
+                    let shown = after_reply.iter().find(|(id, _)| *id == picked);
+                    eprintln!(
+                        "[ui-host] pointer {} from the host over publication {picked}, published \
+                         after reply {}",
+                        pointer.action,
+                        shown.map_or(0, |(_, reply)| *reply)
+                    );
                     if let Some(placed) = placer.borrow_mut().pointer(pointer) {
-                        give(&webview, &unhandled, placed);
+                        give(&webview, &unhandled, placed, replies.get());
                     }
                 }
                 Event::Msg(Msg::Resize { width, height }) if width > 0 && height > 0 => {
@@ -679,6 +694,7 @@ fn main() {
             let pacer = pacer.clone();
             let relayout = relayout.clone();
             let placer = placer.clone();
+            let replies = replies.clone();
             webview.evaluate_javascript(script, move |result| {
                 stats.borrow_mut().round_trip.push(started.elapsed());
                 pacer.borrow_mut().finished();
@@ -731,6 +747,7 @@ fn main() {
                             if let Some(relayout) = relayout.borrow_mut().as_mut() {
                                 relayout.measured((*width as u32, *height as u32), Instant::now());
                             }
+                            replies.set(replies.get() + 1);
                             send(&Msg::Events {
                                 seq,
                                 width: *width as u32,
@@ -797,7 +814,7 @@ fn main() {
                 stats.borrow_mut().pointers_unplaced += placed.len() as u64;
             }
             for pointer in placed {
-                give(&webview, &unhandled, pointer);
+                give(&webview, &unhandled, pointer, replies.get());
             }
         }
         let due = new_frame.get()
@@ -886,6 +903,10 @@ fn main() {
                     pub_id: next_pub,
                     ready_value,
                 });
+                after_reply.push_back((next_pub, replies.get()));
+                if after_reply.len() > 64 {
+                    after_reply.pop_front();
+                }
 
                 let mut s = stats.borrow_mut();
                 s.first_paint.get_or_insert(started.elapsed());

@@ -60,8 +60,10 @@ struct Press {
 #[derive(Default)]
 pub(crate) struct Pointers {
     /// The rects the page listed at the sizes of the shown frame, of Servo and of its latest
-    /// reply.
-    layouts: Vec<(Size, Vec<Rect>)>,
+    /// reply, with the number of the reply each layout is from.
+    layouts: Vec<(Size, u64, Vec<Rect>)>,
+    /// The page's replies so far; ui-host numbers its replies the same way.
+    replies: u64,
     /// The rects the page listed last.
     last: Vec<Rect>,
     press: Option<Press>,
@@ -74,13 +76,20 @@ impl Pointers {
         if let Some(rects) = rects {
             self.last = rects;
         }
-        self.layouts
-            .retain(|(at, _)| *at != size && (Some(*at) == view.shown || Some(*at) == view.servo));
-        self.layouts.push((size, self.last.clone()));
+        self.replies += 1;
+        self.layouts.retain(|(at, _, _)| {
+            *at != size && (Some(*at) == view.shown || Some(*at) == view.servo)
+        });
+        self.layouts.push((size, self.replies, self.last.clone()));
+    }
+    /// The number of the reply whose rects a pointer in the frame on screen is hit-tested on.
+    pub fn reply_at(&self, shown: Option<Size>) -> Option<u64> {
+        let (_, reply, _) = self.layouts.iter().find(|(at, _, _)| Some(*at) == shown)?;
+        Some(*reply)
     }
     /// The ids and corner of the rect under `pointer` in the frame on screen.
     fn hit(&self, shown: Option<Size>, pointer: Pointer) -> Option<(Ids, (f64, f64))> {
-        let (_, rects) = self.layouts.iter().find(|(at, _)| Some(*at) == shown)?;
+        let (_, _, rects) = self.layouts.iter().find(|(at, _, _)| Some(*at) == shown)?;
         rects.iter().find_map(|&Rect { ids, bounds: r }| {
             (pointer.x >= r[0]
                 && pointer.y >= r[1]
