@@ -25,6 +25,8 @@ document.body.addEventListener('keydown', event => order.push(`body:${event.code
 addEventListener('pointerdown', event => order.push(`pointerdown:${event.target.localName}:${event.clientX}`));
 addEventListener('click', event => order.push(`click:${event.target.localName}`));
 addEventListener('resize', () => order.push(`resize:${innerWidth}x${innerHeight}`));
+const wide = matchMedia('(min-width: 1100px)');
+wide.addEventListener('change', event => order.push(`media:${event.matches}`));
 addEventListener('gamepadconnected', event => order.push(`gamepad:${event.gamepad.id}`));
 globalThis.__events = order;
 
