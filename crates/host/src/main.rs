@@ -540,3 +540,20 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     log(log_file, &format!("closed after {frame} frames"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_display_scale_of_one_and_a_half_divides_pixels_into_css_pixels() {
+        // Office's display scale. Edge's window of 1920x1080 pixels there is 1280x720 CSS pixels at a device pixel
+        // ratio of 1.5, and the pointer at window pixel (300, 150) is at client (200, 100).
+        assert_eq!(css_pixels((1920, 1080), 1.5), (1.5, (1280, 720)));
+        assert_eq!(css_pixels((1280, 720), 1.0), (1.0, (1280, 720)));
+        assert_eq!(css_pixels((1, 1), 1.5), (1.5, (1, 1)), "a window keeps at least one CSS pixel");
+        let scale = css_scale(1.0, 1.5);
+        assert_eq!((300.0 * scale, 150.0 * scale), (200.0, 100.0));
+        assert_eq!(css_scale(2.0, 2.0), 1.0, "a window whose coordinates are points has a pixel density");
+    }
+}
