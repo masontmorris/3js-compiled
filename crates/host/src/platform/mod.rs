@@ -35,7 +35,9 @@ const MODULES: &[(&str, &str)] = modules!(
     "window.js",
     "geometry.js",
     "observers.js",
-    "errors.js"
+    "errors.js",
+    "audio.js",
+    "xhr.js"
 );
 
 /// Loads the platform modules from the host binary and every other module from the file system.

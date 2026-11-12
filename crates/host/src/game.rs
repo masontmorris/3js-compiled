@@ -284,6 +284,7 @@ pub struct Page {
     pub storage: Option<PathBuf>,
     pub ratio: f64,
     pub screen: (u32, u32),
+    pub audio: threejsc_host::audio::Options,
 }
 impl Default for Page {
     fn default() -> Self {
@@ -292,6 +293,12 @@ impl Default for Page {
             storage: None,
             ratio: 1.0,
             screen: (1920, 1080),
+            // Tests render audio with no device, so they never play through the machine's speakers.
+            audio: threejsc_host::audio::Options {
+                device: Some("none".into()),
+                csv: std::env::temp_dir().join("threejsc-test-audio.csv"),
+                ..Default::default()
+            },
         }
     }
 }
@@ -319,7 +326,11 @@ impl<'a> Game<'a> {
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(platform::Loader::new())),
-            extensions: vec![host_ext::init(), platform::extension::init()],
+            extensions: vec![
+                host_ext::init(),
+                platform::extension::init(),
+                threejsc_host::audio::extension::init(),
+            ],
             ..Default::default()
         });
         let mut storage = Vec::new();
@@ -343,6 +354,15 @@ impl<'a> Game<'a> {
                 cookies = serde_json::from_str(saved).unwrap_or(cookies);
             }
         }
+        let mut audio = page.audio.clone();
+        let audio_log = Rc::clone(&log);
+        audio.log = Some(Rc::new(move |message: String| {
+            let _ = writeln!(audio_log.borrow_mut(), "{message}");
+            eprintln!("{message}");
+        }));
+        js.op_state()
+            .borrow_mut()
+            .put(threejsc_host::audio::Audio::new(audio));
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,

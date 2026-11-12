@@ -1,0 +1,559 @@
+//! Web Audio ops over `threejsc_audio`, and the host's audio options: `--audio-device <name>` plays through the
+//! named output, and `--audio-out <file.wav>` records what the output receives. The page's `platform/audio.js` checks
+//! every argument before it calls these ops.
+//!
+//! Nothing opens an audio device until a page creates an `AudioContext`. The first online context starts the
+//! recorder, which writes `audio.csv` in the working directory with one row per render quantum, and resolves the
+//! device name. A device name that matches no output is an error; the host never falls back to another device.
+
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use deno_core::{JsBuffer, OpState, ToJsBuffer, op2};
+use deno_error::JsErrorBox;
+use futures_channel::mpsc::UnboundedReceiver;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use threejsc_audio::decode::decode_audio_data;
+use threejsc_audio::graph::{Graph, Id, ObserverFactory, OnlineHook, OnlineInfo, Output};
+use threejsc_audio::record::Recorder;
+use threejsc_audio::web_audio_api::context::BaseAudioContext;
+
+/// The audio options from the command line.
+#[derive(Clone, Default)]
+pub struct Options {
+    pub device: Option<String>,
+    pub out: Option<PathBuf>,
+    /// Where `audio.csv` goes.
+    pub csv: PathBuf,
+    /// Writes a line to the host log.
+    pub log: Option<Rc<dyn Fn(String)>>,
+}
+
+/// The page's audio graph. Making it opens no device; the first online context resolves the output.
+pub struct Audio {
+    options: Options,
+    graph: Graph,
+    ended: Option<UnboundedReceiver<Id>>,
+    output: Option<Output>,
+    recorder: Option<Rc<RefCell<Recorder>>>,
+    // Keeps the default-device follower thread alive.
+    followed: Option<threejsc_audio::device::Followed>,
+}
+
+impl Audio {
+    pub fn new(options: Options) -> Self {
+        threejsc_audio::init();
+        let (graph, ended) = Graph::new();
+        Self {
+            options,
+            graph,
+            ended: Some(ended),
+            output: None,
+            recorder: None,
+            followed: None,
+        }
+    }
+
+    fn log(&self, message: String) {
+        if let Some(log) = &self.options.log {
+            log(message);
+        }
+    }
+
+    // Resolves the device, starts the recorder and, on the default device, the follower.
+    fn ensure_output(&mut self) -> Result<(), JsErrorBox> {
+        if self.output.is_some() {
+            return Ok(());
+        }
+        let sink_id = match &self.options.device {
+            Some(name) => threejsc_audio::device::sink_for(name).map_err(JsErrorBox::generic)?,
+            None => String::new(),
+        };
+        let recorder = Recorder::start(self.options.out.clone(), &self.options.csv)
+            .map_err(|e| JsErrorBox::generic(format!("audio.csv: {e}")))?;
+        let recorder = Rc::new(RefCell::new(recorder));
+        let observer: ObserverFactory = {
+            let recorder = Rc::clone(&recorder);
+            Box::new(move |rate, channels| recorder.borrow_mut().observer(rate, channels))
+        };
+        let on_online: Option<OnlineHook> = if sink_id.is_empty() {
+            let log = self.options.log.clone();
+            let lines = Arc::new(Mutex::new(Vec::new()));
+            let sink = Arc::clone(&lines);
+            let followed =
+                threejsc_audio::device::follow_default(Duration::from_millis(200), move |line| {
+                    sink.lock().unwrap().push(line)
+                });
+            let contexts = Arc::downgrade(&followed);
+            self.followed = Some(followed);
+            Some(Box::new(move |context| {
+                if let Some(contexts) = contexts.upgrade() {
+                    contexts.lock().unwrap().push(Arc::downgrade(context));
+                }
+                if let Some(log) = &log {
+                    for line in lines.lock().unwrap().drain(..) {
+                        log(line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+        self.log(format!(
+            "audio: output {}",
+            self.options
+                .device
+                .as_deref()
+                .unwrap_or("the default device, followed as it changes")
+        ));
+        self.recorder = Some(recorder);
+        self.output = Some(Output {
+            sink_id,
+            observer: Some(observer),
+            on_online,
+        });
+        Ok(())
+    }
+
+    fn online(&mut self, sample_rate: Option<f32>, hint: &str) -> Result<OnlineInfo, JsErrorBox> {
+        self.ensure_output()?;
+        let output = self.output.as_mut().expect("ensure_output set the output");
+        self.graph.online(output, sample_rate, hint).map_err(fail)
+    }
+
+    fn get(&mut self) -> Result<&mut Graph, JsErrorBox> {
+        Ok(&mut self.graph)
+    }
+}
+
+impl Drop for Audio {
+    fn drop(&mut self) {
+        let (graph, _) = Graph::new();
+        drop(std::mem::replace(&mut self.graph, graph));
+        if let Some(recorder) = self.recorder.take() {
+            let summary = recorder.borrow_mut().finish();
+            self.log(format!("audio: recorder finished: {summary:?}"));
+        }
+    }
+}
+
+fn audio(state: &mut OpState) -> &mut Audio {
+    state.borrow_mut::<Audio>()
+}
+
+fn fail(error: impl std::fmt::Display) -> JsErrorBox {
+    JsErrorBox::generic(error.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContextSpec {
+    kind: String,
+    sample_rate: Option<f32>,
+    latency_hint: Option<Value>,
+    channels: Option<usize>,
+    length: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContextInfo {
+    id: Id,
+    sample_rate: f32,
+    base_latency: f64,
+}
+
+#[op2]
+#[serde]
+fn op_audio_context(
+    state: &mut OpState,
+    #[serde] spec: ContextSpec,
+) -> Result<ContextInfo, JsErrorBox> {
+    if spec.kind == "offline" {
+        let rate = spec.sample_rate.unwrap_or(44100.);
+        let id =
+            audio(state)
+                .graph
+                .offline(spec.channels.unwrap_or(1), spec.length.unwrap_or(1), rate);
+        return Ok(ContextInfo {
+            id,
+            sample_rate: rate,
+            base_latency: 0.,
+        });
+    }
+    let hint = match spec.latency_hint {
+        Some(Value::Number(n)) => n.to_string(),
+        Some(Value::String(s)) => s,
+        _ => "interactive".into(),
+    };
+    let OnlineInfo {
+        id,
+        sample_rate,
+        base_latency,
+    } = audio(state).online(spec.sample_rate, &hint)?;
+    Ok(ContextInfo {
+        id,
+        sample_rate,
+        base_latency,
+    })
+}
+
+#[op2(fast)]
+fn op_audio_current_time(state: &mut OpState, id: u32) -> f64 {
+    audio(state).graph.current_time(id)
+}
+
+#[op2(fast)]
+fn op_audio_output_latency(state: &mut OpState, id: u32) -> f64 {
+    audio(state).graph.output_latency(id)
+}
+
+#[op2(fast)]
+fn op_audio_destination(state: &mut OpState, context: u32) -> Result<u32, JsErrorBox> {
+    audio(state).get()?.destination(context).map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_listener(state: &mut OpState, context: u32) -> Result<u32, JsErrorBox> {
+    audio(state).get()?.listener(context).map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_max_channel_count(state: &mut OpState, context: u32) -> Result<u32, JsErrorBox> {
+    Ok(audio(state)
+        .get()?
+        .max_channel_count(context)
+        .map_err(fail)? as u32)
+}
+
+/// Suspends, resumes or closes an online context, and settles once the audio thread has done it.
+#[op2]
+async fn op_audio_lifecycle(
+    state: Rc<RefCell<OpState>>,
+    id: u32,
+    #[string] action: String,
+) -> Result<(), JsErrorBox> {
+    let context = audio(&mut state.borrow_mut())
+        .get()?
+        .online_context(id)
+        .map_err(fail)?;
+    match action.as_str() {
+        "suspend" => context.suspend().await,
+        "resume" => context.resume().await,
+        "close" => {
+            context.close().await;
+            audio(&mut state.borrow_mut()).get()?.forget(id);
+        }
+        other => return Err(fail(format!("no lifecycle action {other}"))),
+    }
+    Ok(())
+}
+
+/// Renders an offline context on the blocking pool and answers each channel's samples.
+#[op2]
+#[serde]
+async fn op_audio_render(
+    state: Rc<RefCell<OpState>>,
+    id: u32,
+) -> Result<Vec<ToJsBuffer>, JsErrorBox> {
+    let mut context = audio(&mut state.borrow_mut())
+        .get()?
+        .take_offline(id)
+        .map_err(fail)?;
+    let (rate, length) = (context.sample_rate(), context.length());
+    let rendered = tokio::task::spawn_blocking(move || context.start_rendering_sync())
+        .await
+        .map_err(fail)?;
+    audio(&mut state.borrow_mut())
+        .get()?
+        .rendered(id, rate, length);
+    Ok((0..rendered.number_of_channels())
+        .map(|c| floats_to_bytes(rendered.get_channel_data(c)).into())
+        .collect())
+}
+
+#[op2]
+fn op_audio_node(
+    state: &mut OpState,
+    context: u32,
+    #[string] kind: &str,
+    #[serde] options: serde_json::Value,
+) -> Result<u32, JsErrorBox> {
+    audio(state)
+        .get()?
+        .node(context, kind, &options)
+        .map_err(fail)
+}
+
+#[op2]
+fn op_audio_set(
+    state: &mut OpState,
+    node: u32,
+    #[string] prop: &str,
+    #[serde] value: serde_json::Value,
+) -> Result<(), JsErrorBox> {
+    audio(state).get()?.set(node, prop, &value).map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_param(
+    state: &mut OpState,
+    node: u32,
+    #[string] name: &str,
+    #[string] method: &str,
+    a: f64,
+    b: f64,
+    c: f64,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .param(node, name, method, a, b, c)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_curve(
+    state: &mut OpState,
+    node: u32,
+    #[string] name: &str,
+    #[buffer] values: &[u8],
+    start: f64,
+    duration: f64,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .curve(node, name, &bytes_to_floats(values), start, duration)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_param_value(
+    state: &mut OpState,
+    node: u32,
+    #[string] name: &str,
+) -> Result<f32, JsErrorBox> {
+    audio(state).get()?.param_value(node, name).map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_connect(
+    state: &mut OpState,
+    from: u32,
+    to: u32,
+    output: u32,
+    input: u32,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .connect(from, to, output as usize, input as usize)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_connect_param(
+    state: &mut OpState,
+    from: u32,
+    to: u32,
+    #[string] name: &str,
+    output: u32,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .connect_param(from, to, name, output as usize)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_disconnect(
+    state: &mut OpState,
+    from: u32,
+    to: u32,
+    output: u32,
+    input: u32,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .disconnect(from, to, output as usize, input as usize)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_disconnect_param(
+    state: &mut OpState,
+    from: u32,
+    to: u32,
+    #[string] name: &str,
+    output: u32,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .disconnect_param(from, to, name, output as usize)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_start(
+    state: &mut OpState,
+    node: u32,
+    when: f64,
+    offset: f64,
+    duration: f64,
+) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .start(node, when, offset, duration)
+        .map_err(fail)
+}
+
+#[op2(fast)]
+fn op_audio_stop(state: &mut OpState, node: u32, when: f64) -> Result<(), JsErrorBox> {
+    audio(state).get()?.stop(node, when).map_err(fail)
+}
+
+/// Copies a page's AudioBuffer channels into an engine buffer.
+#[op2]
+fn op_audio_buffer(
+    state: &mut OpState,
+    #[serde] channels: Vec<JsBuffer>,
+    sample_rate: f64,
+) -> Result<u32, JsErrorBox> {
+    let channels = channels.iter().map(|c| bytes_to_floats(c)).collect();
+    Ok(audio(state).get()?.buffer(channels, sample_rate as f32))
+}
+
+#[op2]
+#[buffer]
+fn op_audio_buffer_data(
+    state: &mut OpState,
+    buffer: u32,
+    channel: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    Ok(floats_to_bytes(
+        &audio(state)
+            .get()?
+            .buffer_data(buffer, channel as usize)
+            .map_err(fail)?,
+    ))
+}
+
+#[op2(fast)]
+fn op_audio_source_buffer(state: &mut OpState, node: u32, buffer: u32) -> Result<(), JsErrorBox> {
+    audio(state)
+        .get()?
+        .source_buffer(node, buffer)
+        .map_err(fail)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecodedInfo {
+    id: Id,
+    number_of_channels: usize,
+    length: usize,
+    sample_rate: f32,
+}
+
+/// Decodes a file on the blocking pool into a context running at `sample_rate`.
+#[op2]
+#[serde]
+async fn op_audio_decode(
+    state: Rc<RefCell<OpState>>,
+    #[buffer] bytes: JsBuffer,
+    sample_rate: f64,
+) -> Result<DecodedInfo, JsErrorBox> {
+    let bytes = bytes.to_vec();
+    let decoded = tokio::task::spawn_blocking(move || decode_audio_data(bytes, sample_rate as f32))
+        .await
+        .map_err(fail)?
+        .map_err(|e| JsErrorBox::generic(e.0))?;
+    let (id, number_of_channels, length) = audio(&mut state.borrow_mut()).graph.decoded(decoded);
+    Ok(DecodedInfo {
+        id,
+        number_of_channels,
+        length,
+        sample_rate: sample_rate as f32,
+    })
+}
+
+/// Fills a typed array from an AnalyserNode. Float reads take the array's bytes.
+#[op2(fast)]
+fn op_audio_analyser(
+    state: &mut OpState,
+    node: u32,
+    #[string] kind: &str,
+    #[buffer] out: &mut [u8],
+) -> Result<(), JsErrorBox> {
+    let graph = audio(state).get()?;
+    if kind.starts_with("float") {
+        let mut floats = vec![0f32; out.len() / 4];
+        graph
+            .analyser(node, kind, &mut floats, &mut [])
+            .map_err(fail)?;
+        out.copy_from_slice(&floats_to_bytes(&floats));
+    } else {
+        graph.analyser(node, kind, &mut [], out).map_err(fail)?;
+    }
+    Ok(())
+}
+
+/// Answers the next source that ended, for the page to fire `ended`. One call waits at a time.
+#[op2]
+async fn op_audio_ended(state: Rc<RefCell<OpState>>) -> Result<u32, JsErrorBox> {
+    let mut receiver = audio(&mut state.borrow_mut())
+        .ended
+        .take()
+        .ok_or_else(|| fail("another call already waits for ended sources"))?;
+    let next = receiver.next().await;
+    audio(&mut state.borrow_mut()).ended = Some(receiver);
+    next.ok_or_else(|| fail("the audio graph closed"))
+}
+
+fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
+    floats.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn bytes_to_floats(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect()
+}
+
+deno_core::extension!(
+    audio_ext,
+    ops = [
+        op_audio_context,
+        op_audio_current_time,
+        op_audio_output_latency,
+        op_audio_destination,
+        op_audio_listener,
+        op_audio_max_channel_count,
+        op_audio_lifecycle,
+        op_audio_render,
+        op_audio_node,
+        op_audio_set,
+        op_audio_param,
+        op_audio_curve,
+        op_audio_param_value,
+        op_audio_connect,
+        op_audio_connect_param,
+        op_audio_disconnect,
+        op_audio_disconnect_param,
+        op_audio_start,
+        op_audio_stop,
+        op_audio_buffer,
+        op_audio_buffer_data,
+        op_audio_source_buffer,
+        op_audio_decode,
+        op_audio_analyser,
+        op_audio_ended
+    ]
+);
+pub use audio_ext as extension;

@@ -10,6 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 threejsc-gpu = { path = "../gpu" }
+threejsc-audio = { path = "../audio", features = ["output"] }
+futures-channel = "0.3"
+futures-util = "0.3"
 anyhow = "1"
 deno_core = "0.413.0"
 deno_error = "=0.7.1"

@@ -38,6 +38,8 @@ struct Options {
     storage: Option<PathBuf>,
     hash: String,
     vsync: bool,
+    audio_device: Option<String>,
+    audio_out: Option<PathBuf>,
 }
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
@@ -48,6 +50,8 @@ fn options() -> Result<Options> {
     let mut storage = None;
     let mut hash = String::new();
     let mut vsync = true;
+    let mut audio_device = None;
+    let mut audio_out = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
@@ -64,6 +68,12 @@ fn options() -> Result<Options> {
                 }
             }
             "--novsync" => vsync = false,
+            "--audio-device" => {
+                audio_device = Some(args.next().context("--audio-device needs a device name")?);
+            }
+            "--audio-out" => {
+                audio_out = Some(args.next().context("--audio-out needs a .wav path")?.into());
+            }
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -81,6 +91,8 @@ fn options() -> Result<Options> {
         storage,
         hash,
         vsync,
+        audio_device,
+        audio_out,
     })
 }
 fn log(log: &Log, message: &str) -> Result<()> {
@@ -257,6 +269,12 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             (f64::from(screen.0) / ratio) as u32,
             (f64::from(screen.1) / ratio) as u32,
         ),
+        audio: threejsc_host::audio::Options {
+            device: options.audio_device.clone(),
+            out: options.audio_out.clone(),
+            csv: PathBuf::from("audio.csv"),
+            log: None,
+        },
     };
     let mut game = Game::open(
         &options.entry,
