@@ -103,10 +103,18 @@ fn pointer(
 }
 /// The window's device pixel ratio and its size in CSS pixels, as Edge rounds them.
 fn css_size(window: &sdl3::video::Window) -> (f64, (u32, u32)) {
-    let ratio = f64::from(window.display_scale()).max(0.25);
-    let (width, height) = window.size_in_pixels();
+    css_pixels(window.size_in_pixels(), window.display_scale())
+}
+/// The device pixel ratio for display scale `scale`, and a size of `pixels` in CSS pixels.
+fn css_pixels((width, height): (u32, u32), scale: f32) -> (f64, (u32, u32)) {
+    let ratio = f64::from(scale).max(0.25);
     let css = |pixels: u32| ((f64::from(pixels) / ratio).round() as u32).max(1);
     (ratio, (css(width), css(height)))
+}
+/// CSS pixels per window coordinate, for a window of `pixel_density` pixels per coordinate at device pixel ratio
+/// `ratio`.
+fn css_scale(pixel_density: f32, ratio: f64) -> f64 {
+    f64::from(pixel_density) / ratio
 }
 /// The GPUErrorFilter name of an error's filter.
 fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
@@ -307,7 +315,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut row = None;
     'running: loop {
         let started = Instant::now();
-        let scale = f64::from(window.pixel_density()) / ratio;
+        let scale = css_scale(window.pixel_density(), ratio);
         let keyboard = sdl.keyboard();
         // Motion and wheel events coalesce within a poll, as Edge aligns them to frames, and go out before any
         // other input, so discrete events keep their order.
@@ -551,9 +559,17 @@ mod tests {
         // ratio of 1.5, and the pointer at window pixel (300, 150) is at client (200, 100).
         assert_eq!(css_pixels((1920, 1080), 1.5), (1.5, (1280, 720)));
         assert_eq!(css_pixels((1280, 720), 1.0), (1.0, (1280, 720)));
-        assert_eq!(css_pixels((1, 1), 1.5), (1.5, (1, 1)), "a window keeps at least one CSS pixel");
+        assert_eq!(
+            css_pixels((1, 1), 1.5),
+            (1.5, (1, 1)),
+            "a window keeps at least one CSS pixel"
+        );
         let scale = css_scale(1.0, 1.5);
         assert_eq!((300.0 * scale, 150.0 * scale), (200.0, 100.0));
-        assert_eq!(css_scale(2.0, 2.0), 1.0, "a window whose coordinates are points has a pixel density");
+        assert_eq!(
+            css_scale(2.0, 2.0),
+            1.0,
+            "a window whose coordinates are points has a pixel density"
+        );
     }
 }
