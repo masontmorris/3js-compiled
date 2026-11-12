@@ -316,6 +316,50 @@ const escapeText = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
 const FOCUSABLE = new Set(['a', 'button', 'input', 'select', 'textarea', 'iframe']);
 
+// A length from an inline style, in CSS pixels against `size`: px, % of `size`, vw and vh. Anything else is unknown.
+function length(value, size, window) {
+  const match = /^(-?\d*\.?\d+)(px|%|vw|vh)?$/.exec(String(value ?? '').trim());
+  if (!match) return null;
+  const number = Number(match[1]);
+  const unit = match[2] ?? (number === 0 ? 'px' : null);
+  if (unit === 'px') return number;
+  if (unit === '%') return (number * size) / 100;
+  if (unit === 'vw') return (number * window.innerWidth) / 100;
+  if (unit === 'vh') return (number * window.innerHeight) / 100;
+  return null;
+}
+// The box an inline style with position fixed or absolute gives an element, taken against the window: each axis
+// from its start and size, or its end and size, or its start and end. Null when the style does not fix the box.
+// The window an element measures against.
+const viewOf = element => {
+  const view = element.ownerDocument?.defaultView ?? globalThis;
+  return { innerWidth: view.innerWidth ?? 0, innerHeight: view.innerHeight ?? 0 };
+};
+function inlineBox(element) {
+  const style = element.style;
+  const window = viewOf(element);
+  if (style.position !== 'fixed' && style.position !== 'absolute') return null;
+  const inset = String(style.inset ?? '').trim().split(/\s+/).filter(Boolean);
+  const sides = inset.length ? [inset[0], inset[1] ?? inset[0], inset[2] ?? inset[0], inset[3] ?? inset[1] ?? inset[0]] : [];
+  const axis = (start, end, size, total) => {
+    const from = length(start, total, window);
+    const to = length(end, total, window);
+    const extent = length(size, total, window);
+    if (extent !== null && from !== null) return [from, extent];
+    if (extent !== null && to !== null) return [total - to - extent, extent];
+    if (from !== null && to !== null) return [from, Math.max(0, total - from - to)];
+    return [from ?? 0, extent ?? 0];
+  };
+  const [x, width] = axis(style.left || sides[3], style.right || sides[1], style.width, window.innerWidth);
+  const [y, height] = axis(style.top || sides[0], style.bottom || sides[2], style.height, window.innerHeight);
+  return { x, y, width, height };
+}
+function fills(element) {
+  const full = ['canvas', 'body', 'html'].includes(element.localName);
+  const window = viewOf(element);
+  return { x: 0, y: 0, width: full ? window.innerWidth : 0, height: full ? window.innerHeight : 0 };
+}
+
 export class Element extends Node {
   constructor(document, localName) {
     super(document);
@@ -399,17 +443,16 @@ export class Element extends Node {
   }
   get innerText() { return this.textContent; }
   set innerText(value) { this.textContent = value; }
-  // Layout: a canvas, the body and the root element fill the window, and every other element has no box.
+  // Layout without CSS: an element whose inline style fixes its box against the window measures that box, a canvas,
+  // the body and the root element otherwise fill the window, and every other element has no box.
   getBoundingClientRect() {
-    const fills = this.isConnected && (this.localName === 'canvas' || this.localName === 'body' || this.localName === 'html');
-    const width = fills ? globalThis.innerWidth ?? 0 : 0;
-    const height = fills ? globalThis.innerHeight ?? 0 : 0;
-    return { x: 0, y: 0, left: 0, top: 0, width, height, right: width, bottom: height, toJSON() { return { ...this }; } };
+    const { x, y, width, height } = this.isConnected ? inlineBox(this) ?? fills(this) : { x: 0, y: 0, width: 0, height: 0 };
+    return { x, y, left: x, top: y, width, height, right: x + width, bottom: y + height, toJSON() { return { ...this }; } };
   }
-  get clientWidth() { return this.getBoundingClientRect().width; }
-  get clientHeight() { return this.getBoundingClientRect().height; }
-  get offsetWidth() { return this.getBoundingClientRect().width; }
-  get offsetHeight() { return this.getBoundingClientRect().height; }
+  get clientWidth() { return Math.round(this.getBoundingClientRect().width); }
+  get clientHeight() { return Math.round(this.getBoundingClientRect().height); }
+  get offsetWidth() { return Math.round(this.getBoundingClientRect().width); }
+  get offsetHeight() { return Math.round(this.getBoundingClientRect().height); }
   get clientLeft() { return 0; }
   get clientTop() { return 0; }
   get offsetLeft() { return 0; }
