@@ -122,3 +122,68 @@ test('gamepads stay hidden until a button is pressed, then connect in the standa
   assert.deepEqual(events, ['connected 0 standard', 'disconnected 0']);
   assert.equal(first.connected, false);
 });
+
+test('AbortController and AbortSignal behave as in Edge 157', async () => {
+  const { AbortController: Controller, AbortSignal: Signal } = await import('../src/platform/abort.js');
+  const controller = new Controller();
+  const order = [];
+  controller.signal.onabort = event => order.push(`onabort ${event.type} ${event.target === controller.signal}`);
+  controller.signal.addEventListener('abort', () => order.push('listener'));
+  assert.deepEqual([controller.signal.aborted, controller.signal.reason], [false, undefined]);
+  controller.abort();
+  controller.abort('again');
+  const reason = controller.signal.reason;
+  assert.deepEqual([controller.signal.aborted, reason.name, reason.message, reason.code, order], [true, 'AbortError', 'signal is aborted without reason', 20, ['onabort abort true', 'listener']]);
+  assert.throws(() => controller.signal.throwIfAborted(), error => error === reason);
+  assert.equal(Signal.abort('why').reason, 'why');
+  assert.equal(Signal.abort().reason.message, 'signal is aborted without reason');
+  const timeout = Signal.timeout(5);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.deepEqual([timeout.aborted, timeout.reason.name, timeout.reason.message, timeout.reason.code], [true, 'TimeoutError', 'signal timed out', 23]);
+  const a = new Controller();
+  const b = new Controller();
+  const any = Signal.any([a.signal, b.signal]);
+  b.abort('b-reason');
+  assert.deepEqual([any.aborted, any.reason], [true, 'b-reason']);
+  assert.equal(Signal.any([Signal.abort('x')]).reason, 'x');
+  assert.throws(() => new Signal(), { name: 'TypeError', message: "Failed to construct 'AbortSignal': Illegal constructor" });
+  assert.equal(Object.prototype.toString.call(controller.signal), '[object AbortSignal]');
+});
+
+test('fetch rejects with the signal reason, and an abort removes the listener re-added for its callback, as Edge does', async () => {
+  const { AbortController: Controller } = await import('../src/platform/abort.js');
+  globalThis.location = { href: 'file:///C:/game/index.js', origin: 'null' };
+  setHost({ readFile: async () => new Uint8Array([1]), decode: async () => { throw new Error('no'); } });
+  const aborted = new Controller();
+  aborted.abort();
+  await assert.rejects(shimFetch('a.bin', { signal: aborted.signal }), { name: 'AbortError', message: 'signal is aborted without reason' });
+  const late = new Controller();
+  const pending = shimFetch('a.bin', { signal: late.signal });
+  late.abort('late');
+  await assert.rejects(pending, reason => reason === 'late');
+  const target = new (await import('../src/platform/events.js')).EventTarget();
+  const signal = new Controller();
+  const calls = [];
+  const listener = () => calls.push('x');
+  target.addEventListener('ping', listener, { signal: signal.signal });
+  target.removeEventListener('ping', listener);
+  target.addEventListener('ping', listener);
+  signal.abort();
+  target.dispatchEvent(new (await import('../src/platform/events.js')).Event('ping'));
+  assert.deepEqual(calls, [], 'Edge 157 removes it too (probe/abort-probe.json)');
+});
+
+test('copyExternalImageToTexture with flipY takes the source rows from the origin, then flips them, as Edge does', () => {
+  const rows = [10, 20, 30, 40];
+  const pixels = { width: 1, height: 4, data: new Uint8Array(rows.flatMap(v => [v, v, v, 255])) };
+  const read = y => [...externalImageBytes(pixels, { from: { y }, flipY: true, width: 1, height: 2, format: 'rgba8unorm' })].filter((_, i) => i % 4 === 0);
+  assert.deepEqual(read(0), [20, 10]);
+  assert.deepEqual(read(1), [30, 20]);
+});
+
+test('URL percent-encodes paths, queries and fragments with WHATWG sets, as Node does', () => {
+  const base = 'file:///C:/games/folio/index.js';
+  for (const input of ['assets/{name}.png', 'assets/a^b.png', 'assets/naïve.png', 'assets/😀.png', "assets/it's.png", "x.png?a=1&b='2'", 'tex.png#a b`<>', 'a|b.png', 'https://x.com/p{q}?r={s}\'#t{u}']) {
+    assert.equal(new ShimURL(input, base).href, new URL(input, base).href, input);
+  }
+});

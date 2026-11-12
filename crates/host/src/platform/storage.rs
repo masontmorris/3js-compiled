@@ -164,6 +164,20 @@ mod tests {
     }
 
     #[test]
+    fn each_game_gets_its_own_file_that_survives_a_rebuild() {
+        let home = Path::new("C:/Users/player/AppData/Local");
+        let a = default_path(Path::new("C:/games/gameA/dist/index.js"), home);
+        let b = default_path(Path::new("C:/games/gameB/dist/index.js"), home);
+        assert_ne!(a, b, "two games built to dist share no file");
+        assert_eq!(a, default_path(Path::new("C:/games/gameA/dist/index.js"), home));
+        assert_eq!(a, default_path(Path::new("c:\\games\\gameA\\dist\\index.js"), home), "the same entry spelled another way");
+        let name = a.parent().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        assert!(name.starts_with("dist-") && name.len() == "dist-".len() + 16, "{name}");
+        assert!(a.starts_with(home.join("threejsc")));
+        assert_eq!(a.file_name().and_then(|name| name.to_str()), Some("localStorage.json"));
+    }
+
+    #[test]
     fn a_corrupt_file_gives_an_empty_store() -> Result<()> {
         let dir = std::env::temp_dir().join(format!("threejsc-storage-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;
