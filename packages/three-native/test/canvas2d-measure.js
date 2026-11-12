@@ -2,8 +2,8 @@
 // record the fixture, and the host runs them headless. Each case logs one `M <json>` line.
 const FONTS = new URL('../../../examples/canvas2d/fonts/', import.meta.url);
 
-export const MEASURE_FONTS = ['700 64px "Amatic SC"', '700 46px "Amatic SC"', '700 32px Nunito', '400 24px Nunito', '900 18.2857px Nunito', '700 36.5714px Nunito', '10px sans-serif', '16px serif', '700 20px Arial', '13px monospace', '700 40px "Amatic SC", sans-serif', '700 30px "Not A Font"'];
-export const MEASURE_TEXTS = ['Achievements', 'Hey! Watch where you are going!', '00:41:337', '1,234,567', 'Ág', 'fi ffl AV To', '', 'héllo wörld', 'Three.js Journey'];
+export const MEASURE_FONTS = ['700 64px "Amatic SC"', '700 46px "Amatic SC"', '700 32px Nunito', '400 24px Nunito', '900 18.2857px Nunito', '700 36.5714px Nunito', '10px sans-serif', '16px serif', '700 20px Arial', '13px monospace', '700 40px "Amatic SC", sans-serif', '700 30px "Not A Font"', '24px Verdana', '24px "Courier New"', '24px Georgia', '24px Tahoma', '24px Calibri', '24px "Trebuchet MS"', '24px Helvetica', '700 24px Verdana'];
+export const MEASURE_TEXTS = ['Achievements', 'Hey! Watch where you are going!', '00:41:337', '1,234,567', 'Ág', 'fi ffl AV To', '', 'héllo wörld', 'Three.js Journey', 'こんにちは', '你好世界', 'สวัสดี', 'नमस्ते', 'Καλημέρα', 'مرحبا', 'Hi! こんにちは'];
 const ALIGNS = ['start', 'end', 'left', 'right', 'center'];
 const BASELINES = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom'];
 const KEYS = ['width', 'actualBoundingBoxLeft', 'actualBoundingBoxRight', 'actualBoundingBoxAscent', 'actualBoundingBoxDescent', 'fontBoundingBoxAscent', 'fontBoundingBoxDescent', 'hangingBaseline', 'alphabeticBaseline', 'ideographicBaseline'];

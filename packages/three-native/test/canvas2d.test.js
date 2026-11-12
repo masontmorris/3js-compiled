@@ -159,3 +159,18 @@ test('measureText matches Edge for folio\'s fonts, Windows fonts and every align
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font covers, named Windows fonts', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'threejsc-canvas2d-'));
+  try {
+    const run = spawnSync(hostPath, ['--headless', '1', '--entry', fileURLToPath(new URL('./canvas2d-pixels.js', import.meta.url))], { cwd: dir, encoding: 'utf8', timeout: 120_000 });
+    assert.equal(run.status, 0, run.stderr);
+    const lines = readFileSync(join(dir, 'host.log'), 'utf8').split(/\r?\n/).filter(line => line.startsWith('P ')).map(line => JSON.parse(line.slice(2)));
+    assert.equal(lines.length, 25);
+    const failures = lines.filter(line => line.size !== line.edgeSize || Math.abs(line.coverage - 1) > 0.02 || line.mean > 0.01)
+      .map(line => `${line.name}: ${line.size} vs Edge ${line.edgeSize}, coverage ${line.coverage.toFixed(4)} of Edge's, mean difference ${(line.mean * 100).toFixed(3)}%`);
+    assert.deepEqual(failures, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
