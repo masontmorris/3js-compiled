@@ -172,6 +172,8 @@ export const SCENES = {
       context.textBaseline = 'middle';
       context.fillStyle = '#20a0ff';
       context.fillText('Second size', 14, 62);
+      // three keeps a texture's GPU size when its image grows, in Edge too, so a game disposes it to resize it.
+      shown.texture.dispose();
       shown.texture.needsUpdate = true;
       shown.place();
       log(`resized ${element.width}x${element.height} font=${context.font} fill=${context.fillStyle}`);
