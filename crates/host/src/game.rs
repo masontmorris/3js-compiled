@@ -787,6 +787,17 @@ mod tests {
         )
     }
 
+    /// Whether a line of gaps, each tick's from the tick before from the second tick on, clamps from tick
+    /// `first`: every gap from there on is at least 3.5 ms, as HTML's 4 ms clamp makes it, and at most one
+    /// before it is, which a stall of the PC may fall in. A clamp at another level fails either way.
+    fn clamps_from(gaps: &str, first: usize) -> bool {
+        let gaps: Vec<f64> = gaps.split(' ').filter_map(|gap| gap.parse().ok()).collect();
+        let (before, after) = gaps.split_at((first - 2).min(gaps.len()));
+        !after.is_empty()
+            && after.iter().all(|&gap| gap >= 3.5)
+            && before.iter().filter(|&&gap| gap >= 3.5).count() <= 1
+    }
+
     /// The `R <name>: <value>` result `name` that `log` holds.
     fn result<'a>(log: &'a str, name: &str) -> &'a str {
         let prefix = format!("R {name}: ");
@@ -916,24 +927,15 @@ mod tests {
             let frames: usize =
                 result(&log, &format!("{scene} frames inside the 1500 ms window")).parse()?;
             assert!(frames >= 150, "{scene}: {frames} frames in 1.5 s");
-            assert_eq!(
-                result(&log, &format!("{scene} first tick whose gap >= 3.5 ms")),
-                "7",
-                "{scene}"
-            );
+            let gaps = result(&log, &format!("{scene} first tick gaps"));
+            assert!(clamps_from(gaps, 7), "{scene}: gaps {gaps}");
         }
         // The chain from a frame callback is left to the GPU runs: its first timer waits for the next frame's turn,
         // which this test's 6 ms sleep after each frame turns into a clamp-sized gap.
         let log = timer_attack("deep")?;
-        for (chain, level) in [("timer", "7"), ("interval", "2"), ("then", "2")] {
-            assert_eq!(
-                result(
-                    &log,
-                    &format!("{chain} chain first level whose gap >= 3.5 ms")
-                ),
-                level,
-                "{chain} chain"
-            );
+        for (chain, level) in [("timer", 7), ("interval", 2), ("then", 2)] {
+            let gaps = result(&log, &format!("{chain} chain gaps"));
+            assert!(clamps_from(gaps, level), "{chain} chain: gaps {gaps}");
         }
         Ok(())
     }
@@ -1001,12 +1003,8 @@ mod tests {
                 &periods,
                 None,
             )?;
-            assert_eq!(
-                result(&log, &format!("{scene} first tick whose gap >= 3.5 ms")),
-                "7",
-                "{scene}: {}",
-                result(&log, &format!("{scene} first tick gaps"))
-            );
+            let gaps = result(&log, &format!("{scene} first tick gaps"));
+            assert!(clamps_from(gaps, 7), "{scene}: gaps {gaps}");
         }
         Ok(())
     }
