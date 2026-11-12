@@ -1,0 +1,1335 @@
+{
+ "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0",
+ "scenarios": {
+  "context-start": [
+   [
+    "state at construction",
+    "running"
+   ],
+   [
+    "state",
+    "running"
+   ],
+   [
+    "sampleRate is the device rate",
+    true
+   ],
+   [
+    "baseLatency",
+    0.01
+   ],
+   [
+    "latency under 50 ms",
+    true
+   ],
+   [
+    "statechange",
+    "running"
+   ],
+   [
+    "currentTime advances",
+    true
+   ],
+   [
+    "destination",
+    true,
+    2,
+    1,
+    0
+   ],
+   [
+    "state after close",
+    "closed"
+   ]
+  ],
+  "suspend-resume-close": [
+   [
+    "after suspend()",
+    "suspended"
+   ],
+   [
+    "suspend resolved",
+    "suspended",
+    true
+   ],
+   [
+    "statechange",
+    "suspended"
+   ],
+   [
+    "statechange",
+    "suspended"
+   ],
+   [
+    "currentTime holds while suspended",
+    true
+   ],
+   [
+    "suspend again resolved",
+    "suspended"
+   ],
+   [
+    "after resume()",
+    "suspended"
+   ],
+   [
+    "resume resolved",
+    "running"
+   ],
+   [
+    "resume again resolved",
+    "running"
+   ],
+   [
+    "after close()",
+    "closed"
+   ],
+   [
+    "close resolved",
+    "closed"
+   ],
+   [
+    "resume after close",
+    "DOMException",
+    "InvalidStateError",
+    "Cannot resume a closed AudioContext."
+   ],
+   [
+    "suspend after close",
+    "DOMException",
+    "InvalidStateError",
+    "Cannot suspend a closed AudioContext."
+   ],
+   [
+    "close after close",
+    "DOMException",
+    "InvalidStateError",
+    "Cannot close a closed AudioContext."
+   ],
+   [
+    "createGain after close",
+    "ok",
+    1
+   ],
+   [
+    "new context state",
+    "running"
+   ],
+   [
+    "new context running",
+    "running"
+   ]
+  ],
+  "suspend-mid-sound": [
+   [
+    "ended while suspended",
+    0
+   ],
+   [
+    "ended after resume",
+    1
+   ]
+  ],
+  "offline-render": [
+   [
+    "state",
+    "suspended",
+    4410,
+    44100
+   ],
+   [
+    "after startRendering",
+    "running"
+   ],
+   [
+    "statechange",
+    "running"
+   ],
+   [
+    "complete",
+    "OfflineAudioCompletionEvent",
+    4410
+   ],
+   [
+    "resolved",
+    "AudioBuffer",
+    2,
+    4410,
+    44100,
+    0.1
+   ],
+   [
+    "startRendering again",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to execute 'startRendering' on 'OfflineAudioContext': cannot call startRendering on an OfflineAudioContext in a stopped state."
+   ]
+  ],
+  "decode-callbacks": [
+   [
+    "bytes detached",
+    0
+   ],
+   [
+    "success callback",
+    24000,
+    48000
+   ],
+   [
+    "promise resolved",
+    24000
+   ],
+   [
+    "decode a detached buffer",
+    "DOMException",
+    "DataCloneError",
+    "Cannot decode detached ArrayBuffer"
+   ],
+   [
+    "decode garbage",
+    "DOMException",
+    "EncodingError",
+    "Unable to decode audio data"
+   ],
+   [
+    "garbage error callback",
+    "DOMException",
+    "EncodingError"
+   ],
+   [
+    "copy decodes",
+    2
+   ]
+  ],
+  "param-errors": [
+   [
+    "setValueAtTime NaN",
+    "TypeError",
+    "TypeError",
+    "Failed to execute 'setValueAtTime' on 'AudioParam': The provided float value is non-finite."
+   ],
+   [
+    "setValueAtTime negative time",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'setValueAtTime' on 'AudioParam': Time must be a finite non-negative number: -1"
+   ],
+   [
+    "linearRamp Infinity time",
+    "TypeError",
+    "TypeError",
+    "Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided double value is non-finite."
+   ],
+   [
+    "exponentialRamp to 0",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The float target value provided (0) should not be in the range (-1.40130e-45, 1.40130e-45)."
+   ],
+   [
+    "setTarget negative constant",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'setTargetAtTime' on 'AudioParam': Time constant must be a finite non-negative number: -1"
+   ],
+   [
+    "setTarget zero constant",
+    "ok",
+    true
+   ],
+   [
+    "curve of one value",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to execute 'setValueCurveAtTime' on 'AudioParam': The curve length provided (1) is less than the minimum bound (2)."
+   ],
+   [
+    "curve of zero duration",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'setValueCurveAtTime' on 'AudioParam': Duration must be a finite positive number: 0"
+   ],
+   [
+    "curve",
+    "ok",
+    true
+   ],
+   [
+    "event inside curve",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'setValueAtTime' on 'AudioParam': setValueAtTime(0.5, 1.5) overlaps setValueCurveAtTime(..., 1, 1)"
+   ],
+   [
+    "event at curve end",
+    "ok",
+    true
+   ],
+   [
+    "curve over event",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'setValueCurveAtTime' on 'AudioParam': setValueCurveAtTime(..., 1.8, 1) overlaps setValueCurveAtTime(..., 1, 1)"
+   ],
+   [
+    "ramp ending inside curve",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'linearRampToValueAtTime' on 'AudioParam': linearRampToValueAtTime(1, 1.5) overlaps setValueCurveAtTime(..., 1, 1)"
+   ],
+   [
+    "cancel negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'cancelScheduledValues' on 'AudioParam': Time must be a finite non-negative number: -1"
+   ],
+   [
+    "cancelAndHold negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'cancelAndHoldAtTime' on 'AudioParam': Time must be a finite non-negative number: -1"
+   ],
+   [
+    "value Infinity",
+    "TypeError",
+    "TypeError",
+    "Failed to set the 'value' property on 'AudioParam': The provided float value is non-finite."
+   ],
+   [
+    "value string",
+    "ok",
+    0.5
+   ],
+   [
+    "value clamps when read",
+    "ok",
+    [
+     24000,
+     24000
+    ]
+   ],
+   [
+    "defaults",
+    "ok",
+    [
+     1,
+     -3.4028234663852886e+38,
+     3.4028234663852886e+38,
+     "a-rate"
+    ]
+   ],
+   [
+    "automationRate of playbackRate",
+    "ok",
+    "k-rate"
+   ],
+   [
+    "set automationRate of playbackRate",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to set the 'automationRate' property on 'AudioParam': AudioBufferSource.playbackRate.automationRate is fixed and cannot be changed to \"a-rate\""
+   ],
+   [
+    "set automationRate bogus",
+    "ok",
+    "a-rate"
+   ]
+  ],
+  "node-errors": [
+   [
+    "AudioContext sampleRate 1000",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to construct 'AudioContext': The hardware sample rate provided (1000) is outside the range [3000, 768000]."
+   ],
+   [
+    "OfflineAudioContext length 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to construct 'OfflineAudioContext': The number of frames provided (0) is less than the minimum bound (1)."
+   ],
+   [
+    "OfflineAudioContext channels 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to construct 'OfflineAudioContext': The number of channels provided (0) is outside the range [1, 32]."
+   ],
+   [
+    "OfflineAudioContext rate 1000",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to construct 'OfflineAudioContext': The sampleRate provided (1000) is outside the range [3000, 768000]."
+   ],
+   [
+    "createBuffer channels 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'createBuffer' on 'BaseAudioContext': The number of channels provided (0) is outside the range [1, 32]."
+   ],
+   [
+    "createBuffer length 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'createBuffer' on 'BaseAudioContext': The number of frames provided (0) is less than or equal to the minimum bound (0)."
+   ],
+   [
+    "createBuffer rate 1000",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'createBuffer' on 'BaseAudioContext': The sample rate provided (1000) is outside the range [3000, 768000]."
+   ],
+   [
+    "new AudioBuffer",
+    "ok",
+    [
+     10,
+     3,
+     0.00125
+    ]
+   ],
+   [
+    "getChannelData 5",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to execute 'getChannelData' on 'AudioBuffer': channel index (5) exceeds number of channels (2)"
+   ],
+   [
+    "copyToChannel 5",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to execute 'copyToChannel' on 'AudioBuffer': The channelNumber provided (5) is outside the range [0, 1]."
+   ],
+   [
+    "copyFromChannel offset past end",
+    "ok",
+    [
+     7,
+     7,
+     7,
+     7
+    ]
+   ],
+   [
+    "getChannelData is live",
+    "ok",
+    0.25
+   ],
+   [
+    "stop before start",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to execute 'stop' on 'AudioScheduledSourceNode': cannot call stop without calling start first."
+   ],
+   [
+    "start negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'start' on 'AudioBufferSourceNode': The start time provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "start offset negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'start' on 'AudioBufferSourceNode': The offset provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "start duration negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'start' on 'AudioBufferSourceNode': The duration provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "start",
+    "ok",
+    null
+   ],
+   [
+    "start twice",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once."
+   ],
+   [
+    "stop negative",
+    "RangeError",
+    "RangeError",
+    "Failed to execute 'stop' on 'AudioScheduledSourceNode': The stop time provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "buffer set",
+    "ok",
+    true
+   ],
+   [
+    "buffer set again",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to set the 'buffer' property on 'AudioBufferSourceNode': Cannot set buffer to non-null after it has been already been set to a non-null buffer"
+   ],
+   [
+    "buffer set to null",
+    "ok",
+    null
+   ],
+   [
+    "buffer set after null",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to set the 'buffer' property on 'AudioBufferSourceNode': Cannot set buffer to non-null after it has been already been set to a non-null buffer"
+   ],
+   [
+    "buffer set to object",
+    "TypeError",
+    "TypeError",
+    "Failed to set the 'buffer' property on 'AudioBufferSourceNode': Failed to convert value to 'AudioBuffer'."
+   ],
+   [
+    "connect to another context",
+    "DOMException",
+    "InvalidAccessError",
+    "Failed to execute 'connect' on 'AudioNode': cannot connect to an AudioNode belonging to a different audio context."
+   ],
+   [
+    "connect output 1",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to execute 'connect' on 'AudioNode': output index (1) exceeds number of outputs (1)."
+   ],
+   [
+    "connect input 1",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to execute 'connect' on 'AudioNode': input index (1) exceeds number of inputs (1)."
+   ],
+   [
+    "connect returns destination",
+    "ok",
+    true
+   ],
+   [
+    "connect to param",
+    "ok",
+    null
+   ],
+   [
+    "disconnect unconnected",
+    "DOMException",
+    "InvalidAccessError",
+    "Failed to execute 'disconnect' on 'AudioNode': the given destination is not connected."
+   ],
+   [
+    "disconnect output 3",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to execute 'disconnect' on 'AudioNode': The output index provided (3) is outside the range [0, 0]."
+   ],
+   [
+    "disconnect all",
+    "ok",
+    null
+   ],
+   [
+    "disconnect all again",
+    "ok",
+    null
+   ],
+   [
+    "connect a string",
+    "TypeError",
+    "TypeError",
+    "Failed to execute 'connect' on 'AudioNode': Overload resolution failed."
+   ],
+   [
+    "oscillator type custom",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to set the 'type' property on 'OscillatorNode': 'type' cannot be set directly to 'custom'.  Use setPeriodicWave() to create a custom Oscillator type."
+   ],
+   [
+    "oscillator type bogus",
+    "ok",
+    "sine"
+   ],
+   [
+    "oscillator type square",
+    "ok",
+    "square"
+   ],
+   [
+    "new OscillatorNode custom",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to construct 'OscillatorNode': A PeriodicWave must be specified if the type is set to \"custom\""
+   ],
+   [
+    "panner defaults",
+    "ok",
+    [
+     "equalpower",
+     "inverse",
+     1,
+     10000,
+     1,
+     360,
+     360,
+     0,
+     2,
+     "clamped-max"
+    ]
+   ],
+   [
+    "refDistance -1",
+    "RangeError",
+    "RangeError",
+    "Failed to set the 'refDistance' property on 'PannerNode': The refDistance provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "maxDistance 0",
+    "RangeError",
+    "RangeError",
+    "Failed to set the 'maxDistance' property on 'PannerNode': The maxDistance provided (0) is less than or equal to the minimum bound (0)."
+   ],
+   [
+    "rolloffFactor -1",
+    "RangeError",
+    "RangeError",
+    "Failed to set the 'rolloffFactor' property on 'PannerNode': The rolloffFactor provided (-1) is less than the minimum bound (0)."
+   ],
+   [
+    "coneOuterGain 2",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to set the 'coneOuterGain' property on 'PannerNode': The coneOuterGain provided (2) is outside the range [0, 1]."
+   ],
+   [
+    "panner channelCount 3",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCount' property on 'AudioNode': The channelCount provided (3) is outside the range [1, 2]."
+   ],
+   [
+    "panner channelCountMode max",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCountMode' property on 'AudioNode': Panner: 'max' is not allowed"
+   ],
+   [
+    "panningModel bogus",
+    "ok",
+    "equalpower"
+   ],
+   [
+    "setPosition",
+    "ok",
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   [
+    "setOrientation",
+    "ok",
+    [
+     1,
+     0,
+     0
+    ]
+   ],
+   [
+    "listener",
+    "ok",
+    [
+     0,
+     -1,
+     1
+    ]
+   ],
+   [
+    "stereo channelCount 3",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCount' property on 'AudioNode': The channelCount provided (3) is outside the range [1, 2]."
+   ],
+   [
+    "stereo channelCountMode max",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCountMode' property on 'AudioNode': StereoPanner: 'max' is not allowed"
+   ],
+   [
+    "gain channelCount 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCount' property on 'AudioNode': The channel count provided (0) is outside the range [1, 32]."
+   ],
+   [
+    "gain channelCount 33",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to set the 'channelCount' property on 'AudioNode': The channel count provided (33) is outside the range [1, 32]."
+   ],
+   [
+    "gain channelInterpretation bogus",
+    "ok",
+    "speakers"
+   ],
+   [
+    "analyser defaults",
+    "ok",
+    [
+     2048,
+     1024,
+     -100,
+     -30,
+     0.8
+    ]
+   ],
+   [
+    "fftSize 100",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to set the 'fftSize' property on 'AnalyserNode': The value provided (100) is not a power of two."
+   ],
+   [
+    "fftSize 64",
+    "ok",
+    32
+   ],
+   [
+    "minDecibels above max",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to set the 'minDecibels' property on 'AnalyserNode': The minDecibels provided (0) is greater than the maximum bound (-30)."
+   ],
+   [
+    "smoothing 2",
+    "DOMException",
+    "IndexSizeError",
+    "Failed to set the 'smoothingTimeConstant' property on 'AnalyserNode': The smoothing value provided (2) is outside the range [0, 1]."
+   ],
+   [
+    "createDelay 0",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'createDelay' on 'BaseAudioContext': The max delay time provided (0) is outside the range (0, 180)."
+   ],
+   [
+    "createDelay 180",
+    "DOMException",
+    "NotSupportedError",
+    "Failed to execute 'createDelay' on 'BaseAudioContext': The max delay time provided (180) is outside the range (0, 180)."
+   ],
+   [
+    "delay max",
+    "ok",
+    2
+   ],
+   [
+    "biquad type bogus",
+    "ok",
+    "lowpass"
+   ],
+   [
+    "node counts",
+    "ok",
+    [
+     [
+      "GainNode",
+      1,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "OscillatorNode",
+      0,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "PannerNode",
+      1,
+      1,
+      2,
+      "clamped-max",
+      "speakers"
+     ],
+     [
+      "StereoPannerNode",
+      1,
+      1,
+      2,
+      "clamped-max",
+      "speakers"
+     ],
+     [
+      "AnalyserNode",
+      1,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "AudioBufferSourceNode",
+      0,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "BiquadFilterNode",
+      1,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "DelayNode",
+      1,
+      1,
+      2,
+      "max",
+      "speakers"
+     ],
+     [
+      "ConstantSourceNode",
+      0,
+      1,
+      2,
+      "max",
+      "speakers"
+     ]
+    ]
+   ]
+  ],
+  "unsupported-methods": [
+   [
+    "createMediaElementSource",
+    "ok",
+    "MediaElementAudioSourceNode"
+   ],
+   [
+    "createMediaStreamSource",
+    "TypeError",
+    "TypeError",
+    "Failed to execute 'createMediaStreamSource' on 'AudioContext': parameter 1 is not of type 'MediaStream'."
+   ],
+   [
+    "createScriptProcessor",
+    "ok",
+    "ScriptProcessorNode"
+   ],
+   [
+    "audioWorklet.addModule",
+    "resolved",
+    null
+   ],
+   [
+    "Audio.play",
+    "resolved",
+    "still pending after 1 s"
+   ],
+   [
+    "still playing",
+    "running",
+    true
+   ]
+  ],
+  "audio-element": [
+   [
+    "canPlayType",
+    [
+     "probably",
+     "probably",
+     "probably",
+     "probably",
+     "probably",
+     "maybe",
+     "probably",
+     "",
+     "maybe",
+     "",
+     "",
+     "",
+     "",
+     "maybe",
+     "probably",
+     "",
+     "",
+     "probably",
+     "maybe",
+     ""
+    ]
+   ],
+   [
+    "element",
+    "HTMLAudioElement",
+    "AUDIO",
+    true,
+    true,
+    1,
+    false,
+    0
+   ],
+   [
+    "document.createElement",
+    "HTMLAudioElement"
+   ]
+  ],
+  "xhr": [
+   [
+    "arraybuffer",
+    [
+     [
+      "readyState",
+      0
+     ],
+     [
+      "readystatechange",
+      1
+     ],
+     [
+      "after open",
+      1
+     ],
+     [
+      "loadstart",
+      1,
+      false,
+      false
+     ],
+     [
+      "after send",
+      1
+     ],
+     [
+      "readystatechange",
+      2
+     ],
+     [
+      "readystatechange",
+      3
+     ],
+     [
+      "progress",
+      3,
+      true,
+      true
+     ],
+     [
+      "readystatechange",
+      4
+     ],
+     [
+      "load",
+      4,
+      true,
+      true
+     ],
+     [
+      "loadend",
+      4,
+      true,
+      true
+     ],
+     [
+      "done",
+      200,
+      "OK",
+      "ArrayBuffer",
+      true
+     ]
+    ]
+   ],
+   [
+    "json",
+    [
+     [
+      "readyState",
+      0
+     ],
+     [
+      "readystatechange",
+      1
+     ],
+     [
+      "after open",
+      1
+     ],
+     [
+      "loadstart",
+      1,
+      false,
+      false
+     ],
+     [
+      "after send",
+      1
+     ],
+     [
+      "readystatechange",
+      2
+     ],
+     [
+      "readystatechange",
+      3
+     ],
+     [
+      "progress",
+      3,
+      true,
+      true
+     ],
+     [
+      "readystatechange",
+      4
+     ],
+     [
+      "load",
+      4,
+      true,
+      true
+     ],
+     [
+      "loadend",
+      4,
+      true,
+      true
+     ],
+     [
+      "done",
+      200,
+      "OK",
+      "object",
+      [
+       "name",
+       "rate",
+       "tags"
+      ]
+     ]
+    ]
+   ],
+   [
+    "text",
+    [
+     [
+      "readyState",
+      0
+     ],
+     [
+      "readystatechange",
+      1
+     ],
+     [
+      "after open",
+      1
+     ],
+     [
+      "loadstart",
+      1,
+      false,
+      false
+     ],
+     [
+      "after send",
+      1
+     ],
+     [
+      "readystatechange",
+      2
+     ],
+     [
+      "readystatechange",
+      3
+     ],
+     [
+      "progress",
+      3,
+      true,
+      true
+     ],
+     [
+      "readystatechange",
+      4
+     ],
+     [
+      "load",
+      4,
+      true,
+      true
+     ],
+     [
+      "loadend",
+      4,
+      true,
+      true
+     ],
+     [
+      "done",
+      200,
+      "OK",
+      "string",
+      true
+     ]
+    ]
+   ],
+   [
+    "missing",
+    [
+     [
+      "readyState",
+      0
+     ],
+     [
+      "readystatechange",
+      1
+     ],
+     [
+      "after open",
+      1
+     ],
+     [
+      "loadstart",
+      1,
+      false,
+      false
+     ],
+     [
+      "after send",
+      1
+     ],
+     [
+      "readystatechange",
+      2
+     ],
+     [
+      "readystatechange",
+      4
+     ],
+     [
+      "load",
+      4,
+      false,
+      false
+     ],
+     [
+      "loadend",
+      4,
+      false,
+      false
+     ],
+     [
+      "done",
+      404,
+      "Not Found",
+      "ArrayBuffer",
+      false
+     ]
+    ]
+   ],
+   [
+    "send before open",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to execute 'send' on 'XMLHttpRequest': The object's state must be OPENED."
+   ],
+   [
+    "responseText of arraybuffer",
+    "DOMException",
+    "InvalidStateError",
+    "Failed to read the 'responseText' property from 'XMLHttpRequest': The value is only accessible if the object's 'responseType' is '' or 'text' (was 'arraybuffer')."
+   ],
+   [
+    "constants",
+    "ok",
+    [
+     0,
+     1,
+     2,
+     3,
+     4
+    ]
+   ],
+   [
+    "abort",
+    [
+     [
+      "readystatechange",
+      1
+     ],
+     [
+      "readystatechange",
+      4
+     ],
+     [
+      "abort",
+      4
+     ],
+     [
+      "loadend",
+      4
+     ],
+     [
+      "after abort",
+      0,
+      0
+     ]
+    ]
+   ]
+  ],
+  "statechange-timing": [
+   [
+    "order",
+    [
+     [
+      "statechange",
+      "running"
+     ],
+     [
+      "settled",
+      "running"
+     ],
+     [
+      "suspend called",
+      "suspended"
+     ],
+     [
+      "suspend resolved",
+      "suspended"
+     ],
+     [
+      "statechange",
+      "suspended"
+     ],
+     [
+      "resume called",
+      "suspended"
+     ],
+     [
+      "resume resolved",
+      "running"
+     ],
+     [
+      "statechange",
+      "running"
+     ],
+     [
+      "suspend then resume called",
+      "suspended"
+     ],
+     [
+      "suspend 2 resolved",
+      "suspended"
+     ],
+     [
+      "statechange",
+      "suspended"
+     ],
+     [
+      "resume 2 resolved",
+      "running"
+     ],
+     [
+      "statechange",
+      "running"
+     ],
+     [
+      "close called",
+      "closed"
+     ],
+     [
+      "close resolved",
+      "closed"
+     ],
+     [
+      "statechange",
+      "closed"
+     ]
+    ]
+   ],
+   [
+    "took under 3 s",
+    true
+   ]
+  ],
+  "statechange-races": [
+   [
+    "order",
+    [
+     [
+      "close at once",
+      "closed",
+      "closed"
+     ],
+     [
+      "close at once",
+      "statechange",
+      "closed"
+     ],
+     [
+      "close at once",
+      "statechange",
+      "closed"
+     ],
+     [
+      "resume then close",
+      "statechange",
+      "running"
+     ],
+     [
+      "resume then close",
+      "statechange",
+      "suspended"
+     ],
+     [
+      "resume then close",
+      "resumed",
+      "running"
+     ],
+     [
+      "resume then close",
+      "closed",
+      "closed"
+     ],
+     [
+      "resume then close",
+      "statechange",
+      "closed"
+     ],
+     [
+      "resume then close",
+      "statechange",
+      "closed"
+     ],
+     [
+      "suspend at once",
+      "suspended",
+      "suspended"
+     ],
+     [
+      "suspend at once",
+      "statechange",
+      "suspended"
+     ],
+     [
+      "suspend at once",
+      "statechange",
+      "suspended"
+     ],
+     [
+      "suspend at once",
+      "statechange",
+      "closed"
+     ]
+    ]
+   ]
+  ]
+ }
+}
