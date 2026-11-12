@@ -57,3 +57,30 @@ fn map_buffer_is_the_last_opcode() {
     frame[last..last + 2].copy_from_slice(&57u16.to_le_bytes());
     assert_eq!(decode(&frame), Err(DecodeError::Opcode));
 }
+
+// F1's G8: a device request names WebGPU features, and the executor grants exactly the ones it can parse and the
+// adapter has. The adapter therefore reports only those, so texture-formats-tier1 and tier2, which wgpu 30 has no
+// name for, and a feature the adapter lacks, such as clip-distances on D3D12 here, are never offered.
+#[test]
+fn the_adapter_offers_only_the_webgpu_features_a_device_can_be_given() {
+    let adapter = wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::SHADER_F16 | wgpu::Features::DEPTH_CLIP_CONTROL;
+    assert_eq!(
+        threejsc_gpu::webgpu_features(adapter),
+        vec![
+            "core-features-and-limits",
+            "depth-clip-control",
+            "timestamp-query",
+            "shader-f16"
+        ]
+    );
+    let everything = threejsc_gpu::webgpu_features(wgpu::Features::all());
+    assert!(!everything.contains(&"texture-formats-tier1"));
+    assert!(!everything.contains(&"texture-formats-tier2"));
+    for name in everything.iter().filter(|name| **name != "core-features-and-limits") {
+        assert!(name.parse::<wgpu::Features>().is_ok(), "{name} parses");
+    }
+    assert!(
+        !threejsc_gpu::webgpu_features(wgpu::Features::empty()).contains(&"clip-distances"),
+        "an adapter without a feature does not offer it"
+    );
+}
