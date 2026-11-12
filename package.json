@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "howler": "2.2.4",
     "playwright-core": "1.65.0",
     "pngjs": "7.0.0"
   }

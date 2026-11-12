@@ -10,6 +10,8 @@ import { EVENT_HANDLERS } from './dom-methods.js';
 import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
 import { MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry, updateIntersections } from './observers.js';
+import * as audio from './audio.js';
+import { XMLHttpRequest, ProgressEvent } from './xhr.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -50,6 +52,43 @@ setHost({
   },
 });
 
+const floats = bytes => new Float32Array(bytes.slice().buffer);
+const view = array => new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+let endedPump = null;
+audio.setAudioHost({
+  context: spec => {
+    // Ended sources arrive over one long-lived op, started with the first context.
+    endedPump ??= (async () => {
+      for (;;) audio.sourceEnded(await ops.op_audio_ended());
+    })();
+    return ops.op_audio_context(spec);
+  },
+  currentTime: id => ops.op_audio_current_time(id),
+  outputLatency: id => ops.op_audio_output_latency(id),
+  destination: id => ops.op_audio_destination(id),
+  listener: id => ops.op_audio_listener(id),
+  maxChannelCount: id => ops.op_audio_max_channel_count(id),
+  suspend: id => ops.op_audio_lifecycle(id, 'suspend'),
+  resume: id => ops.op_audio_lifecycle(id, 'resume'),
+  close: id => ops.op_audio_lifecycle(id, 'close'),
+  render: async id => (await ops.op_audio_render(id)).map(floats),
+  node: (context, kind, options) => ops.op_audio_node(context, kind, options),
+  set: (id, prop, value) => ops.op_audio_set(id, prop, value),
+  param: (id, name, method, a, b, c) => ops.op_audio_param(id, name, method, a, b, c),
+  curve: (id, name, values, start, duration) => ops.op_audio_curve(id, name, view(values), start, duration),
+  paramValue: (id, name) => ops.op_audio_param_value(id, name),
+  connect: (from, to, output, input) => ops.op_audio_connect(from, to, output, input),
+  connectParam: (from, to, name, output) => ops.op_audio_connect_param(from, to, name, output),
+  disconnect: (from, to, output, input) => ops.op_audio_disconnect(from, to, output, input),
+  disconnectParam: (from, to, name, output) => ops.op_audio_disconnect_param(from, to, name, output),
+  start: (id, when, offset, duration) => ops.op_audio_start(id, when, offset, duration),
+  stop: (id, when) => ops.op_audio_stop(id, when),
+  buffer: (channels, rate) => ops.op_audio_buffer(channels.map(view), rate),
+  bufferData: (id, channel) => floats(ops.op_audio_buffer_data(id, channel)),
+  sourceBuffer: (node, buffer) => ops.op_audio_source_buffer(node, buffer),
+  decode: (bytes, rate) => ops.op_audio_decode(new Uint8Array(bytes), rate),
+  analyser: (id, kind, array) => ops.op_audio_analyser(id, kind, view(array)),
+});
 // Media queries over the window's size and pixel ratio, with Edge's answers for a desktop with a mouse.
 const evaluateMedia = query => evaluate(query, { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio });
 // A list's `matches` reads the window as it is. A list with a change listener is watched, which keeps it alive as a
@@ -142,11 +181,20 @@ Object.assign(window, {
   MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
   AbortController, AbortSignal, DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
+  XMLHttpRequest, ProgressEvent,
+  AudioContext: audio.AudioContext, OfflineAudioContext: audio.OfflineAudioContext, BaseAudioContext: audio.BaseAudioContext,
+  AudioNode: audio.AudioNode, AudioParam: audio.AudioParam, AudioBuffer: audio.AudioBuffer, AudioListener: audio.AudioListener,
+  AudioDestinationNode: audio.AudioDestinationNode, AudioScheduledSourceNode: audio.AudioScheduledSourceNode,
+  GainNode: audio.GainNode, AudioBufferSourceNode: audio.AudioBufferSourceNode, OscillatorNode: audio.OscillatorNode,
+  ConstantSourceNode: audio.ConstantSourceNode, StereoPannerNode: audio.StereoPannerNode, PannerNode: audio.PannerNode,
+  AnalyserNode: audio.AnalyserNode, BiquadFilterNode: audio.BiquadFilterNode, DelayNode: audio.DelayNode,
+  OfflineAudioCompletionEvent: audio.OfflineAudioCompletionEvent, HTMLMediaElement: audio.HTMLMediaElement, HTMLAudioElement: audio.HTMLAudioElement,
   atob, btoa, fetch, createImageBitmap, document, navigator, screen, localStorage, QuotaExceededError, Crypto,
   crypto: new Crypto(bytes => ops.op_random_fill(bytes)),
   sessionStorage: new Storage(),
   location: locationObject,
   Image: imageConstructor(document),
+  Audio: audio.audioConstructor(document),
   matchMedia: query => new MediaQueryList(query),
   getComputedStyle: element => element.style,
   devicePixelRatio: config.ratio,
