@@ -1,0 +1,16 @@
+[package]
+name = "canvas2d-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1"
+harfrust = "=0.12.0"
+skrifa = "=0.44.0"
+png = "0.18"
+serde_json = "1"
+tiny-skia = "=0.11.4"
+vello_cpu = { version = "=0.2.0", default-features = false, features = ["std", "text", "u8_pipeline"] }
