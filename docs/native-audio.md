@@ -34,7 +34,25 @@ Nothing opens an audio device until a page creates an `AudioContext`. Each conte
 - With no `--audio-device`, the host plays to the default output and follows it: a thread checks the default device every 200 ms and moves each context to a new default.
 - `--audio-device <name>` plays to the output with that name, as Windows lists it, such as `Speakers (Steam Streaming Speakers)`. A name that matches no output fails the `AudioContext` constructor and logs the outputs. The host never falls back to another device. `none` renders with no device at all, which the host's tests use.
 - `--audio-out <file.wav>` writes what each context hands the device, as 32-bit float, one file per context: `file.wav` for the first, `file-2.wav` for the second, and so on, since each context is its own device stream.
-- `audio.csv` in the working directory has one row per 128-frame render quantum: the context, the device callback, its first context frame and the WAV frame it lands on, the quantum's render time, the callback's render time and its budget, the time since the previous callback, and `underrun`. A callback underruns when it took longer than the audio it rendered lasts, or when it started more than twice its own length after the previous one.
+- `audio.csv` in the working directory has one row per 128-frame render quantum: the context, the device callback, its first context frame and the WAV frame it lands on, the quantum's render time, the callback's render time and its budget, the time since the previous callback, `late` and `underrun`. A quantum underruns when it took longer to render than the 2.67 ms it lasts at 48 kHz. A callback is late when it started more than twice the previous callback's length after it; the device's queued audio covers a late callback, so lateness is information, and whether the device ran dry shows in a loopback recording of it.
+
+### Latency
+
+The rule is lane 5's: once the context runs steadily, `baseLatency + outputLatency` on the lane's device is at most 50 ms, or Edge's lowest steady reading on the same device in the same session when that is higher. `tools/audio-parity/edge-latency.mjs` takes Edge's reading in headless Edge, muted, with the device chosen by `sinkId`. `baseLatency` is the device period and `outputLatency` is what WASAPI holds queued plus the device's own latency, so both depend on the device more than on the engine.
+
+| Run | Device | Host at start | Host steady | Edge at start | Edge steady | Limit |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lane 5 at 0b20cfd | Speakers (Steam Streaming Speakers) | 0.051 s | 0.044 s | 0.010 s | 0.052, 0.063, 0.071 s | 0.052 s |
+| Probe, Edge only | Edge's default output | | | 0.010 s | 0.050 s | |
+
+Edge reports an `outputLatency` of 0 until its device reports one, so its reading at start is `baseLatency` alone. The `context-start` scenario's "latency under 50 ms" row reads at startup, on different devices, so it is information only.
+
+## The game thread
+
+A busy game changes its graph every frame: Howler and three.js move panners and set gains through `AudioParam`, and read `currentTime` to time them. Two things keep that off the game thread's budget, without changing what the page sees:
+
+- `platform/index.js` queues `AudioParam` automation, property sets, connections and source starts and stops, in order, and sends them to the engine in one `op_audio_batch` call when the task turn's promise jobs run, which is before the frame ends, or before any other audio call, so each call sees the changes made before it. `audio_changes_made_in_a_frame_reach_the_engine_in_one_call_before_it_ends` in `crates/host/src/game.rs` checks both.
+- An online context's `currentTime` is the frame count the render thread publishes, in render quanta, to a `SharedArrayBuffer` the context's page holds, as each render quantum begins. Reading it is an `Atomics.load`, not a call into the engine, and it advances by render quantum, as Chrome's does. `Graph::online` writes the count the engine has already reached before the observer goes on, so a read in the same task as the constructor is the engine's time too. `audio_current_time_is_the_engines_and_advances_by_render_quantum` checks it against the engine's own value.
 
 ## HRTF
 
@@ -54,10 +72,14 @@ The responses come from IRCAM's LISTEN HRTF database, measured by IRCAM's Room A
 6. `baseLatency` is the device period, the shortest callback, as Chromium reports it.
 7. HRTF directions mapped onto the HRIR sphere's axes. The engine had swapped two, so horizontal sources were looked up on the sphere's vertical circle.
 8. `set_hrtf_responses()` and the port of Chromium's HRTF panner.
+9. `RenderObserver::frame()`, which sees the frame count as each render quantum begins, so the host can publish `currentTime`.
+10. Leave the built-in HRTF database to the first panner that needs it, so making a context no longer loads a set the host never uses.
 
 ## Checks
 
 - `cargo test -p threejsc-audio --test offline` renders every reference graph and decode case in `crates/audio/tests/graphs.json` with the engine and compares it with Edge's render. `modal run tools/modal/lanes.py::audio_offline` runs it on Linux.
 - `npm test -w packages/three-native` runs `test/audio.test.js`, which plays `tools/audio-parity/scenarios.mjs` against the shims with a fake engine and compares each log with Edge's in `tools/audio-parity/scenarios.edge.json`.
 - `node tools/audio-parity/edge.mjs <dir>` renders the reference graphs in headless Edge, muted. `node tools/audio-parity/edge-scenarios.mjs` records Edge's scenario logs.
-- `node tools/audio-parity/host.mjs graphs <edge dir> <out>` and `host.mjs scenarios <out>` run the same graphs and scenarios in the host, under the GPU lease.
+- `node tools/audio-parity/host.mjs graphs <edge dir> <out>` and `host.mjs scenarios <out>` run the same graphs and scenarios in the host, under the GPU lease. [native-audio-scenarios.md](native-audio-scenarios.md) is the scenario table, row by row.
+- `node tools/audio-parity/gaps.mjs <expected.wav> <loopback.wav>` finds where a loopback recording of a virtual device leaves what the engine handed it: inserted silence, skipped frames, or a stretch that matches nothing. A virtual device runs on the engine's clock, so the two agree sample for sample apart from one lag and the endpoint volume. Lane 5 and every audio-on perf run check their recordings with it.
+- `node tools/audio-parity/perf.mjs <out>` runs `examples/audio/stress.js`, 32 HRTF voices of seeded noise changed every frame, with audio on and off, under the GPU lease and `quiet_run.py`.
