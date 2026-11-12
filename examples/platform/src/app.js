@@ -41,6 +41,12 @@ const logged = ['keydown', 'keypress', 'keyup', 'pointerover', 'pointerenter', '
   'gamepadconnected', 'gamepaddisconnected'];
 for (const type of logged) addEventListener(type, event => console.log(describe(event)), { capture: true });
 addEventListener('contextmenu', event => event.preventDefault());
+// A wheel listener on an element is not passive, so wheel events become cancelable; Shift+wheel is canceled.
+canvas.addEventListener('wheel', event => { if (event.shiftKey) event.preventDefault(); }, { passive: false });
+canvas.addEventListener('wheel', event => console.log(`E f=${frame} wheel-canceled ${event.defaultPrevented}`));
+const wide = matchMedia('(min-width: 1100px)');
+console.log(`E f=${frame} media (min-width: 1100px) ${wide.matches}`);
+wide.addEventListener('change', event => console.log(`E f=${frame} media-change ${event.media} ${event.matches}`));
 addEventListener('resize', () => console.log(`E f=${frame} resize-state innerWidth=${innerWidth} innerHeight=${innerHeight} devicePixelRatio=${devicePixelRatio}`));
 canvas.addEventListener('pointerdown', event => { if (event.button === 2) canvas.setPointerCapture(event.pointerId); });
 // KeyF focuses a text field and KeyG blurs it, so focus moves the same way in Edge and in the host.
@@ -115,8 +121,11 @@ if (scene === 'gltf') {
 
 if (scene === 'storage') {
   const runs = Number(localStorage.getItem('e5-runs') ?? 0) + 1;
+  const big = localStorage.getItem('e5-big');
+  console.log(`E storage runs=${runs} keys=${localStorage.length} big=${big?.length ?? 0} text=${localStorage.getItem('e5-text')}`);
   localStorage.setItem('e5-runs', String(runs));
-  console.log(`E storage runs=${runs} keys=${localStorage.length}`);
+  localStorage.setItem('e5-big', 'x'.repeat(1 << 20));
+  localStorage.setItem('e5-text', 'héllo, 世界 🚗');
   world.background = new THREE.Color(runs > 1 ? 0x2f8f3a : 0x8f2f2f);
 }
 
