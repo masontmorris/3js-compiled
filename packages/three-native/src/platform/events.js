@@ -167,11 +167,31 @@ function invoke(node, event, phase) {
     } catch (error) {
       globalThis.reportError?.(error);
     }
+    if (depth === 1 && hostDispatch) checkpoint?.();
     state.passive = false;
     if (state.stoppedNow) break;
   }
 }
+// The microtask checkpoint HTML performs after each listener the user agent calls, which the platform sets.
+let checkpoint = null;
+export function setCheckpoint(callback) { checkpoint = callback; }
+// How deep dispatches nest, and whether the outermost one is the user agent's rather than a script's.
+let depth = 0;
+let hostDispatch = false;
+let host = false;
+// Runs `callback` as the user agent: each listener a dispatch it starts calls is followed by a checkpoint, while a
+// dispatch a listener starts from script is not.
+export function asHost(callback) {
+  const saved = host;
+  host = true;
+  try { return callback(); } finally { host = saved; }
+}
 function dispatch(target, event) {
+  if (depth === 0) hostDispatch = host;
+  depth++;
+  try { return dispatchAt(target, event); } finally { depth--; }
+}
+function dispatchAt(target, event) {
   const state = event[STATE];
   state.target = target;
   state.path = path(target);
@@ -464,6 +484,12 @@ export class InputRouter {
       }
     }
   }
+}
+
+// Every input fact is the user agent's dispatch, so its listeners each end with a promise job checkpoint.
+for (const name of ['key', 'pointer', 'leave', 'wheel', 'focus']) {
+  const handle = InputRouter.prototype[name];
+  InputRouter.prototype[name] = function (...args) { return asHost(() => handle.apply(this, args)); };
 }
 
 // Legacy wheel deltas. Edge gives an input wheel event one tick of 120 against each axis it scrolls, and a
