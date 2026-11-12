@@ -21,7 +21,9 @@ fn workdir(name: &str) -> PathBuf {
     dir
 }
 
-/// Runs the host in `dir` and fails the test if it does not exit within a minute.
+/// Runs the host in `dir` and fails the test if it does not exit within a minute, or five in a debug
+/// build, which encodes the frames it records as PNGs several times slower: the canvas-size test's
+/// 370 frames take 18 s in release and over a minute in debug.
 fn host(
     dir: &Path,
     entry: &Path,
@@ -37,7 +39,8 @@ fn host(
         .args(args)
         .spawn()
         .unwrap();
-    let status = wait(&mut child, Duration::from_secs(60));
+    let limit = if cfg!(debug_assertions) { 300 } else { 60 };
+    let status = wait(&mut child, Duration::from_secs(limit));
     (
         status,
         std::fs::read_to_string(dir.join("host.log")).unwrap_or_default(),
