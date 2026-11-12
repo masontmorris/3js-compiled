@@ -2,6 +2,8 @@
 // phases, and event handler attributes. Listener state lives under symbols, so the window, which no constructor
 // makes, can be an EventTarget too.
 const LISTENERS = Symbol('listeners');
+// A mouse event's exact pointer position, from which its offset is rounded.
+const EXACT = Symbol('exact position');
 const STATE = Symbol('event state');
 
 export class Event {
@@ -70,18 +72,22 @@ export class MouseEvent extends UIEvent {
   constructor(type, init = {}) {
     super(type, init);
     assign(this, init, { screenX: 0, screenY: 0, clientX: 0, clientY: 0, button: 0, buttons: 0, relatedTarget: null, movementX: 0, movementY: 0, ...MODIFIERS });
+    if (init[EXACT]) this[EXACT] = init[EXACT];
   }
   get pageX() { return this.clientX; }
   get pageY() { return this.clientY; }
   get x() { return this.clientX; }
   get y() { return this.clientY; }
-  get offsetX() { return this.clientX - (this.target?.getBoundingClientRect?.().left ?? 0); }
-  get offsetY() { return this.clientY - (this.target?.getBoundingClientRect?.().top ?? 0); }
+  // Edge gives a mouse event whole-pixel client coordinates but rounds its offset from the pointer's exact position.
+  get offsetX() { return Math.round((this[EXACT]?.[0] ?? this.clientX) - (this.target?.getBoundingClientRect?.().left ?? 0)); }
+  get offsetY() { return Math.round((this[EXACT]?.[1] ?? this.clientY) - (this.target?.getBoundingClientRect?.().top ?? 0)); }
   get layerX() { return this.offsetX; }
   get layerY() { return this.offsetY; }
   getModifierState(key) { return KeyboardEvent.prototype.getModifierState.call(this, key); }
 }
 export class PointerEvent extends MouseEvent {
+  get offsetX() { return this.clientX - (this.target?.getBoundingClientRect?.().left ?? 0); }
+  get offsetY() { return this.clientY - (this.target?.getBoundingClientRect?.().top ?? 0); }
   constructor(type, init = {}) {
     super(type, init);
     assign(this, init, { pointerId: 0, width: 1, height: 1, pressure: 0, tangentialPressure: 0, tiltX: 0, tiltY: 0, twist: 0, altitudeAngle: Math.PI / 2, azimuthAngle: 0, pointerType: '', isPrimary: false });
@@ -364,7 +370,7 @@ export class InputRouter {
   }
   // A compatibility mouse event's init from its pointer event's. Edge gives mouse events whole-pixel coordinates.
   mouseInit(init, fields) {
-    const mouse = { ...init, clientX: Math.floor(init.clientX), clientY: Math.floor(init.clientY), screenX: Math.floor(init.screenX), screenY: Math.floor(init.screenY), ...fields };
+    const mouse = { ...init, clientX: Math.floor(init.clientX), clientY: Math.floor(init.clientY), screenX: Math.floor(init.screenX), screenY: Math.floor(init.screenY), [EXACT]: [init.clientX, init.clientY], ...fields };
     for (const key of Object.keys(POINTER)) delete mouse[key];
     delete mouse.pressure;
     return mouse;
@@ -396,8 +402,10 @@ export class InputRouter {
   }
   pointer(fact) {
     const modifiers = this.modifiers(fact);
-    const movementX = this.hover ? fact.clientX - this.x : 0;
-    const movementY = this.hover ? fact.clientY - this.y : 0;
+    // Edge's movement is whole pixels between moves, and zero on a press or release.
+    const moving = fact.type === 'pointermove' && this.hover;
+    const movementX = moving ? Math.floor(fact.clientX) - Math.floor(this.x) : 0;
+    const movementY = moving ? Math.floor(fact.clientY) - Math.floor(this.y) : 0;
     this.x = fact.clientX;
     this.y = fact.clientY;
     const hit = this.hit();
@@ -436,11 +444,11 @@ export class InputRouter {
       this.pressed.delete(fact.button);
       const common = downTarget?.contains?.(target) ? downTarget : target.contains?.(downTarget) ? target : null;
       if (common && clicked) {
-        const click = { ...init, button: fact.button, detail, pressure: 0 };
+        const click = { ...init, button: fact.button, detail, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 };
         this.fire(common, PointerEvent, fact.button === 0 ? 'click' : 'auxclick', click);
         if (fact.button === 0 && detail === 2) this.fire(common, MouseEvent, 'dblclick', mouse);
       }
-      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0, pressure: 0 });
+      if (fact.button === 2) this.fire(target, PointerEvent, 'contextmenu', { ...init, button: 2, detail: 0, pressure: 0, isPrimary: false, movementX: 0, movementY: 0 });
       if (last) {
         this.lastPressed = undefined;
         this.suppressMouse = false;
