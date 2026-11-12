@@ -10,7 +10,7 @@ if (pally) faces.push(...[['Pally-Regular.ttf', '400'], ['Pally-Medium.ttf', '50
 for (const face of faces) document.fonts.add(await face.load());
 for (const [name, scene] of Object.entries(SCENES)) {
   const shown = [];
-  const update = await scene({ assets: new URL('../../examples/platform/assets/', import.meta.url), show: (canvas, x, y) => { shown.push(`${canvas.width}x${canvas.height}@${x},${y}`); return { texture: {}, place() {} }; }, log: line => console.log(`S ${name} ${line}`) });
+  const update = await scene({ assets: new URL('../../examples/platform/assets/', import.meta.url), show: (canvas, x, y) => { shown.push(`${canvas.width}x${canvas.height}@${x},${y}`); return { texture: { dispose() {} }, place() {} }; }, log: line => console.log(`S ${name} ${line}`) });
   for (let frame = 0; frame < 60; frame++) update?.();
   console.log(`S ${name} shown ${shown.join(' ')}`);
 }
