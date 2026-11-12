@@ -298,6 +298,41 @@ fn shown_counter(shown: &image::RgbaImage) -> Option<u32> {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn with_vsync_off_frames_are_not_paced_to_the_display() {
+    // With vsync off the swap chain presents at once, so an acquire that waits does so for the
+    // GPU, not for a display refresh. 881734c took such waits for refreshes and paced frames to
+    // the display: 169 fps on a 169 Hz display, where 9638647 draws the 2,000-mesh scene at
+    // 1,720 (C:\3jsc\swarm\e3-r18\kit\out\runs\perf). The canvas-size page draws every frame and
+    // resizes its canvas every 10 frames.
+    let dir = workdir("vsync-off");
+    let steps = serde_json::json!([{"type": "wait", "frames": 600}, {"type": "close"}]);
+    let (status, log) = host(&dir, &bundle("canvas-size"), &steps, &["--vsync", "off"]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let display: f64 = log
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("display interval ")?
+                .strip_suffix(" ms")?
+                .parse()
+                .ok()
+        })
+        .unwrap_or_else(|| panic!("no display interval in the log\n{log}"));
+    let frames = std::fs::read_to_string(dir.join("frames.csv")).unwrap();
+    let mut intervals: Vec<f64> = frames
+        .lines()
+        .skip(51)
+        .filter_map(|line| line.split(',').nth(2)?.parse().ok())
+        .collect();
+    intervals.sort_by(f64::total_cmp);
+    let median = intervals[intervals.len() / 2];
+    assert!(
+        median < 0.5 * display,
+        "frames {median} ms apart with vsync off, on a display {display} ms apart"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn the_window_shows_each_frame_scaled_from_the_canvas_size() {
     let dir = workdir("canvas-size");
     let steps = serde_json::json!([
