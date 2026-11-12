@@ -28,8 +28,9 @@ export function makeBuffer(ctx, { channels, length, sampleRate, signal: name }) 
   return buffer;
 }
 
-export function build(ctx, ops) {
-  const items = { out: ctx.destination };
+// `out` is the context's destination unless `out` names another node.
+export function build(ctx, ops, out = ctx.destination) {
+  const items = { out };
   for (const [op, id, ...args] of ops) {
     if (op === 'buffer') items[id] = makeBuffer(ctx, args[0]);
     else if (op === 'node') {
@@ -49,6 +50,21 @@ export function build(ctx, ops) {
     else throw new Error(`unknown op ${op}`);
   }
   return items;
+}
+
+const TIME_ARG = { setValueAtTime: 1, linearRampToValueAtTime: 1, exponentialRampToValueAtTime: 1, setTargetAtTime: 1, setValueCurveAtTime: 1, cancelScheduledValues: 0, cancelAndHoldAtTime: 0 };
+
+// The same calls with every time moved `offset` seconds later, to play a graph in a running context.
+export function shiftOps(ops, offset) {
+  return ops.map(([op, id, ...args]) => {
+    if (op === 'param' && args[1] in TIME_ARG) {
+      const shifted = [...args];
+      shifted[2 + TIME_ARG[args[1]]] += offset;
+      return [op, id, ...shifted];
+    }
+    if (op === 'start' || op === 'stop') return [op, id, (args[0] ?? 0) + offset, ...args.slice(1)];
+    return [op, id, ...args];
+  });
 }
 
 export async function renderGraph(spec) {

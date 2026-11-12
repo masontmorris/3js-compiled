@@ -7,7 +7,9 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use web_audio_api::context::AudioContext;
 use web_audio_api::media_devices::{MediaDeviceInfoKind, enumerate_devices_sync};
 
-/// The engine's sink id for the output device named `name`, or `"none"`, which renders with no device at all.
+/// The engine's sink id for the output device named `name`, or `"none"`, which renders with no device at all. The name
+/// is the one Windows shows, such as `Speakers (Steam Streaming Speakers)`, or the engine's whole label, which adds
+/// the device type and interface. A name that matches no output, or several, is an error.
 pub fn sink_for(name: &str) -> Result<String, String> {
     if name == "none" {
         return Ok("none".into());
@@ -16,17 +18,24 @@ pub fn sink_for(name: &str) -> Result<String, String> {
         .into_iter()
         .filter(|d| d.kind() == MediaDeviceInfoKind::AudioOutput)
         .collect();
-    outputs
-        .iter()
-        .find(|d| d.label() == name)
-        .map(|d| d.device_id().to_owned())
-        .ok_or_else(|| {
+    let names = |label: &str| {
+        label == name
+            || label
+                .strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with(" [") || rest.starts_with(" via "))
+    };
+    let matches: Vec<_> = outputs.iter().filter(|d| names(d.label())).collect();
+    match matches.as_slice() {
+        [device] => Ok(device.device_id().to_owned()),
+        _ => {
             let labels: Vec<_> = outputs.iter().map(|d| format!("{:?}", d.label())).collect();
-            format!(
-                "no audio output named {name:?}; the outputs are {}",
+            Err(format!(
+                "{} audio outputs match {name:?}, not one; the outputs are {}",
+                matches.len(),
                 labels.join(", ")
-            )
-        })
+            ))
+        }
+    }
 }
 
 fn default_output() -> Option<String> {

@@ -9,7 +9,8 @@
     "build:scenes": "node tools/scenes/build.mjs",
     "build:platform": "node tools/platform/build.mjs",
     "test": "npm test -w packages/three-native && node --test tools/perf/*.test.mjs",
-    "check": "node tools/wgsl-gate/gate.mjs"
+    "check": "node tools/wgsl-gate/gate.mjs",
+    "build:audio": "node tools/audio-parity/build.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
