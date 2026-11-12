@@ -849,9 +849,10 @@ mod tests {
         );
         // A 10 ms interval keeps to its schedule, as in Edge: its sixth run comes 50 ms after its
         // first, give or take their lateness, and a gap after a late run is short, as Edge's
-        // gaps of 8.6 to 11.4 ms show. A stall makes a run late, or skips the periods it covers,
-        // by no more than that gap's own excess, where an interval re-armed from its runs adds
-        // every run's lateness.
+        // gaps of 8.6 to 11.4 ms show. Here timers run at frame turns 6 ms apart, so either run
+        // can be a frame late, and a stall makes a run later, or skips the periods it covers, by
+        // no more than that gap's own excess. An interval re-armed from its runs adds every
+        // run's lateness instead: gaps of 12 ms come to 60.
         let gaps: Vec<f64> = result(&log, "10 ms interval gaps")
             .split(' ')
             .map(|gap| gap.parse::<f64>().unwrap())
@@ -862,7 +863,7 @@ mod tests {
             .map(|gap| (gap - 10.0).abs())
             .fold(0.0, f64::max);
         assert!(
-            (total - 50.0).abs() <= worst + 1.0,
+            (total - 50.0).abs() <= 6.0 + worst,
             "five 10 ms gaps took {total} ms: {gaps:?}"
         );
         assert_eq!(result(&log, "window error events"), "1");
