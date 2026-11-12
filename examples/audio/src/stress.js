@@ -1,6 +1,8 @@
 // The E7 perf probe: 32 looping voices, each through a gain and an HRTF panner, with rate, volume and position
 // changed on every frame, as a busy game does through Howler. `#audio=off` does the same per-frame work but skips the
-// audio calls, so the two runs differ only by what audio adds to the game thread.
+// audio calls, so the two runs differ only by what audio adds to the game thread. Each voice plays 2 s of its own
+// seeded noise, so the mix never repeats within a loopback check's search range and a gap the device inserts or a
+// skip it makes stands out against what the engine handed it.
 import * as THREE from 'three/webgpu';
 import { NativeBackend } from '../../../packages/three-native/src/NativeBackend.js';
 
@@ -28,12 +30,15 @@ const cubes = Array.from({ length: VOICES }, (_, i) => {
 const voices = [];
 if (audioOn) {
   const ctx = new AudioContext();
-  const length = ctx.sampleRate;
+  const length = 2 * ctx.sampleRate;
   for (let i = 0; i < VOICES; i++) {
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    const hz = 110 * (1 + i / 4);
-    for (let n = 0; n < length; n++) data[n] = Math.sin((2 * Math.PI * hz * n) / ctx.sampleRate);
+    let x = 0x9e3779b9 ^ (i + 1);
+    for (let n = 0; n < length; n++) {
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+      data[n] = (x >>> 0) / 2 ** 31 - 1;
+    }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;

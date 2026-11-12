@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { plot } from './compare.mjs';
+import { findGaps } from './gaps.mjs';
 import { readWav } from './wav.mjs';
 
 const [dir, edgeDir] = process.argv.slice(2);
@@ -38,7 +39,13 @@ function wavFrame(rows, frame, context = rows[0]?.context) {
   return frame - hi;
 }
 
-function underruns(rows) { return rows.filter(r => r.quantum === 0 && r.underrun === 1).length; }
+// A quantum underruns when it took longer to render than it lasts. A late callback is information: the device's queued
+// audio covers it, and a loopback recording shows whether the device ran dry.
+function underruns(rows) { return rows.filter(r => r.underrun === 1).length; }
+function late(rows) {
+  const gaps = rows.filter(r => r.late === 1).map(r => r.gap_us / 1000).sort((a, b) => a - b);
+  return { count: gaps.length, minMs: gaps[0] ?? null, maxMs: gaps.at(-1) ?? null };
+}
 
 function pngPixels(path) { return PNG.sync.read(readFileSync(path)); }
 
@@ -114,6 +121,8 @@ function lane5() {
   const first = records[0];
   const last = records.at(-1);
   const latency = first.baseLatency + last.outputLatency;
+  // What the device played, against what the engine handed it.
+  const device = findGaps(capture, readWav(at('lane5', 'loopback.wav')));
   // The limit is 50 ms, or Edge's lowest steady reading on the same device in the same session when that is higher.
   const edge = existsSync(at('lane5', 'edge-latency.json')) ? JSON.parse(read(at('lane5', 'edge-latency.json'))) : null;
   const edgeSteady = edge?.readings.map(r => r.steady.baseLatency + r.steady.outputLatency) ?? [];
@@ -122,8 +131,8 @@ function lane5() {
   const blocked = records.find(r => r.name === worst.name);
   plot(at('e7-realtime.png'), readWav(at('graphs', `${worst.name}.wav`)), { sampleRate: capture.sampleRate, channels: [capture.channels[0].subarray(worst.wavStart, worst.wavStart + blocked.length)] }, 0);
   verdicts.lane5 = {
-    pass: results.every(r => r.diffDb <= -60) && underruns(rows) === 0 && breaks.length === 0 && latency <= limit,
-    underruns: underruns(rows), lateCallbacks: breaks.length, baseLatency: first.baseLatency, outputLatency: last.outputLatency, latency, limit,
+    pass: results.every(r => r.diffDb <= -60) && underruns(rows) === 0 && device.aligned && device.events.length === 0 && latency <= limit,
+    underruns: underruns(rows), lateCallbacks: late(rows), wavBreaks: breaks.length, loopback: device, baseLatency: first.baseLatency, outputLatency: last.outputLatency, latency, limit,
     latencyReadings: {
       host: { device: 'Speakers (Steam Streaming Speakers)', start: first.baseLatency + first.outputLatency, steady: latency },
       edge: edge && { device: edge.device, readings: edge.readings.map(r => ({ start: r.start.baseLatency + r.start.outputLatency, steady: r.steady.baseLatency + r.steady.outputLatency })) },

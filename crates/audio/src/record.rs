@@ -38,6 +38,8 @@ struct Stream {
     sample_rate: f32,
     samples: Consumer<f32>,
     rows: Consumer<Row>,
+    // The length of the stream's last callback, which the next one is late against.
+    previous_budget_ns: u64,
 }
 
 struct Shared {
@@ -58,6 +60,7 @@ pub struct Summary {
     pub frames: u64,
     pub quanta: u64,
     pub underruns: u64,
+    pub late: u64,
     pub dropped: u64,
 }
 
@@ -72,7 +75,7 @@ impl Recorder {
         let mut csv = BufWriter::new(File::create(csv)?);
         writeln!(
             csv,
-            "context,callback,context_frame,wav_frame,quantum,quantum_us,callback_render_us,callback_budget_us,gap_us,underrun"
+            "context,callback,context_frame,wav_frame,quantum,quantum_us,callback_render_us,callback_budget_us,gap_us,late,underrun"
         )?;
         let writer = {
             let shared = Arc::clone(&shared);
@@ -99,6 +102,7 @@ impl Recorder {
             sample_rate,
             samples,
             rows,
+            previous_budget_ns: 0,
         });
         Box::new(Observer {
             context: self.next_context,
@@ -179,11 +183,15 @@ impl RenderObserver for Observer {
 /// A gap this long between callbacks is a paused stream, from suspend() or a device change, not a late callback.
 const PAUSE_NS: u64 = 100_000_000;
 
-// A callback underruns when it took longer than the audio it rendered lasts, or when it started more than twice its
-// own length after the previous one, so the device ran dry between them.
-fn underrun(row: &Row) -> bool {
-    row.callback_render_ns > row.callback_budget_ns
-        || (row.gap_ns > 2 * row.callback_budget_ns.max(1) && row.gap_ns < PAUSE_NS)
+// A quantum underruns when it took longer to render than the audio it holds lasts. The device's queued audio covers a
+// callback that comes late, so lateness is information: a callback is late when it started more than twice the
+// previous callback's length after it. Whether the device ran dry shows in a loopback recording of it.
+fn underrun(row: &Row, sample_rate: f32) -> bool {
+    row.quantum_ns as f64 > 128e9 / f64::from(sample_rate)
+}
+
+fn late(row: &Row, previous_budget_ns: u64) -> bool {
+    row.quantum == 0 && row.gap_ns > 2 * previous_budget_ns.max(1) && row.gap_ns < PAUSE_NS
 }
 
 // Each context is its own device stream, so each gets its own file: `out.wav` for the first, `out-2.wav` for the
@@ -208,14 +216,17 @@ fn write_loop(
         let mut streams = shared.streams.lock().unwrap();
         for stream in streams.iter_mut() {
             while let Ok(row) = stream.rows.pop() {
-                let bad = underrun(&row);
-                if bad && row.quantum == 0 {
-                    summary.underruns += 1;
+                let bad = underrun(&row, stream.sample_rate);
+                let behind = late(&row, stream.previous_budget_ns);
+                if row.quantum == 0 {
+                    stream.previous_budget_ns = row.callback_budget_ns;
                 }
+                summary.underruns += u64::from(bad);
+                summary.late += u64::from(behind);
                 summary.quanta += 1;
                 writeln!(
                     csv,
-                    "{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{}",
+                    "{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{},{}",
                     row.context,
                     row.callback,
                     row.context_frame,
@@ -225,6 +236,7 @@ fn write_loop(
                     row.callback_render_ns as f64 / 1e3,
                     row.callback_budget_ns as f64 / 1e3,
                     row.gap_ns as f64 / 1e3,
+                    u8::from(behind),
                     u8::from(bad)
                 )?;
             }

@@ -68,6 +68,8 @@ const lanes = {
     const done = new Promise(r => loopback.on('exit', r));
     node('tools/audio-parity/host.mjs', 'scenarios', at('scenarios'), '--frames', String(30 * fps));
     await done;
+    // currentTime again with no device at all, as the host's tests render.
+    node('tools/audio-parity/host.mjs', 'scenarios', at('scenarios', 'none'), '--filter', 'current-time', '--audio-device', 'none', '--frames', String(5 * fps));
   },
 };
 
