@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-web-audio-api = { version = "=1.7.0", default-features = false }
+web-audio-api = { git = "https://github.com/orottier/web-audio-api-rs", rev = "40402e22c8c45381afed2773e181e04ede2f5627", default-features = false }
 
 [dev-dependencies]
 hound = "3.5"

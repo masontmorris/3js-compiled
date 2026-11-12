@@ -3253,8 +3253,6 @@ dependencies = [
 [[package]]
 name = "web-audio-api"
 version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "013903031fb735e7fd9aee7c159f3440a19c6969dc81365aec8c64caddcf39bc"
 dependencies = [
  "almost",
  "arc-swap",
@@ -3275,6 +3273,7 @@ dependencies = [
  "num-complex",
  "realfft",
  "rubato 0.16.2",
+ "rustc-hash 2.1.3",
  "smallvec",
  "symphonia 0.6.1",
  "vecmath",
