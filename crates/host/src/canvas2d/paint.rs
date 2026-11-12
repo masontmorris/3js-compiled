@@ -632,6 +632,35 @@ mod tests {
     }
 
     #[test]
+    fn an_image_draws_at_half_global_alpha() {
+        let mut painter = Painter::default();
+        let mut pixels = vec![0u8; 4 * 4 * 4];
+        let red = [255u8, 0, 0, 255].repeat(4);
+        let style = Style {
+            paint: Paint::Color {
+                rgba: [0.0, 0.0, 0.0, 1.0],
+            },
+            alpha: 0.5,
+            transform: IDENTITY,
+        };
+        painter.draw_image(
+            &mut surface(&mut pixels, 4, 4),
+            &style,
+            &red,
+            2,
+            false,
+            (0, 0, 2, 2),
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            true,
+        );
+        let pixel = &pixels[(4 + 1) * 4..][..4];
+        assert!(
+            (126..=129).contains(&pixel[0]) && pixel[1] == 0 && (126..=129).contains(&pixel[3]),
+            "{pixel:?}"
+        );
+    }
+
+    #[test]
     fn a_linear_gradient_runs_between_its_stops() {
         let mut painter = Painter::default();
         let mut pixels = vec![0u8; 16 * 4];
