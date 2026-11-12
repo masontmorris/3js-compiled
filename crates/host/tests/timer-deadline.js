@@ -32,6 +32,9 @@ let allDoneAt = null;
 let rafWork = 0;
 const live = () => performance.now() < windowEnd;
 const tick = () => { ticks++; if (live()) ticksInWindow++; };
+// The ticks between each two frame callbacks in the window, whose median a stall of the whole page does not move.
+const ticksPerFrame = [];
+let ticksAtFrame = 0;
 
 function startWindow() {
   windowStart = performance.now();
@@ -70,6 +73,7 @@ function report() {
   result(`${mode} mean frame interval ms`, framesInWindow > 1 ? ((lastInWindow - firstInWindow) / (framesInWindow - 1)).toFixed(2) : 'n/a');
   result(`${mode} longest frame gap ms`, Math.round(maxGap));
   result(`${mode} ticks in 1500 ms`, ticksInWindow);
+  result(`${mode} median ticks between frames`, ticksPerFrame.length ? [...ticksPerFrame].sort((a, b) => a - b)[ticksPerFrame.length >> 1] : 'n/a');
   if (mode.startsWith('many')) result(`${mode} ms until every timer ran`, allDoneAt === null ? `not by report (${ticks} ran)` : Math.round(allDoneAt - windowStart));
   for (const [name, value] of Object.entries(R)) console.log(`R ${name}: ${value}`);
 }
@@ -81,8 +85,10 @@ function frame() {
     firstInWindow ??= t;
     lastInWindow = t;
     if (lastFrame !== null) maxGap = Math.max(maxGap, t - lastFrame);
+    if (lastFrame !== null && lastFrame > windowStart) ticksPerFrame.push(ticksInWindow - ticksAtFrame);
     if (rafWork) busy(rafWork);
   }
+  ticksAtFrame = ticksInWindow;
   lastFrame = t;
   if (frames === 4) startWindow();
   if (!reported && frames >= 30 && performance.now() >= reportAt) report();

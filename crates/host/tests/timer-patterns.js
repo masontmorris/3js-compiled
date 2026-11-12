@@ -25,6 +25,11 @@ const live = () => performance.now() < windowEnd;
 const stats = xs => { const s = [...xs].sort((a, b) => a - b); const at = q => s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : NaN; return s.length ? `n=${s.length} mean=${(s.reduce((a, b) => a + b, 0) / s.length).toFixed(1)} p50=${at(0.5).toFixed(1)} p99=${at(0.99).toFixed(1)} min=${s[0].toFixed(1)} max=${s[s.length - 1].toFixed(1)}` : 'n=0'; };
 let onFrame = () => {};
 let finish = () => {};
+// Per-frame records for the host's checks that a stalled PC does not move: each frame's gap from the frame before, the
+// frame work before it, and the interval ticks or loader steps that ran between the two.
+const frameLog = [];
+let between = 0, lastWork = 0;
+const median = xs => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 
 function fixed20() {
   const t0 = performance.now();
@@ -61,7 +66,7 @@ function awaitload() {
       busy(1);
       if (n % 10 === 9) { const t = performance.now(); await sleep(8); fetchLate.push(performance.now() - t - 8); if (live()) fetches++; }
       else { await sleep(0); }
-      if (live()) { steps++; frameSteps++; }
+      if (live()) { steps++; frameSteps++; between++; }
     }
   })();
   onFrame = () => { if (live()) perFrame.push(frameSteps); frameSteps = 0; };
@@ -70,6 +75,10 @@ function awaitload() {
     result('awaitload 8 ms fetch waits', fetches);
     result('awaitload fetch lateness ms', stats(fetchLate));
     result('awaitload steps per frame', stats(perFrame));
+    // Steps in the frames a stall did not stretch: a gap no more than 6 ms past the frame work before it, a turn's
+    // 3.3 ms share and a step to spare.
+    const calm = frameLog.filter(([gap, work]) => gap - work <= 6);
+    result('awaitload steps per unstalled frame', calm.length ? (calm.reduce((sum, [, , n]) => sum + n, 0) / calm.length).toFixed(2) : 'n/a');
   };
 }
 
@@ -120,6 +129,7 @@ function step(every) {
     lastRun = performance.now();
     ticks++;
     sinceFrame++;
+    between++;
     busy(0.3);
   }, every);
   onFrame = () => { perFrame[Math.min(3, sinceFrame)]++; sinceFrame = 0; };
@@ -127,6 +137,11 @@ function step(every) {
     result(`${mode} ticks`, ticks);
     result(`${mode} frames with 0/1/2/3+ ticks`, perFrame.join('/'));
     result(`${mode} behind schedule at the last tick ms`, lastRun === null ? 'n/a' : (lastRun - (t0 + every * ticks)).toFixed(1));
+    // Ticks against the schedule's points in the frames a stall did not stretch (a gap up to 1.5 times the median).
+    const m = median(frameLog.map(([gap]) => gap));
+    const calm = frameLog.filter(([gap]) => gap <= 1.5 * m);
+    const ran = calm.reduce((sum, [, , n]) => sum + n, 0), due = calm.reduce((sum, [gap]) => sum + gap / every, 0);
+    result(`${mode} ticks per scheduled tick in unstalled frames`, due ? (ran / due).toFixed(3) : 'n/a');
   };
 }
 
@@ -145,6 +160,7 @@ function report() {
   result(`${mode} mean frame interval ms`, framesInWindow > 1 ? ((lastInWindow - firstInWindow) / (framesInWindow - 1)).toFixed(2) : 'n/a');
   result(`${mode} longest frame gap ms`, Math.round(maxGap));
   result(`${mode} frame gaps over 12 ms`, longFrames);
+  result(`${mode} median frame interval ms`, frameLog.length ? median(frameLog.map(([gap]) => gap)).toFixed(2) : 'n/a');
   for (const [name, value] of Object.entries(R)) console.log(`R ${name}: ${value}`);
 }
 
@@ -155,10 +171,13 @@ function frame() {
     firstInWindow ??= t;
     lastInWindow = t;
     if (lastFrame !== null) { maxGap = Math.max(maxGap, t - lastFrame); if (t - lastFrame > 12) longFrames++; }
+    if (lastFrame !== null && lastFrame > windowStart) frameLog.push([t - lastFrame, lastWork, between]);
   }
+  between = 0;
   lastFrame = t;
   onFrame(t);
-  busy(rafWork());
+  lastWork = rafWork();
+  busy(lastWork);
   if (frames === 4) startWindow();
   if (!reported && frames >= 30 && performance.now() >= reportAt) report();
   if (native) setClearColor(0, reported ? 1 : 0, 0, 1);

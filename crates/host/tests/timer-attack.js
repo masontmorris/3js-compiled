@@ -30,6 +30,8 @@ let maxGap = 0;
 let ticks = 0;
 const tickTimes = [];
 const tick = () => { ticks++; if (tickTimes.length < 17) tickTimes.push(performance.now()); };
+// The most ticks between two frame callbacks in the window, which a stall of the whole page does not raise.
+let ticksAtFrame = 0, mostTicksBetweenFrames = 0;
 const gaps = times => times.slice(1).map((t, i) => (t - times[i]).toFixed(1)).join(' ');
 const firstClamped = times => { const i = times.slice(1).findIndex((t, k) => t - times[k] >= 3.5); return i < 0 ? 'none' : i + 2; };
 
@@ -138,6 +140,7 @@ function report() {
     result(`${mode} ticks in 1500 ms`, ticks);
     result(`${mode} frames inside the 1500 ms window`, framesInWindow);
     result(`${mode} longest frame gap ms`, Math.round(maxGap));
+    result(`${mode} most ticks between frames`, mostTicksBetweenFrames);
     result(`${mode} first tick gaps`, gaps(tickTimes));
     result(`${mode} first tick whose gap >= 3.5 ms`, firstClamped(tickTimes));
   }
@@ -161,7 +164,9 @@ function frame() {
   if (t > windowStart && t < windowEnd) {
     framesInWindow++;
     if (lastFrame !== null) maxGap = Math.max(maxGap, t - lastFrame);
+    mostTicksBetweenFrames = Math.max(mostTicksBetweenFrames, ticks - ticksAtFrame);
   }
+  ticksAtFrame = ticks;
   lastFrame = t;
   if (frames === 4) {
     if (mode === 'deep') startDeep();
