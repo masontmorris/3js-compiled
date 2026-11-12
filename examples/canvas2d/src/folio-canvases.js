@@ -22,11 +22,11 @@ function textCanvas(canvas, lines, { fontSize, width, height, density = 200, ali
   return context;
 }
 
-// InteractivePoints.js:212, a label whose width follows measureText.
+// InteractivePoints.js:212, a label whose width follows measureText, with folio's default left alignment.
 function interactiveLabel(canvas, text) {
   const height = 64;
-  const textPaddingLeft = 12;
-  const textPaddingRight = 60;
+  const textPaddingLeft = 60;
+  const textPaddingRight = 12;
   const font = `700 ${height}px "Amatic SC"`;
   const context = canvas.getContext('2d');
   context.font = font;
