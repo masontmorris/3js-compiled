@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 12:29:21 -0500
-Subject: [PATCH 9/9] Report the frame count to the render observer each render
+Subject: [PATCH 9/10] Report the frame count to the render observer each render
  quantum
 
 An embedder that serves currentTime from memory its control thread reads,

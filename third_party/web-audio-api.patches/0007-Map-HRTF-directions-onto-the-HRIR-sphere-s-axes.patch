@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 08:44:31 -0500
-Subject: [PATCH 7/9] Map HRTF directions onto the HRIR sphere's axes
+Subject: [PATCH 7/10] Map HRTF directions onto the HRIR sphere's axes
 
 The panner swapped y and z when it handed the source direction to the hrtf
 crate, so elevation went to the sphere's front axis and front-back to its

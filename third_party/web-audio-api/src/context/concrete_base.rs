@@ -216,11 +216,6 @@ impl ConcreteBaseAudioContext {
             LISTENER_PARAM_IDS.end,
         );
 
-        // For an online AudioContext, pre-create the HRTF-database for panner nodes
-        if !offline {
-            crate::node::load_hrtf_processor(sample_rate as u32);
-        }
-
         base
     }
 

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 03:24:32 -0500
-Subject: [PATCH 5/9] Fail when the requested output device is missing
+Subject: [PATCH 5/10] Fail when the requested output device is missing
 
 An AudioContext with a sink id that names no device opened the default
 output instead. That sends audio meant for one device to another, and the

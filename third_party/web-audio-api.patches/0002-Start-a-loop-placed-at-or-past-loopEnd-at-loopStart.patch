@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Mason Morris <masonmorris8@gmail.com>
 Date: Thu, 12 Nov 2026 01:19:33 -0500
-Subject: [PATCH 2/9] Start a loop placed at or past loopEnd at loopStart
+Subject: [PATCH 2/10] Start a loop placed at or past loopEnd at loopStart
 
 A looping source started at an offset at or past loopEnd clamped its
 playhead to loopEnd and then never entered the loop, so it played on to
