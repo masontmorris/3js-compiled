@@ -13,7 +13,7 @@ test('URL resolves relative, file, blob and data URLs as Edge does', () => {
   assert.equal(new ShimURL('../scenes/b c.png?x=1#h', base).href, 'file:///C:/game/examples/scenes/b%20c.png?x=1#h');
   assert.equal(new ShimURL('/root.png', base).href, 'file:///C:/root.png');
   assert.equal(new ShimURL(base).hash, '#debug');
-  assert.equal(new ShimURL(base).origin, 'null');
+  assert.equal(new ShimURL(base).origin, 'file://', 'Edge 157 gives a file URL the origin file://');
   const web = new ShimURL('https://Example.com:443/a/./b/../c?q=1 2#f');
   assert.deepEqual([web.href, web.host, web.pathname, web.search, web.hash, web.origin], ['https://example.com/a/c?q=1%202#f', 'example.com', '/a/c', '?q=1%202', '#f', 'https://example.com']);
   assert.equal(web.searchParams.get('q'), '1 2');
@@ -23,7 +23,7 @@ test('URL resolves relative, file, blob and data URLs as Edge does', () => {
 });
 
 test('fetch reads blob, data and file URLs, and a missing file answers 404', async () => {
-  globalThis.location = { href: 'file:///C:/game/index.js', origin: 'null' };
+  globalThis.location = { href: 'file:///C:/game/index.js', origin: 'file://', protocol: 'file:' };
   setHost({ readFile: async path => (path === 'C:/game/assets/a.bin' ? new Uint8Array([1, 2, 3]) : null), decode: async () => { throw new Error('no'); } });
   const blob = new ShimBlob(['ab', new Uint8Array([99])], { type: 'Text/Plain' });
   assert.equal(blob.type, 'text/plain');
@@ -92,7 +92,7 @@ test('Storage keeps string values, named properties, the quota and every change 
   storage.c = 'x';
   assert.deepEqual([storage.getItem('a'), storage.a, storage.c, storage.length, storage.getItem('none')], ['1', '1', 'x', 3, null]);
   assert.deepEqual(Object.keys(storage), ['b', 'a', 'c']);
-  assert.throws(() => storage.setItem('big', 'x'.repeat(20)), { name: 'QuotaExceededError' });
+  assert.throws(() => storage.setItem('big', 'x'.repeat(20)), error => error.name === 'QuotaExceededError' && error.constructor.name === 'QuotaExceededError' && error.code === 22 && error instanceof DOMException);
   storage.removeItem('a');
   delete storage.c;
   storage.clear();

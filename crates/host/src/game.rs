@@ -1008,7 +1008,7 @@ mod tests {
             ("broken image", "InvalidStateError"),
             (
                 "events",
-                "body:KeyW:87 window:w:true pointerdown:canvas:12.5 click:canvas resize:1000x600 media:false gamepad:pad",
+                "body:KeyW:87 window:w:true pointerdown:canvas:12.5 click:canvas resize:1000x600:false media:false gamepad:pad",
             ),
         ] {
             assert_eq!(result(&first, name), value, "{name}");
