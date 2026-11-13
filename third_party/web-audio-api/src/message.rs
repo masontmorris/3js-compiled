@@ -15,7 +15,7 @@ const RECYCLE_ACTIVE: u8 = 0;
 const RECYCLE_CANCELLED: u8 = 1;
 const RECYCLE_DELIVERED: u8 = 2;
 
-/// A graph stays in the slot until either the control thread commits the move or the renderer cancels it.
+/// The control thread can cancel a graph handoff until the renderer commits delivery.
 pub(crate) struct Recycle {
     state: AtomicU8,
     graph_send: crossbeam_channel::Sender<(Graph, bool)>,
