@@ -9,7 +9,11 @@ import { chromium } from 'playwright-core';
 export const FOLIO = resolve(process.env.THREEJSC_FOLIO ?? 'C:/Users/mason/.t3/scratch/2026-11-09-can-threejs-webgl-theoretically-with-e91d77c7/spikes/folio-2025');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 
-export const withTimeout = (promise, step, ms = 60_000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`DevTools call timed out after ${ms / 1000} s: ${step}`)), ms))]);
+export async function withTimeout(promise, step, ms = 60_000) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`DevTools call timed out after ${ms / 1000} s: ${step}`)), ms); })]); }
+  finally { clearTimeout(timer); }
+}
 
 // Calls `body(page, origin)` with a page of headless Edge at 1280x720. `gpu` turns on the flags the lanes use.
 export async function withEdge(body, { gpu = true } = {}) {

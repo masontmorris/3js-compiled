@@ -9,7 +9,11 @@ import { chromium } from 'playwright-core';
 const out = resolve(process.argv[2] ?? 'target/canvas2d-spike');
 const root = resolve('.');
 await mkdir(join(out, 'edge'), { recursive: true });
-const withTimeout = (promise, step) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`DevTools call timed out after 60 s: ${step}`)), 60_000))]);
+const withTimeout = async (promise, step) => {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`DevTools call timed out after 60 s: ${step}`)), 60_000); })]); }
+  finally { clearTimeout(timer); }
+};
 const deadline = setTimeout(() => { console.error('Edge run exceeded 5 minutes'); process.exit(1); }, 300_000);
 
 const server = createServer(async (request, response) => {
