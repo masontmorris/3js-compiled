@@ -200,16 +200,16 @@ export const SCENES = {
       if (frames % 300 === 0) log(`dynamic drawn frames=${frames}`);
     };
   },
-  // Draws folio's ten canvases at load, then again warm. The app times the whole load, from the font work through
-  // the last texture's first upload.
+  // Draws folio's ten canvases at load, then again warm from the second frame, after the first frame's upload. The
+  // app times the whole load, from the font work through the last texture's first upload.
   perf({ show, log }) {
     const start = performance.now();
     const drawn = FOLIO_CANVASES.map(({ draw }) => { const element = document.createElement('canvas'); draw(element); return element; });
     log(`perf load run=0 ms=${round(performance.now() - start)} canvases=${drawn.length}`);
     drawn.forEach((element, i) => show(element, 10 + (i % 3) * 420, 10 + Math.floor(i / 3) * 140));
-    let warm = 0;
+    let warm = -1;
     return () => {
-      if (++warm > 5) return;
+      if (++warm < 1 || warm > 5) return;
       const started = performance.now();
       for (const { draw } of FOLIO_CANVASES) draw(document.createElement('canvas'));
       log(`perf warm run=${warm} ms=${round(performance.now() - started)}`);
