@@ -12,7 +12,8 @@ pub struct Frame {
     pub started: Instant,
     pub size: (u32, u32),
     pub clear: [f64; 4],
-    pub commands: Option<Vec<u8>>,
+    /// The streams the page submitted for this frame, in order.
+    pub commands: Vec<Vec<u8>>,
     pub captures: Vec<PathBuf>,
 }
 pub struct Rendered {
@@ -244,7 +245,8 @@ impl Renderer {
         self.window.resize(frame.size);
         let capture = !frame.captures.is_empty();
         let mut acquired = None;
-        let replay = frame.commands.map(|commands| {
+        let replay = (!frame.commands.is_empty()).then(|| {
+            let streams: Vec<&[u8]> = frame.commands.iter().map(Vec::as_slice).collect();
             let (window, drawn) = (&mut self.window, self.drawn);
             let mut trailer = |canvas: &wgpu::Texture, used: bool| {
                 let shown = acquired.insert(window.acquire()).as_mut().ok()?;
@@ -254,7 +256,7 @@ impl Renderer {
                 Some(commands)
             };
             self.executor
-                .replay_then(&commands, Some(&mut self.game), Some(&mut trailer))
+                .replay_then(&streams, Some(&mut self.game), Some(&mut trailer))
         });
         if self.executor.took_device() {
             self.window.adopt(self.executor.device())?;

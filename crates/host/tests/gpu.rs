@@ -155,8 +155,7 @@ fn an_error_names_the_frame_and_command_of_the_stream_that_raised_it() {
         "GPU error: frame 7, command 1, label loading,",
         "GPU error: frame 1, command 1, label frame,",
     ] {
-        assert!(run.log.contains(expected), "{expected}
-{}", run.log);
+        assert!(run.log.contains(expected), "{expected}\n{}", run.log);
     }
 }
 

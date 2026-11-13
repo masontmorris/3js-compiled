@@ -1,4 +1,4 @@
-use threejsc_gpu::{DecodeError, Record, decode, join};
+use threejsc_gpu::{DecodeError, Record, decode};
 
 #[test]
 fn javascript_frame_decodes_in_order() {
@@ -88,22 +88,4 @@ fn the_adapter_offers_only_the_webgpu_features_a_device_can_be_given() {
         !threejsc_gpu::webgpu_features(wgpu::Features::empty()).contains(&"clip-distances"),
         "an adapter without a feature does not offer it"
     );
-}
-
-#[test]
-fn a_joined_stream_holds_both_streams_records_in_order_under_the_second_frame() {
-    let first = include_bytes!("fixtures/frame.bin").to_vec();
-    let mut second = first.clone();
-    second[12..16].copy_from_slice(&9u32.to_le_bytes());
-    let last = second.len() - 9;
-    second[last] = 7;
-    let joined = join(&first, &second);
-    let stream = decode(&joined).unwrap();
-    assert_eq!(stream.frame, 9);
-    let records = decode(&first).unwrap().records;
-    let mut expected = records.clone();
-    expected.extend(decode(&second).unwrap().records);
-    assert_eq!(stream.records, expected);
-    assert_eq!(join(&first[..10], &second), &first[..10]);
-    assert_eq!(join(&first, &second[..10]), &second[..10]);
 }

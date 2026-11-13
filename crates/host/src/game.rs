@@ -219,12 +219,6 @@ fn op_wait(state: &mut OpState, until: f64, render: bool) -> bool {
 fn op_clear(state: &mut OpState, r: f64, g: f64, b: f64, a: f64) {
     state.borrow_mut::<State>().color = [r, g, b, a];
 }
-fn join(first: Option<Vec<u8>>, second: Option<Vec<u8>>) -> Option<Vec<u8>> {
-    match (first, second) {
-        (Some(first), Some(second)) => Some(threejsc_gpu::join(&first, &second)),
-        (first, second) => first.or(second),
-    }
-}
 #[op2(fast)]
 fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     let state = state.borrow_mut::<State>();
@@ -504,7 +498,7 @@ impl<'a> Game<'a> {
             let state = self.js.op_state();
             let mut state = state.borrow_mut();
             let state = state.borrow_mut::<State>();
-            state.carried = join(state.carried.take(), state.commands.take());
+            state.carried = state.commands.take();
         }
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
@@ -520,11 +514,17 @@ impl<'a> Game<'a> {
         self.js.execute_script("host:idle", "__hostIdle()")?;
         self.tick()
     }
-    pub fn take_commands(&mut self) -> Option<Vec<u8>> {
+    /// The streams the page submitted for this frame, in the order it submitted them.
+    pub fn take_commands(&mut self) -> Vec<Vec<u8>> {
         let state = self.js.op_state();
         let mut state = state.borrow_mut();
         let state = state.borrow_mut::<State>();
-        join(state.carried.take(), state.commands.take())
+        state
+            .carried
+            .take()
+            .into_iter()
+            .chain(state.commands.take())
+            .collect()
     }
     fn tick(&mut self) -> Result<()> {
         self.runtime.block_on(async {
@@ -1456,7 +1456,7 @@ mod tests {
             let mut submitted = 0;
             for _ in 0..4 {
                 game.frame()?;
-                submitted += usize::from(game.take_commands().is_some());
+                submitted += usize::from(!game.take_commands().is_empty());
             }
             let output = std::fs::read_to_string(&log_path)?;
             assert_eq!(submitted, 4, "{scene}: {output}");
