@@ -620,19 +620,23 @@ impl Ui {
         self.failures = self.failures.saturating_add(1);
         Connection::Backoff(Instant::now() + retry_delay(self.failures))
     }
-    /// Opens ui-host.log for the next ui-host: truncated for the process's first, appended to
-    /// after, so a relaunch keeps the earlier instances' records. The count is the process's, not
-    /// this UI's, because a UI that replaces another on a new device writes to the same log.
+    /// Opens ui-host.log for the next ui-host: truncated before the process's first, and always
+    /// appended to, so a relaunch keeps the earlier instances' records even when an exiting
+    /// instance writes after it. The count is the process's, not this UI's, because a UI that
+    /// replaces another on a new device writes to the same log.
     fn open_log(&mut self) -> Result<File> {
         static LAUNCHES: AtomicU32 = AtomicU32::new(0);
         let launches = LAUNCHES.fetch_add(1, Ordering::Relaxed) + 1;
         if launches == 1 {
-            return Ok(File::create("ui-host.log")?);
+            File::create("ui-host.log")?;
         }
         let mut log = OpenOptions::new()
             .create(true)
             .append(true)
             .open("ui-host.log")?;
+        if launches == 1 {
+            return Ok(log);
+        }
         writeln!(
             log,
             "[host] ui-host launch {} after: {}",
