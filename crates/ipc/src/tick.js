@@ -29,7 +29,7 @@
 (tick => {
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
-      next: 1, evaluation: 0, from: 0, measured: null, offsets: null, walker: null,
+      next: 1, evaluation: 0, from: 0, offsetFrom: 0, measured: null, offsets: null, walker: null,
       byBox: new Map(), byIndex: [], pending: new Map(), absent: new Map(),
     };
     const measure = Element.prototype.getBoundingClientRect;
@@ -70,10 +70,19 @@
   if (!Array.isArray(rects)) return [innerWidth, innerHeight, json, [], [], []];
 
   const started = performance.now();
-  for (const element of offsetElements) {
+  const offsetStart = offsetElements.size ? S.offsetFrom % offsetElements.size : 0;
+  let offsetRead = 0;
+  for (let pass = 0; pass < (offsetStart ? 2 : 1); pass++) {
+    let index = 0;
+    for (const element of offsetElements) {
+      if (pass === 0 ? index++ < offsetStart : index++ >= offsetStart) continue;
+      if (performance.now() >= started + 2) break;
+      if (element.isConnected) lastBox.set(element, S.read(element));
+      offsetRead++;
+    }
     if (performance.now() >= started + 2) break;
-    if (element.isConnected) lastBox.set(element, S.read(element));
   }
+  S.offsetFrom = offsetElements.size ? (offsetStart + offsetRead) % offsetElements.size : 0;
   const boxes = new Map(lastBox);
   const boxOf = element => {
     let box = boxes.get(element);
@@ -92,8 +101,12 @@
 
   const measuredBy = new Map();
   for (const [element, box] of lastBox) {
+    if (!element.isConnected) continue;
     const key = `${box.x},${box.y},${box.width},${box.height}`;
-    if (listed.has(key)) measuredBy.set(key, [...(measuredBy.get(key) ?? []), element]);
+    if (listed.has(key)) {
+      if (!measuredBy.has(key)) measuredBy.set(key, []);
+      measuredBy.get(key).push(element);
+    }
   }
   const until = started + 2;
   const outlining = (elements, rect) =>
@@ -136,14 +149,20 @@
       S.walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
     }
     const corner = (x, y) => `${Math.round(x)},${Math.round(y)}`;
-    const buckets = new Map(), ends = new Map();
+    const buckets = new Map(), ends = new Map(), indices = new Map();
+    keys.forEach((key, i) => {
+      if (!indices.has(key)) indices.set(key, []);
+      indices.get(key).push(i);
+    });
     for (const wanted of S.pending.values()) {
       if (!wanted.start?.isConnected) wanted.start = S.walker.currentNode;
-      ends.set(wanted.start, [...(ends.get(wanted.start) ?? []), wanted]);
+      if (!ends.has(wanted.start)) ends.set(wanted.start, []);
+      ends.get(wanted.start).push(wanted);
       for (const dx of [-1, 0, 1]) {
         for (const dy of [-1, 0, 1]) {
           const at = corner(wanted.rect[0] + dx, wanted.rect[1] + dy);
-          buckets.set(at, [...(buckets.get(at) ?? []), wanted]);
+          if (!buckets.has(at)) buckets.set(at, []);
+          buckets.get(at).push(wanted);
         }
       }
     }
@@ -162,11 +181,11 @@
     }
     for (const [key, wanted] of [...S.pending]) {
       const found = outlining(wanted.found, wanted.rect);
-      keys.forEach((k, i) => {
-        if (k !== key || seeds[i]?.length) return;
+      for (const i of indices.get(key) ?? []) {
+        if (seeds[i]?.length) continue;
         seeds[i] = found;
         if (wanted.done && !found.length) missing.push(i);
-      });
+      }
       if (!wanted.done) continue;
       S.pending.delete(key);
       if (!found.length) S.absent.set(key, S.evaluation);
