@@ -21,8 +21,8 @@ pub type Log = Rc<RefCell<File>>;
 struct State {
     color: [f64; 4],
     commands: Option<Vec<u8>>,
-    // A stream the page submitted outside a frame's callbacks, at its top level or from a timer, which starts the
-    // next frame's stream, as a browser's queue runs a page's work in the order the page submits it.
+    // A stream the page submitted outside a frame's callbacks, at its top level, from an event or from a timer, which
+    // runs before the frame's own stream, as a browser's queue runs a page's work in the order the page submits it.
     carried: Option<Vec<u8>>,
     readbacks: HashMap<u32, Vec<u8>>,
     start: Instant,
@@ -228,6 +228,12 @@ fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     state.commands = Some(bytes.to_vec());
     true
 }
+/// Moves the stream submitted since the last frame, before its callbacks, ahead of the stream they submit.
+#[op2(fast)]
+fn op_gpu_carry(state: &mut OpState) {
+    let state = state.borrow_mut::<State>();
+    state.carried = state.commands.take();
+}
 #[op2(fast)]
 fn op_gpu_submitted(state: &mut OpState) -> bool {
     state.borrow::<State>().commands.is_some()
@@ -262,6 +268,7 @@ extension!(
     ops = [
         op_clear,
         op_gpu_submit,
+        op_gpu_carry,
         op_gpu_submitted,
         op_frame_due,
         op_refreshed,
@@ -494,12 +501,6 @@ impl<'a> Game<'a> {
         Ok(result.open(self.js.v8_isolate()).is_true())
     }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
-        {
-            let state = self.js.op_state();
-            let mut state = state.borrow_mut();
-            let state = state.borrow_mut::<State>();
-            state.carried = state.commands.take();
-        }
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
