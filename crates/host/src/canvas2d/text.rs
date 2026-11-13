@@ -602,6 +602,30 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn a_character_no_allowed_face_has_draws_the_missing_glyph() {
+        let mut fonts = Fonts::default();
+        let nunito = fonts.load(NUNITO).unwrap();
+        let spec = FontSpec {
+            families: vec![Family::Face(LoadedFace {
+                id: nunito,
+                weight: [400.0, 400.0],
+                ranges: Some(vec![[0, 0xff]]),
+            })],
+            size: 32.0,
+            weight: 400.0,
+            italic: false,
+        };
+        let mut chain = chain(&mut fonts, &spec);
+        // Nunito maps the private-use U+F8FF and no Windows font does. Its range leaves it out, so Edge draws the
+        // first available font's missing glyph.
+        let layout = layout(&mut fonts, &mut chain, "\u{f8ff}", 32.0);
+        assert_eq!(layout.runs.len(), 1);
+        assert_eq!(layout.runs[0].instance.face, nunito);
+        assert!(layout.runs[0].glyphs.iter().all(|&(glyph, ..)| glyph == 0));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn a_loaded_face_draws_only_the_characters_in_its_unicode_range() {
         let (face, nunito) = face_for_a(None);
         assert_eq!(face, nunito);
