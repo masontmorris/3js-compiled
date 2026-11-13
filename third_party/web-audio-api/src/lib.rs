@@ -65,6 +65,20 @@ pub mod test_control {
     use std::sync::{mpsc, Mutex};
 
     static RECYCLE_BARRIER: Mutex<Option<(u8, mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    static RECYCLE_DRAINED: Mutex<Option<mpsc::Sender<usize>>> = Mutex::new(None);
+
+    /// Observe the number of messages saved by the next sink change.
+    pub fn watch_next_recycle_drain() -> mpsc::Receiver<usize> {
+        let (send, recv) = mpsc::channel();
+        *RECYCLE_DRAINED.lock().unwrap() = Some(send);
+        recv
+    }
+
+    pub(crate) fn recycle_drained(count: usize) {
+        if let Some(send) = RECYCLE_DRAINED.lock().unwrap().take() {
+            let _ = send.send(count);
+        }
+    }
 
     /// Stop the next graph recycle after the render thread takes the request.
     pub fn hold_next_recycle(stage: u8) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {

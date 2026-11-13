@@ -449,6 +449,8 @@ impl AudioContext {
 
         // Flush out the ctrl msg receiver, cache
         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
+        #[cfg(feature = "test-control")]
+        crate::test_control::recycle_drained(pending_msgs.len());
 
         // Acquire the active audio graph from the current render thread, shutting it down. The new render thread starts
         // suspended when this one was, as after a suspend whose continuation has not paused the stream yet.
