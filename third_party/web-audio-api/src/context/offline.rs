@@ -86,7 +86,10 @@ impl OfflineAudioContext {
 
         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
         let graph = crate::render::graph::Graph::new(node_id_producer);
-        let message = crate::message::ControlMessage::Startup { graph };
+        let message = crate::message::ControlMessage::Startup {
+            graph,
+            suspended: false,
+        };
         sender.send(message).unwrap();
 
         // track number of frames - synced from render thread to control thread

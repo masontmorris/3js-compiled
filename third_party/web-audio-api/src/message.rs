@@ -43,13 +43,13 @@ pub(crate) enum ControlMessage {
     /// Mark node as a cycle breaker (DelayNode only)
     MarkCycleBreaker { id: AudioNodeId },
 
-    /// Shut down and recycle the audio graph
+    /// Shut down and recycle the audio graph, with whether the render thread was suspended
     CloseAndRecycle {
-        sender: crossbeam_channel::Sender<Graph>,
+        sender: crossbeam_channel::Sender<(Graph, bool)>,
     },
 
-    /// Start rendering with given audio graph
-    Startup { graph: Graph },
+    /// Start rendering with given audio graph, suspended when the render thread it came from was
+    Startup { graph: Graph, suspended: bool },
 
     /// Suspend and pause audio processing
     Suspend { notify: OneshotNotify },

@@ -191,17 +191,22 @@ impl RenderThread {
             }
             CloseAndRecycle { sender } => {
                 self.set_state(AudioContextState::Suspended);
-                let _ = sender.send(self.graph.take().unwrap());
+                let _ = sender.send((self.graph.take().unwrap(), self.suspended));
                 self.receiver = None;
                 return ControlFlow::Break(()); // no further handling of ctrl msgs
             }
-            Startup { graph } => {
+            Startup { graph, suspended } => {
                 debug_assert!(self.graph.is_none());
                 self.graph = Some(graph);
+                self.suspended = suspended;
                 if let Some(startup_pending) = self.startup_pending.as_ref() {
                     startup_pending.store(false, Ordering::Release);
                 }
-                self.set_state(AudioContextState::Running);
+                self.set_state(if suspended {
+                    AudioContextState::Suspended
+                } else {
+                    AudioContextState::Running
+                });
             }
             NodeMessage { id, mut msg } => {
                 self.graph.as_mut().unwrap().route_message(id, msg.as_mut());

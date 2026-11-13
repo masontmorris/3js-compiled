@@ -273,7 +273,10 @@ impl AudioContext {
         // Construct the audio Graph and hand it to the render thread
         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
         let graph = Graph::new(node_id_producer);
-        let message = ControlMessage::Startup { graph };
+        let message = ControlMessage::Startup {
+            graph,
+            suspended: false,
+        };
         ctrl_msg_send.send(message).unwrap();
 
         // Set up the event loop thread that handles the events spawned by the render thread
@@ -413,15 +416,16 @@ impl AudioContext {
         // Flush out the ctrl msg receiver, cache
         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
 
-        // Acquire the active audio graph from the current render thread, shutting it down
-        let graph = if matches!(pending_msgs.first(), Some(ControlMessage::Startup { .. })) {
+        // Acquire the active audio graph from the current render thread, shutting it down. The new render thread starts
+        // suspended when this one was, as after a suspend whose continuation has not paused the stream yet.
+        let (graph, suspended) = if matches!(pending_msgs.first(), Some(ControlMessage::Startup { .. })) {
             // Handle the edge case where the previous backend was suspended for its entire lifetime.
             // In this case, the `Startup` control message was never processed.
             log::debug!("SinkChange: recover unstarted graph");
 
             let msg = pending_msgs.remove(0);
             match msg {
-                ControlMessage::Startup { graph } => graph,
+                ControlMessage::Startup { graph, suspended } => (graph, suspended),
                 _ => unreachable!(),
             }
         } else {
@@ -439,7 +443,7 @@ impl AudioContext {
             // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
             // callback, so withdraw the request, leave the context as it was and report the error.
             match graph_recv.recv_timeout(Duration::from_secs(2)) {
-                Ok(graph) => graph,
+                Ok(recycled) => recycled,
                 Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
                     for msg in pending_msgs {
                         ctrl_msg_send.send(msg).unwrap();
@@ -496,7 +500,7 @@ impl AudioContext {
         }
 
         // send the audio graph to the new render thread
-        let message = ControlMessage::Startup { graph };
+        let message = ControlMessage::Startup { graph, suspended };
         ctrl_msg_send.send(message).unwrap();
 
         // flush the cached msgs through the held sender: they were already past any staging, and taking the sender's
