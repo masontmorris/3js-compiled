@@ -24,7 +24,7 @@ $angle = Get-ChildItem "$env:CARGO_TARGET_DIR/release/build/mozangle-*/out/libEG
 Copy-Item "$($angle.DirectoryName)/libEGL.dll", "$($angle.DirectoryName)/libGLESv2.dll" "$env:CARGO_TARGET_DIR/release/"
 ```
 
-Run `host --entry examples/hud/game.js` from the repository root. Use `--no-ui` to run the game without starting Servo. The game calls `bridge.open(path)` during module load to select its page. `bridge.send(patch)` merges a patch into the UI state and sends the whole state. It throws a `RangeError` and keeps the previous state when the state's JSON exceeds 1,048,555 bytes. `bridge.onEvent(fn)` subscribes to page events.
+Run `host --entry examples/hud/game.js` from the repository root. Use `--no-ui` to run the game without starting Servo. The game calls `bridge.open(path)` once to select its page, during module load or after a top-level `await`, and the host starts the UI at the end of the frame that sees the call. `bridge.send(patch)` merges a patch into the UI state and sends the whole state. It throws a `RangeError` and keeps the previous state when the state's JSON exceeds 1,048,555 bytes. `bridge.onEvent(fn)` subscribes to page events.
 
 The page implements `window.__bridge.tick(state)` and returns a JSON string with `events` and `rects`. Each rectangle is `[x, y, width, height]` in window pixels. ui-host calls `tick` at most once per Servo frame, always with the newest state. It also calls `tick` with the current state after pointer input and after 100 ms without a call, so page events reach the game when the game sends no new state. It makes no call before the game's first `bridge.send`.
 

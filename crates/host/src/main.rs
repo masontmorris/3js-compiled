@@ -363,14 +363,9 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         Some((&target.adapter_limits(), target.adapter_features())),
         &page,
     )?;
-    let page = if options.no_ui {
-        None
-    } else {
-        game.page()
-            .map(std::fs::canonicalize)
-            .transpose()?
-            .map(|path| path.to_string_lossy().into_owned())
-    };
+    // The page the game opened. The entry module evaluates while frames run, so a game that awaits
+    // before `bridge.open` asks for it after the first frame.
+    let mut page: Option<String> = None;
     let mut ui = None;
     let mut ui_launch: Option<mpsc::Receiver<Result<ui::Ui>>> = None;
     let mut pending_patch = None;
@@ -721,10 +716,13 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             let row = row.take().expect("a rendered frame has a game-thread row");
             finish(&mut game, log_file, &mut csv, row, rendered, clock)?;
         }
-        if frame == 0
-            && let Some(page) = page.clone()
+        if page.is_none()
+            && !options.no_ui
+            && let Some(path) = game.page()
         {
-            ui_launch = Some(launch_ui(&gpu, page, size));
+            let path = std::fs::canonicalize(path)?.to_string_lossy().into_owned();
+            ui_launch = Some(launch_ui(&gpu, path.clone(), size));
+            page = Some(path);
         }
         row = Some(Row {
             cpu: started.elapsed() - render_wait,
