@@ -1,5 +1,6 @@
 // Reads the measurements a perf page logged, in Edge or in the host, and names the records a counted run of `scene`
-// needs and lacks. The summary drops each dynamic run's first summary, so a dynamic run needs two.
+// needs and lacks, and whether the scene logged an error. The summary drops each dynamic run's first summary, so a dynamic
+// run needs two.
 export function parse(lines, scene) {
   const draws = lines.map(line => /perf load run=0 ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
   const spans = lines.map(line => /perf loadspan ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
@@ -8,5 +9,6 @@ export function parse(lines, scene) {
   const missing = scene === 'perf'
     ? [['perf load run=0', draws], ['perf loadspan', spans], ['perf frame1', firstFrames]].filter(([, values]) => !values.length).map(([name]) => name)
     : dynamic.length > 1 ? [] : ['a dynamic summary after the first'];
-  return { loads: spans, draws, firstFrames, dynamic, missing };
+  const failed = lines.some(line => line.includes('scene error'));
+  return { loads: spans, draws, firstFrames, dynamic, missing, failed };
 }

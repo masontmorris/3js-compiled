@@ -11,6 +11,12 @@ const native = typeof globalThis.submitGpuCommands === 'function';
 const scene = native ? (globalThis.__sceneName ?? 'folio') : (new URL(location.href).searchParams.get('scene') ?? 'folio');
 const pallyBase = new URLSearchParams(location.hash.slice(1)).get('pally');
 const log = line => console.log(`R ${line}`);
+// Logged as well as stored, so a tool reading the log (tools/canvas2d/perf.mjs) sees the failure on either side.
+function fail(error) {
+  globalThis.__sceneError = String(error?.stack ?? error);
+  console.error(globalThis.__sceneError);
+  log('scene error');
+}
 const round = value => Math.round(value * 1000) / 1000;
 
 // The load span starts before the FontFace work and ends at the last canvas upload, after the renderer's device
@@ -86,8 +92,7 @@ try {
   if (!SCENES[scene]) throw new Error(`no scene ${scene}`);
   update = (await SCENES[scene]({ show, log, assets: new URL('../platform/assets/', location.href) })) ?? update;
 } catch (error) {
-  globalThis.__sceneError = String(error?.stack ?? error);
-  console.error(globalThis.__sceneError);
+  fail(error);
 }
 log(`scene ${scene} ready`);
 
@@ -130,8 +135,7 @@ function draw() {
     if (frame === 3) globalThis.__sceneReady = true;
     requestAnimationFrame(draw);
   } catch (error) {
-    globalThis.__sceneError = String(error?.stack ?? error);
-    console.error(globalThis.__sceneError);
+    fail(error);
   }
 }
 requestAnimationFrame(draw);
