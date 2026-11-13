@@ -4,6 +4,7 @@ param(
     [string[]]$Cases = @('once', 'big', 'resize', 'surrogate', 'flood', 'plain', 'pace-vsync', 'pace-novsync')
 )
 $ErrorActionPreference = 'Stop'
+$Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $runs = @{
     once = @('tools/ui-repro/once-click.js', 'tools/ui-repro/click.json')
     big = @('tools/ui-repro/big.js', 'tools/ui-repro/plain.json')
@@ -33,7 +34,7 @@ foreach ($case in $Cases) {
                 ForEach-Object {
                     if (-not $seen.ContainsKey($_.ProcessId)) { $seen[$_.ProcessId] = 1; Add-Content $file $_.ProcessId }
                     $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-                    if ($process) { Add-Content $cpuFile ('{0:F2},{1},{2:F3}' -f ((Get-Date) - $started).TotalSeconds, $_.ProcessId, $process.TotalProcessorTime.TotalSeconds) }
+                    if ($process) { Add-Content $cpuFile ([string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:F2},{1},{2:F3}', ((Get-Date) - $started).TotalSeconds, $_.ProcessId, $process.TotalProcessorTime.TotalSeconds)) }
                 }
             Start-Sleep -Milliseconds 100
         }
