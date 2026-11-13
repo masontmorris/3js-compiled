@@ -522,6 +522,45 @@ mod tests {
         (layout.runs[0].instance.face, nunito)
     }
 
+    /// The chain for a loaded Nunito face limited to Cyrillic, then `rest`.
+    fn cyrillic_nunito_then(rest: Vec<Family>) -> (Fonts, Chain, FaceId) {
+        let mut fonts = Fonts::default();
+        let nunito = fonts.load(NUNITO).unwrap();
+        let mut families = vec![Family::Face(LoadedFace {
+            id: nunito,
+            weight: [400.0, 400.0],
+            ranges: Some(vec![[0x400, 0x4ff]]),
+        })];
+        families.extend(rest);
+        let spec = FontSpec {
+            families,
+            size: 32.0,
+            weight: 400.0,
+            italic: false,
+        };
+        let chain = chain(&mut fonts, &spec);
+        (fonts, chain, nunito)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_metrics_font_is_the_first_whose_range_holds_a_space() {
+        let (_, chain, nunito) = cyrillic_nunito_then(vec![Family::System("courier new".into())]);
+        assert_ne!(chain.primary().unwrap().face, nunito);
+        assert_eq!(chain.primary().unwrap().face, chain.instances[1].face);
+        // With no listed font for a space, the standard font steps in, as CSS's default font does.
+        let (_, chain, nunito) = cyrillic_nunito_then(Vec::new());
+        assert_ne!(chain.primary().unwrap().face, nunito);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_face_alone_does_not_draw_a_character_outside_its_range() {
+        let (mut fonts, mut chain, nunito) = cyrillic_nunito_then(Vec::new());
+        let layout = layout(&mut fonts, &mut chain, "a", 32.0);
+        assert!(layout.runs.iter().all(|run| run.instance.face != nunito));
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_loaded_face_draws_only_the_characters_in_its_unicode_range() {

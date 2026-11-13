@@ -399,3 +399,35 @@ test('text draws send every unicode-range subset with its ranges, and load only 
     { system: 'game' },
   ]);
 });
+
+test('unicode-range takes wildcards with or without leading digits and rejects malformed ranges', async () => {
+  // The characters of `text` a face with `value` as its range would load for.
+  const covered = async (value, text) => {
+    const set = new FontFaceSet();
+    set.add(new FontFace('W', new Uint8Array(4), { unicodeRange: value }));
+    const hits = [];
+    for (const c of text) if ((await set.load('16px W', c)).length) hits.push(c);
+    return hits.join('');
+  };
+  assert.equal(await covered('U+???', 'AΩЖ࿿က'), 'AΩЖ࿿');
+  assert.equal(await covered('u+4??, U+0-7f', 'AΩЖԀ'), 'AЖ');
+  for (const bad of ['U+', 'U+-41', 'U+1234567', 'U+41-', 'U+4?1', 'U+???????', 'U+110000']) {
+    assert.throws(() => new FontFace('W', 'url(x)', { unicodeRange: bad }), { name: 'SyntaxError' }, bad);
+  }
+});
+
+test('assigning unicodeRange changes which text a face matches', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+  try {
+    const set = new FontFaceSet();
+    const face = new FontFace('Moved', 'url(https://example.test/moved)', { unicodeRange: 'U+0-FF' });
+    set.add(face);
+    face.unicodeRange = 'U+400-4FF';
+    assert.equal(face.unicodeRange, 'U+400-4FF');
+    assert.deepEqual(await set.load('16px Moved', 'a'), []);
+    assert.deepEqual(await set.load('16px Moved', 'Ж'), [face]);
+    assert.throws(() => { face.unicodeRange = 'nonsense'; }, { name: 'SyntaxError' });
+    assert.equal(face.unicodeRange, 'U+400-4FF');
+  } finally { globalThis.fetch = originalFetch; }
+});
