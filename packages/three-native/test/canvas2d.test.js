@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CanvasGradient, FontFace, FontFaceSet, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
+import { CanvasGradient, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
 import { Document } from '../src/platform/dom.js';
 
 const edge = JSON.parse(readFileSync(new URL('./fixtures/canvas2d-edge.json', import.meta.url), 'utf8'));
@@ -247,4 +247,24 @@ test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('ImageData rejects empty and inconsistent pixel arrays', () => {
+  assert.throws(() => new ImageData(new Uint8ClampedArray(0), 1), { name: 'IndexSizeError' });
+  assert.throws(() => new ImageData(new Uint8ClampedArray(8), 1, 1), { name: 'IndexSizeError' });
+  assert.equal(new ImageData(new Uint8ClampedArray(8), 1).height, 2);
+});
+
+test('removing or setting a canvas dimension via namespace resets its context', () => {
+  const canvas = new Document({}).createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 12;
+  ctx.font = '20px serif';
+  canvas.removeAttribute('width');
+  assert.equal(canvas.width, 300);
+  assert.equal(ctx.font, '10px sans-serif');
+  ctx.font = '20px serif';
+  canvas.setAttributeNS(null, 'height', '20');
+  assert.equal(canvas.height, 20);
+  assert.equal(ctx.font, '10px sans-serif');
 });
