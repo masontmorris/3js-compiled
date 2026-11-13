@@ -522,3 +522,38 @@ test('a face deleted while it loads leaves the cycle without failing it', async 
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(events, [['loadingdone', [kept]]]);
 });
+
+test('a failed face the page deletes before its cycle reports leaves no empty loadingerror', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const when of ['while another face loads', 'after the cycle ends']) {
+      let release;
+      const slow = new Promise(resolve => { release = resolve; });
+      globalThis.fetch = async url => {
+        if (url.includes('gone')) return { ok: false, status: 404 };
+        await slow;
+        return { ok: true, arrayBuffer: async () => new ArrayBuffer(4) };
+      };
+      const set = new FontFaceSet();
+      const bad = new FontFace('Bad', 'url(https://example.test/gone)');
+      const good = new FontFace('Good', 'url(https://example.test/good)');
+      set.add(bad); set.add(good);
+      const events = [];
+      set.onloadingdone = event => events.push([event.type, [...event.fontfaces]]);
+      set.onloadingerror = event => events.push([event.type, [...event.fontfaces]]);
+      const loads = [bad.load(), good.load()];
+      if (when === 'while another face loads') {
+        await assert.rejects(loads[0]);
+        set.delete(bad);
+        release();
+        await Promise.allSettled(loads);
+      } else {
+        release();
+        await Promise.allSettled(loads);
+        set.delete(bad);
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.deepEqual(events, [['loadingdone', [good]]], when);
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
