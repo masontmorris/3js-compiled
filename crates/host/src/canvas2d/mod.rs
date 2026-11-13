@@ -100,8 +100,8 @@ struct ImageDraw {
     width: u32,
     height: u32,
     premultiplied: bool,
-    /// Whole pixels inside the image: x, y, width, height.
-    source: [u32; 4],
+    /// The rectangle inside the image to draw, in image pixels, which may be fractional: x, y, width, height.
+    source: [f64; 4],
     dest: [f64; 4],
     smoothing: bool,
     style: Style,
@@ -118,14 +118,12 @@ fn op_canvas2d_draw_image(
 ) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let [sx, sy, sw, sh] = draw.source;
-    // The dimension limits come first, so the byte count cannot overflow.
+    // The dimension limits come first, so the byte count cannot overflow. The negated comparisons also reject NaN.
     if draw.width > u16::MAX as u32
         || draw.height > u16::MAX as u32
         || image.len() != draw.width as usize * draw.height as usize * 4
-        || sw == 0
-        || sh == 0
-        || sx.checked_add(sw).is_none_or(|end| end > draw.width)
-        || sy.checked_add(sh).is_none_or(|end| end > draw.height)
+        || !(sx >= 0.0 && sy >= 0.0 && sw > 0.0 && sh > 0.0)
+        || !(sx + sw <= draw.width as f64 && sy + sh <= draw.height as f64)
     {
         return Err(JsErrorBox::type_error(
             "image pixels do not match the source rectangle",
@@ -138,7 +136,7 @@ fn op_canvas2d_draw_image(
         image,
         draw.width as u16,
         draw.premultiplied,
-        (sx as u16, sy as u16, sw as u16, sh as u16),
+        Rect::new(sx, sy, sx + sw, sy + sh),
         Rect::new(dx, dy, dx + dw, dy + dh),
         draw.smoothing,
     );

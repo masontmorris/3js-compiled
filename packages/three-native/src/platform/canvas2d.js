@@ -150,9 +150,32 @@ function parseWeightRange(value) {
   return [Math.min(...weights), Math.max(...weights)];
 }
 
+// A `unicode-range` descriptor as inclusive code point ranges: U+41, U+400-4FF, or U+4?? with wildcards.
+function parseUnicodeRange(value) {
+  return String(value).split(',').map(token => {
+    const match = /^\s*u\+([0-9a-f]{1,6})(?:-([0-9a-f]{1,6})|(\?{1,5}))?\s*$/i.exec(token);
+    const wild = match?.[3] ?? '';
+    const range = match && [parseInt(match[1] + '0'.repeat(wild.length), 16), parseInt((match[2] ?? match[1]) + 'f'.repeat(wild.length), 16)];
+    if (!range || match[1].length + wild.length > 6 || range[0] > range[1] || range[1] > 0x10ffff) throw new DOMException(`Failed to set the 'unicodeRange' property on 'FontFace': Failed to set '${value}' as a property value.`, 'SyntaxError');
+    return range;
+  });
+}
+
+// Whether a face's ranges hold any character of `text`.
+function coversAny(ranges, text) {
+  for (const c of text) {
+    const point = c.codePointAt(0);
+    if (ranges.some(([min, max]) => point >= min && point <= max)) return true;
+  }
+  return false;
+}
+
 function normalizeFamily(family) {
   return String(family).trim().replace(/^(["'])(.*)\1$/, '$2');
 }
+
+// A face's parsed `unicode-range`, kept off the page's view of the object.
+const RANGES = Symbol('unicode ranges');
 
 // Bumped whenever a face starts a load, so `document.fonts.ready` changes when the page asks for a new font.
 let loadGeneration = 0;
@@ -170,6 +193,7 @@ export class FontFace {
     this.unicodeRange = String(descriptors.unicodeRange ?? 'U+0-10FFFF');
     this.display = String(descriptors.display ?? 'auto');
     this.weightRange = parseWeightRange(this.weight);
+    this[RANGES] = parseUnicodeRange(this.unicodeRange);
     this.status = 'unloaded';
     this.faceId = null;
     this.loaded = new Promise((resolve, reject) => { this.#resolve = resolve; this.#reject = reject; });
@@ -257,20 +281,22 @@ export class FontFaceSet extends EventTarget {
   keys() { return this.#faces.values(); }
   entries() { return [...this.#faces].map(face => [face, face]).values(); }
   [Symbol.iterator]() { return this.#faces.values(); }
-  // The faces that would draw `font`, loading those not loaded yet.
+  // The faces that would draw `text` in `font`, loading those not loaded yet.
   async load(font, text = ' ') {
     const parsed = parseFont(font);
     if (!parsed) throw new DOMException(`Failed to execute 'load' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
-    const faces = parsed.families.flatMap(({ name }) => this.matching(name, parsed, true));
+    const faces = parsed.families.flatMap(({ name }) => this.matching(name, parsed, true).filter(face => coversAny(face[RANGES], String(text))));
     return Promise.all(faces.map(face => face.load()));
   }
-  check(font) {
+  check(font, text = ' ') {
     const parsed = parseFont(font);
     if (!parsed) throw new DOMException(`Failed to execute 'check' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
-    return parsed.families.every(({ name }) => this.matching(name, parsed, true).every(face => face.status === 'loaded'));
+    return parsed.families.every(({ name }) => this.matching(name, parsed, true).filter(face => coversAny(face[RANGES], String(text))).every(face => face.status === 'loaded'));
   }
-  // The face CSS font matching picks for this family, weight and style: one face, or none. Drawing passes over faces
-  // that failed to load; load() and check() see them, so they report the failure as Edge does.
+  // The faces CSS font matching picks for this family, weight and style: the best match, with the faces that
+  // share its descriptors and differ only in `unicode-range`, latest added first, as CSS gives them precedence.
+  // Drawing passes over faces that failed to load; load() and check() see them, so they report the failure as
+  // Edge does.
   matching(name, font, failed = false) {
     const family = name.toLowerCase();
     let candidates = [...this.#faces].filter(face => face.family.toLowerCase() === family && (failed || face.status !== 'error'));
@@ -292,7 +318,8 @@ export class FontFaceSet extends EventTarget {
       return above ? 3000 + nearest : 2000 - nearest;
     };
     candidates.sort((a, b) => distance(a) - distance(b));
-    return [candidates[0]];
+    const [best] = candidates;
+    return candidates.filter(face => face.style === best.style && face.weightRange.join() === best.weightRange.join()).reverse();
   }
 }
 
@@ -576,17 +603,26 @@ export class CanvasRenderingContext2D {
 
   // The font list as the host resolves it: loaded faces by ID, generic keywords as generics, the rest by name for
   // the host's installed fonts.
-  #fontSpec() {
+  // Each family's loaded faces go with their unicode ranges; a face the text needs that is not loaded yet starts
+  // loading, and the family's name stands in for it until then.
+  #fontSpec(text) {
     const font = this.#state.font;
     const families = [];
     for (const { name, quoted } of font.families) {
       if (!quoted && GENERIC.has(name.toLowerCase())) { families.push({ generic: name.toLowerCase() }); continue; }
-      const [face] = this.#fonts?.matching(name, font) ?? [];
-      if (face?.status === 'loaded') families.push({ face: { id: face.faceId, weight: face.weightRange } });
-      else {
-        if (face?.status === 'unloaded') face.load();
-        families.push({ system: name.toLowerCase() });
+      const faces = this.#fonts?.matching(name, font) ?? [];
+      let missing = !faces.length;
+      for (const face of faces) {
+        if (face.status === 'loaded') {
+          const ranges = face[RANGES];
+          const whole = ranges.length === 1 && ranges[0][0] === 0 && ranges[0][1] >= 0x10ffff;
+          families.push({ face: { id: face.faceId, weight: face.weightRange, ...(whole ? {} : { ranges }) } });
+        } else if (coversAny(face[RANGES], text)) {
+          if (face.status === 'unloaded') face.load();
+          missing = true;
+        }
       }
+      if (missing) families.push({ system: name.toLowerCase() });
     }
     return { families, size: font.size, weight: font.weight, italic: font.style !== 'normal' };
   }
@@ -594,7 +630,7 @@ export class CanvasRenderingContext2D {
     if (!finite(x, y) || (maxWidth !== undefined && (!Number.isFinite(maxWidth) || maxWidth <= 0)) || !this.#drawable()) return;
     const state = this.#state;
     host.text(this.#pixels, this.#width, this.#height, {
-      text: String(text).replace(/[\t\n\f\r]/g, ' '), font: this.#fontSpec(), x, y, align: state.textAlign, baseline: state.textBaseline,
+      text: String(text).replace(/[\t\n\f\r]/g, ' '), font: this.#fontSpec(String(text)), x, y, align: state.textAlign, baseline: state.textBaseline,
       maxWidth: maxWidth ?? null, style: this.#style(stroke ? 'strokeStyle' : 'fillStyle'),
       stroke: stroke ? { width: state.lineWidth, miterLimit: state.miterLimit, join: state.lineJoin } : null,
     });
@@ -603,7 +639,7 @@ export class CanvasRenderingContext2D {
   fillText(text, x, y, maxWidth) { this.#text(text, x, y, maxWidth, false); }
   strokeText(text, x, y, maxWidth) { this.#text(text, x, y, maxWidth, true); }
   measureText(text) {
-    const metrics = host.measure({ text: String(text).replace(/[\t\n\f\r]/g, ' '), font: this.#fontSpec(), align: this.#state.textAlign, baseline: this.#state.textBaseline });
+    const metrics = host.measure({ text: String(text).replace(/[\t\n\f\r]/g, ' '), font: this.#fontSpec(String(text)), align: this.#state.textAlign, baseline: this.#state.textBaseline });
     return new TextMetrics(metrics);
   }
 
@@ -633,7 +669,7 @@ export class CanvasRenderingContext2D {
     if (x1 <= x0 || y1 <= y0) return;
     const scaleX = dw / sw;
     const scaleY = dh / sh;
-    const source = [Math.floor(x0), Math.floor(y0), Math.ceil(x1) - Math.floor(x0), Math.ceil(y1) - Math.floor(y0)];
+    const source = [x0, y0, x1 - x0, y1 - y0];
     const dest = [dx + (x0 - sx) * scaleX, dy + (y0 - sy) * scaleY, (x1 - x0) * scaleX, (y1 - y0) * scaleY];
     host.drawImage(this.#pixels, this.#width, this.#height, pixels.data, {
       width: pixels.width, height: pixels.height, premultiplied: !!pixels.premultiplied, source, dest,

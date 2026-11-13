@@ -12,14 +12,17 @@ use skrifa::{
 };
 use std::collections::HashMap;
 
+/// The code point ranges of a `unicode-range` descriptor, inclusive.
+pub type Ranges = Vec<[u32; 2]>;
+
 /// A face the page loaded with `FontFace`, with the weight range its descriptor declares.
 #[derive(Deserialize, Clone, Debug)]
 pub struct LoadedFace {
     pub id: FaceId,
     pub weight: [f32; 2],
-    /// The code point ranges of its `unicode-range` descriptor, inclusive; none means every character.
+    /// Its `unicode-range`; none means every character.
     #[serde(default)]
-    pub ranges: Option<Vec<[u32; 2]>>,
+    pub ranges: Option<Ranges>,
 }
 
 /// One family of a CSS font list, as the page's script resolved it.
@@ -112,6 +115,8 @@ pub struct Chain {
     pub instances: Vec<Instance>,
     /// How many of the instances come from the font list, or are the standard font in its place.
     listed: usize,
+    /// The `unicode-range` of each listed instance that has one, by index.
+    ranges: Vec<Option<Ranges>>,
     spec: (f32, bool),
 }
 
@@ -120,23 +125,38 @@ impl Chain {
     pub fn primary(&self) -> Option<&Instance> {
         self.instances.first()
     }
+
+    /// Whether the instance at `index` may draw `c`: its `unicode-range` holds it, or it has none.
+    fn allows(&self, index: usize, c: char) -> bool {
+        self.ranges
+            .get(index)
+            .and_then(Option::as_ref)
+            .is_none_or(|ranges| {
+                ranges
+                    .iter()
+                    .any(|&[min, max]| (min..=max).contains(&(c as u32)))
+            })
+    }
 }
 
 pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
     let mut instances: Vec<Instance> = Vec::new();
-    let mut faces: Vec<(FaceId, Option<[f32; 2]>)> = Vec::new();
+    let mut ranges = Vec::new();
+    let mut faces: Vec<(FaceId, Option<[f32; 2]>, Option<Ranges>)> = Vec::new();
     for family in &spec.families {
         match family {
-            Family::Face(loaded) => faces.push((loaded.id, Some(loaded.weight))),
+            Family::Face(loaded) => {
+                faces.push((loaded.id, Some(loaded.weight), loaded.ranges.clone()))
+            }
             Family::System(name) => faces.extend(
                 fonts
                     .family(name, spec.weight, spec.italic)
-                    .map(|face| (face, None)),
+                    .map(|face| (face, None, None)),
             ),
             Family::Generic(name) => faces.extend(
                 fonts
                     .generic(name, spec.weight, spec.italic)
-                    .map(|face| (face, None)),
+                    .map(|face| (face, None, None)),
             ),
         }
     }
@@ -144,17 +164,19 @@ pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
         faces.extend(
             fonts
                 .family(STANDARD, spec.weight, spec.italic)
-                .map(|face| (face, None)),
+                .map(|face| (face, None, None)),
         );
     }
-    for (face, range) in faces {
+    for (face, weight, face_ranges) in faces {
         if !instances.iter().any(|known| known.face == face) {
-            instances.push(instance(fonts, face, spec.weight, range));
+            instances.push(instance(fonts, face, spec.weight, weight));
+            ranges.push(face_ranges);
         }
     }
     Chain {
         listed: instances.len(),
         instances,
+        ranges,
         spec: (spec.weight, spec.italic),
     }
 }
@@ -204,7 +226,8 @@ fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<ch
         if chosen.contains_key(&c)
             || chain.instances[..chain.listed]
                 .iter()
-                .any(|instance| covers(fonts, instance.face, c))
+                .enumerate()
+                .any(|(index, instance)| chain.allows(index, c) && covers(fonts, instance.face, c))
         {
             continue;
         }
@@ -291,7 +314,10 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
                 Some(
                     charmaps[..chain.listed]
                         .iter()
-                        .position(|charmap| charmap.map(c).is_some())
+                        .enumerate()
+                        .position(|(index, charmap)| {
+                            chain.allows(index, c) && charmap.map(c).is_some()
+                        })
                         .or_else(|| chosen.get(&c).copied())
                         .unwrap_or(0),
                 )
@@ -475,7 +501,7 @@ mod tests {
     const NUNITO: &[u8] = include_bytes!("../../../../examples/canvas2d/fonts/Nunito-wght.ttf");
 
     /// The face that draws "a" when the font list is a loaded Nunito face with `ranges`, then Courier New.
-    fn face_for_a(ranges: Option<Vec<[u32; 2]>>) -> (FaceId, FaceId) {
+    fn face_for_a(ranges: Option<Ranges>) -> (FaceId, FaceId) {
         let mut fonts = Fonts::default();
         let nunito = fonts.load(NUNITO).unwrap();
         let spec = FontSpec {

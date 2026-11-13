@@ -351,11 +351,14 @@ impl Painter {
         pixels: &[u8],
         width: u16,
         premultiplied: bool,
-        source: (u16, u16, u16, u16),
+        source: Rect,
         dest: Rect,
         smoothing: bool,
     ) {
-        let (sx, sy, sw, sh) = source;
+        // The whole pixels the source touches; the paint transform below places its fractional part.
+        let (sx, sy) = (source.x0.floor() as u16, source.y0.floor() as u16);
+        let sw = source.x1.ceil() as u16 - sx;
+        let sh = source.y1.ceil() as u16 - sy;
         let mut data = Vec::with_capacity(sw as usize * sh as usize);
         for row in sy as usize..(sy + sh) as usize {
             for &[r, g, b, a] in pixels[(row * width as usize + sx as usize) * 4..]
@@ -394,7 +397,11 @@ impl Painter {
         self.context.set_paint(image);
         self.context.set_paint_transform(
             Affine::translate((dest.x0, dest.y0))
-                * Affine::scale_non_uniform(dest.width() / sw as f64, dest.height() / sh as f64),
+                * Affine::scale_non_uniform(
+                    dest.width() / source.width(),
+                    dest.height() / source.height(),
+                )
+                * Affine::translate((sx as f64 - source.x0, sy as f64 - source.y0)),
         );
         // vello_cpu 0.2 does not apply a sampler's alpha to images, so global alpha goes through a layer.
         if style.alpha < 1.0 {
@@ -885,7 +892,7 @@ mod tests {
             &red,
             2,
             false,
-            (0, 0, 2, 2),
+            Rect::new(0.0, 0.0, 2.0, 2.0),
             Rect::new(0.0, 0.0, 4.0, 4.0),
             true,
         );
