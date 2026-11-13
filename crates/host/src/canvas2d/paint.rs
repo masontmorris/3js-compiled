@@ -482,8 +482,9 @@ impl Painter {
             .collect();
         let Some(first) = glyphs.first() else { return };
         let last = glyphs.last().expect("a run with a first glyph has a last");
-        // The layer covers the glyphs' outlines, two pixels more for hinting and anti-aliasing, and the stroke. A
-        // color glyph can paint past its outline, so it gets a margin of the font size.
+        // The layer covers the glyphs' outlines, two pixels more for hinting and anti-aliasing, and the stroke,
+        // which the glyph transform scales with the outlines. A color glyph can paint past its outline, so it gets a
+        // margin of the font size.
         let coords: Vec<_> = run
             .instance
             .coords
@@ -504,9 +505,9 @@ impl Painter {
                 ));
             }
         }
-        let margin = 2.0
-            + stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0)
-            + if face.color { size as f64 } else { 0.0 };
+        let stroke_reach = stroke.map_or(0.0, |s| s.width * s.miter_limit.max(1.0) / 2.0)
+            * glyph_x_scale.max(glyph_y_scale);
+        let margin = 2.0 + stroke_reach + if face.color { size as f64 } else { 0.0 };
         let ink = ink.inflate(margin, margin);
         let user_to_device = if snapped.is_some() {
             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]

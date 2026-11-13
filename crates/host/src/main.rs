@@ -245,6 +245,8 @@ fn headless(options: &Options, frames: u32) -> Result<()> {
         None,
         &page,
     )?;
+    // A stream the entry submits at its top level is dropped like each frame's, so the first frame can submit its own.
+    game.take_commands();
     let start = Instant::now();
     while !game.evaluated() {
         if start.elapsed() > Duration::from_secs(30) {

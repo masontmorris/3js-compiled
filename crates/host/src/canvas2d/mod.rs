@@ -118,13 +118,14 @@ fn op_canvas2d_draw_image(
 ) -> Result<(), JsErrorBox> {
     let mut surface = surface(pixels, width, height)?;
     let [sx, sy, sw, sh] = draw.source;
-    if image.len() != draw.width as usize * draw.height as usize * 4
+    // The dimension limits come first, so the byte count cannot overflow.
+    if draw.width > u16::MAX as u32
+        || draw.height > u16::MAX as u32
+        || image.len() != draw.width as usize * draw.height as usize * 4
         || sw == 0
         || sh == 0
         || sx.checked_add(sw).is_none_or(|end| end > draw.width)
         || sy.checked_add(sh).is_none_or(|end| end > draw.height)
-        || draw.width > u16::MAX as u32
-        || draw.height > u16::MAX as u32
     {
         return Err(JsErrorBox::type_error(
             "image pixels do not match the source rectangle",

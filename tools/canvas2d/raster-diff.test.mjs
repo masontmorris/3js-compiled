@@ -9,7 +9,8 @@ import { PNG } from 'pngjs';
 import { FOLIO_CANVASES } from '../../examples/canvas2d/src/folio-canvases.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const hostPath = [resolve(root, process.env.THREEJSC_HOST ?? 'target/release/host.exe')].find(path => existsSync(path));
+// A THREEJSC_HOST that is set is used even when it names no file, so a wrong setting fails instead of skipping.
+const hostPath = process.env.THREEJSC_HOST ? resolve(root, process.env.THREEJSC_HOST) : [resolve(root, 'target/release/host.exe')].find(path => existsSync(path));
 
 test('the raster diff rejects an Edge reference of another size', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-raster-diff-'));

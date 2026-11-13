@@ -4,6 +4,7 @@
 // clipping, patterns, shadows, filters and compositing modes other than source-over log once and draw nothing.
 import { EventTarget } from './events.js';
 import { logOnce } from './dom.js';
+import { DOMMatrix } from './geometry.js';
 
 const PIXELS = Symbol.for('threejsc.pixels');
 export const CONTEXT_2D = Symbol('threejsc.context2d');
@@ -260,18 +261,19 @@ export class FontFaceSet extends EventTarget {
   async load(font, text = ' ') {
     const parsed = parseFont(font);
     if (!parsed) throw new DOMException(`Failed to execute 'load' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
-    const faces = parsed.families.flatMap(({ name }) => this.matching(name, parsed));
+    const faces = parsed.families.flatMap(({ name }) => this.matching(name, parsed, true));
     return Promise.all(faces.map(face => face.load()));
   }
   check(font) {
     const parsed = parseFont(font);
     if (!parsed) throw new DOMException(`Failed to execute 'check' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
-    return parsed.families.every(({ name }) => this.matching(name, parsed).every(face => face.status === 'loaded'));
+    return parsed.families.every(({ name }) => this.matching(name, parsed, true).every(face => face.status === 'loaded'));
   }
-  // The face CSS font matching picks for this family, weight and style: one face, or none.
-  matching(name, font) {
+  // The face CSS font matching picks for this family, weight and style: one face, or none. Drawing passes over faces
+  // that failed to load; load() and check() see them, so they report the failure as Edge does.
+  matching(name, font, failed = false) {
     const family = name.toLowerCase();
-    let candidates = [...this.#faces].filter(face => face.family.toLowerCase() === family && face.status !== 'error');
+    let candidates = [...this.#faces].filter(face => face.family.toLowerCase() === family && (failed || face.status !== 'error'));
     if (!candidates.length) return [];
     const italic = font.style !== 'normal';
     const styled = candidates.filter(face => (face.style !== 'normal') === italic);
@@ -542,10 +544,7 @@ export class CanvasRenderingContext2D {
     if (finite(a, b, c, d, e, f)) this.#state.transform = [a, b, c, d, e, f];
   }
   resetTransform() { this.#state.transform = IDENTITY; }
-  getTransform() {
-    const [a, b, c, d, e, f] = this.#state.transform;
-    return { a, b, c, d, e, f, m11: a, m12: b, m21: c, m22: d, m41: e, m42: f, is2D: true, isIdentity: this.#state.transform.every((v, i) => v === IDENTITY[i]) };
-  }
+  getTransform() { return new DOMMatrix(this.#state.transform); }
 
   createLinearGradient(x0, y0, x1, y1) {
     if (!finite(x0, y0, x1, y1)) throw new TypeError("Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.");
@@ -648,10 +647,11 @@ export class CanvasRenderingContext2D {
   }
   getImageData(sx, sy, sw, sh) {
     if (!finite(sx, sy, sw, sh)) throw new TypeError("Failed to execute 'getImageData' on 'CanvasRenderingContext2D': The provided double value is non-finite.");
+    // The arguments are IDL longs, which truncate toward zero before any check.
+    [sx, sy, sw, sh] = [sx, sy, sw, sh].map(Math.trunc);
     if (!sw || !sh) throw new DOMException(`Failed to execute 'getImageData' on 'CanvasRenderingContext2D': The source ${sw ? 'height' : 'width'} is 0.`, 'IndexSizeError');
     if (sw < 0) { sx += sw; sw = -sw; }
     if (sh < 0) { sy += sh; sh = -sh; }
-    [sx, sy, sw, sh] = [Math.floor(sx), Math.floor(sy), Math.ceil(sw), Math.ceil(sh)];
     const out = new ImageData(sw, sh);
     const row = new Uint8Array(sw * 4);
     for (let y = 0; y < sh; y++) {
@@ -669,19 +669,18 @@ export class CanvasRenderingContext2D {
   putImageData(imageData, dx, dy, dirtyX = 0, dirtyY = 0, dirtyWidth = imageData.width, dirtyHeight = imageData.height) {
     if (!(imageData instanceof ImageData)) throw new TypeError("Failed to execute 'putImageData' on 'CanvasRenderingContext2D': parameter 1 is not of type 'ImageData'.");
     if (!finite(dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight)) return;
+    [dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight] = [dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight].map(Math.trunc);
     if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
     if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
-    const x0 = Math.max(0, Math.floor(dirtyX));
-    const y0 = Math.max(0, Math.floor(dirtyY));
-    const x1 = Math.min(imageData.width, Math.floor(dirtyX + dirtyWidth));
-    const y1 = Math.min(imageData.height, Math.floor(dirtyY + dirtyHeight));
-    const ox = Math.floor(dx);
-    const oy = Math.floor(dy);
+    const x0 = Math.max(0, dirtyX);
+    const y0 = Math.max(0, dirtyY);
+    const x1 = Math.min(imageData.width, dirtyX + dirtyWidth);
+    const y1 = Math.min(imageData.height, dirtyY + dirtyHeight);
     for (let y = y0; y < y1; y++) {
-      const ty = oy + y;
+      const ty = dy + y;
       if (ty < 0 || ty >= this.#height) continue;
       for (let x = x0; x < x1; x++) {
-        const tx = ox + x;
+        const tx = dx + x;
         if (tx < 0 || tx >= this.#width) continue;
         const i = (y * imageData.width + x) * 4;
         const o = (ty * this.#width + tx) * 4;
