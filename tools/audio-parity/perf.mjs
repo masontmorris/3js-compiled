@@ -13,6 +13,7 @@ import { createInterface } from 'node:readline';
 import { load } from '../perf/load.mjs';
 import { findGaps } from './gaps.mjs';
 import { runHost } from './host.mjs';
+import { stopRecorder } from './recorder.mjs';
 import { readWav } from './wav.mjs';
 
 const args = process.argv.slice(2);
@@ -65,7 +66,7 @@ for (const [i, mode] of order.entries()) {
   const loopback = mode === 'on' ? spawn(loopbackExe, [device, String(seconds + 125), join(dir, 'loopback.wav')], { stdio: ['pipe', 'inherit', 'inherit'] }) : null;
   const recorded = loopback && new Promise(r => loopback.on('exit', r));
   await runHost('examples/audio/stress.js', mode === 'off' ? 'audio=off' : '', dir, { frames: seconds * fps, audioOut: mode === 'on', timeoutMs: (seconds + 120) * 1000 });
-  if (loopback) setTimeout(() => loopback.stdin.end('stop\n'), 2000);
+  if (loopback) setTimeout(() => stopRecorder(loopback), 2000);
   running = false;
   await watch;
   const elapsed = performance.now() - started;
