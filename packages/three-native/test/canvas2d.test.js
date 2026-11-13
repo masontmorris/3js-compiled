@@ -239,7 +239,7 @@ test('measureText matches Edge for folio\'s fonts, Windows fonts and every align
 // The pixel records that differ from Edge or lack a measurement: no size or another size, coverage more than 2% off,
 // or a mean difference over 2%.
 const pixelFailures = lines => lines.filter(line => !/^[1-9]\d*x[1-9]\d*$/.test(line.size) || line.size !== line.edgeSize
-  || !Number.isFinite(line.coverage) || !Number.isFinite(line.mean) || Math.abs(line.coverage - 1) > 0.02 || line.mean > 0.02)
+  || !Number.isFinite(line.coverage) || !Number.isFinite(line.mean) || Math.abs(line.coverage - 1) > 0.02 || Math.abs(line.mean) > 0.02)
   .map(line => `${line.name}: ${line.size} vs Edge ${line.edgeSize}, coverage ${Number(line.coverage).toFixed(4)} of Edge's, mean difference ${(Number(line.mean) * 100).toFixed(3)}%`);
 
 test('the pixel check fails records that lack a size, coverage or mean', () => {
