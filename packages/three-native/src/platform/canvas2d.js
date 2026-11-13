@@ -2,7 +2,7 @@
 // and radial gradients, images and text, with the drawing state, transforms and pixel access. A canvas keeps its
 // pixels here as premultiplied RGBA8; the host shapes, rasterizes and composites into them in place. Paths,
 // clipping, patterns, shadows, filters and compositing modes other than source-over log once and draw nothing.
-import { EventTarget } from './events.js';
+import { Event, EventTarget, defineHandlers } from './events.js';
 import { logOnce } from './dom.js';
 import { DOMMatrix } from './geometry.js';
 
@@ -177,6 +177,7 @@ function normalizeFamily(family) {
 
 // A face's parsed `unicode-range`, kept off the page's view of the object.
 const RANGES = Symbol('unicode ranges');
+const SETS = Symbol('font sets');
 
 // Bumped whenever a face starts a load, so `document.fonts.ready` changes when the page asks for a new font.
 let loadGeneration = 0;
@@ -188,6 +189,7 @@ export class FontFace {
   #resolve;
   #reject;
   constructor(family, source, descriptors = {}) {
+    this[SETS] = new Set();
     this.family = normalizeFamily(family);
     this.style = String(descriptors.style ?? 'normal');
     this.weight = String(descriptors.weight ?? 'normal');
@@ -225,6 +227,7 @@ export class FontFace {
     if (this.#load) return this.loaded;
     this.status = 'loading';
     loadGeneration++;
+    for (const set of this[SETS]) set.faceLoading(this);
     this.#load = (async () => {
       const source = this.#source;
       let bytes;
@@ -242,11 +245,13 @@ export class FontFace {
     })().then(() => {
       this.status = 'loaded';
       this.#resolve(this);
+      for (const set of this[SETS]) set.faceSettled(this);
       return this;
     }, error => {
       this.status = 'error';
       const failure = new DOMException(`A network error occurred, or the font could not be parsed: ${error?.message ?? error}`, 'NetworkError');
       this.#reject(failure);
+      for (const set of this[SETS]) set.faceSettled(this);
       throw failure;
     });
     this.#load.catch(() => {});
@@ -254,9 +259,39 @@ export class FontFace {
   }
 }
 
+export class FontFaceSetLoadEvent extends Event {
+  constructor(type, options = {}) {
+    super(type, options);
+    Object.defineProperty(this, 'fontfaces', { value: Object.freeze([...(options.fontfaces ?? [])]), enumerable: true });
+  }
+}
+
 export class FontFaceSet extends EventTarget {
   #faces = new Set();
   #ready = null;
+  #pending = new Set();
+  #succeeded = [];
+  #failed = [];
+  #emit(type, faces) {
+    const event = new FontFaceSetLoadEvent(type, { fontfaces: faces.filter(face => this.#faces.has(face)) });
+    this.dispatchEvent(event);
+  }
+  faceLoading(face) {
+    if (this.#pending.has(face)) return;
+    if (!this.#pending.size) setTimeout(() => this.#emit('loading', []), 0);
+    this.#pending.add(face);
+  }
+  faceSettled(face) {
+    if (!this.#pending.delete(face)) return;
+    (face.status === 'loaded' ? this.#succeeded : this.#failed).push(face);
+    if (!this.#pending.size) {
+      const succeeded = this.#succeeded.splice(0), failed = this.#failed.splice(0);
+      setTimeout(() => {
+        this.#emit('loadingdone', succeeded);
+        if (failed.length) this.#emit('loadingerror', failed);
+      }, 0);
+    }
+  }
   get size() { return this.#faces.size; }
   get status() { return [...this.#faces].some(face => face.status === 'loading') ? 'loading' : 'loaded'; }
   // Resolves once every face that is loading finishes; an unloaded face does not hold it, and reads of an
@@ -277,12 +312,14 @@ export class FontFaceSet extends EventTarget {
   add(face) {
     if (!(face instanceof FontFace)) throw new TypeError("Failed to execute 'add' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.");
     this.#faces.add(face);
+    face[SETS].add(this);
+    if (face.status === 'loading') this.faceLoading(face);
     this.#ready = null;
     return this;
   }
-  delete(face) { const deleted = this.#faces.delete(face); if (deleted) this.#ready = null; return deleted; }
+  delete(face) { const deleted = this.#faces.delete(face); if (deleted) { face[SETS].delete(this); if (this.#pending.has(face)) this.faceSettled(face); this.#ready = null; } return deleted; }
   has(face) { return this.#faces.has(face); }
-  clear() { this.#faces.clear(); this.#ready = null; }
+  clear() { for (const face of this.#faces) this.delete(face); }
   forEach(callback, thisArg) { for (const face of this.#faces) callback.call(thisArg, face, face, this); }
   values() { return this.#faces.values(); }
   keys() { return this.#faces.values(); }
@@ -329,6 +366,8 @@ export class FontFaceSet extends EventTarget {
     return candidates.filter(face => face.style === best.style && face.weightRange.join() === best.weightRange.join()).reverse();
   }
 }
+
+defineHandlers(FontFaceSet.prototype, ['loading', 'loadingdone', 'loadingerror']);
 
 export class CanvasGradient {
   constructor(geometry) {
