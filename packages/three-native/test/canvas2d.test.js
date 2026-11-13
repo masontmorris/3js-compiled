@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CanvasGradient, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
 import { Document } from '../src/platform/dom.js';
+import { DOMMatrix } from '../src/platform/geometry.js';
 
 const edge = JSON.parse(readFileSync(new URL('./fixtures/canvas2d-edge.json', import.meta.url), 'utf8'));
 const cases = kind => edge.lines.filter(line => line.kind === kind);
@@ -235,6 +236,20 @@ test('measureText matches Edge for folio\'s fonts, Windows fonts and every align
   }
 });
 
+// The pixel records that differ from Edge: another size, coverage more than 2% off, or a mean difference over 2%.
+const pixelFailures = lines => lines.filter(line => line.size !== line.edgeSize || Math.abs(line.coverage - 1) > 0.02 || line.mean > 0.02)
+  .map(line => `${line.name}: ${line.size} vs Edge ${line.edgeSize}, coverage ${line.coverage.toFixed(4)} of Edge's, mean difference ${(line.mean * 100).toFixed(3)}%`);
+
+test('the pixel check fails records that lack a size, coverage or mean', () => {
+  const good = { name: 'a', size: '2x2', edgeSize: '2x2', coverage: 1, mean: 0 };
+  assert.deepEqual(pixelFailures([good]), []);
+  for (const missing of ['size', 'edgeSize', 'coverage', 'mean']) {
+    const { [missing]: _, ...line } = good;
+    assert.equal(pixelFailures([line]).length, 1, missing);
+  }
+  assert.equal(pixelFailures([{ ...good, size: '0x2', edgeSize: '0x2' }]).length, 1);
+});
+
 test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font covers, named Windows fonts', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-canvas2d-'));
   try {
@@ -242,9 +257,7 @@ test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font 
     assert.equal(run.status, 0, run.stderr);
     const lines = readFileSync(join(dir, 'host.log'), 'utf8').split(/\r?\n/).filter(line => line.startsWith('P ')).map(line => JSON.parse(line.slice(2)));
     assert.equal(lines.length, 25);
-    const failures = lines.filter(line => line.size !== line.edgeSize || Math.abs(line.coverage - 1) > 0.02 || line.mean > 0.02)
-      .map(line => `${line.name}: ${line.size} vs Edge ${line.edgeSize}, coverage ${line.coverage.toFixed(4)} of Edge's, mean difference ${(line.mean * 100).toFixed(3)}%`);
-    assert.deepEqual(failures, []);
+    assert.deepEqual(pixelFailures(lines), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -291,4 +304,46 @@ test('a pending fonts.ready waits for faces that begin loading later', async () 
     await ready;
     assert.equal(second.status, 'loaded');
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a face that failed to load makes fonts.load reject and fonts.check return false', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 404 });
+  try {
+    const set = new FontFaceSet();
+    const face = new FontFace('Gone', 'url(https://example.test/gone)');
+    set.add(face);
+    await assert.rejects(face.load(), { name: 'NetworkError' });
+    await assert.rejects(set.load('16px Gone'), { name: 'NetworkError' });
+    assert.equal(set.check('16px Gone'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('getTransform returns a DOMMatrix of the current transform', () => {
+  const ctx = context();
+  ctx.setTransform(2, 0, 0, 4, 10, 20);
+  const matrix = ctx.getTransform();
+  assert.ok(matrix instanceof DOMMatrix);
+  assert.equal(String(matrix), 'matrix(2, 0, 0, 4, 10, 20)');
+  const point = matrix.inverse().transformPoint({ x: 12, y: 24 });
+  assert.deepEqual([point.x, point.y], [1, 1]);
+  matrix.a = 5;
+  assert.equal(ctx.getTransform().a, 2);
+});
+
+test('getImageData and putImageData truncate their arguments toward zero', () => {
+  const canvas = new Document({}).createElement('canvas');
+  canvas.width = 2;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(0, 0, 1, 1);
+  assert.deepEqual([...ctx.getImageData(-0.5, 0, 1, 1).data], [255, 0, 0, 255]);
+  assert.throws(() => ctx.getImageData(0, 0, 0.5, 1), { name: 'IndexSizeError' });
+  assert.throws(() => ctx.getImageData(0, 0, 1, -0.5), { name: 'IndexSizeError' });
+  const blue = new ImageData(new Uint8ClampedArray([0, 0, 255, 255]), 1);
+  ctx.putImageData(blue, 1.5, -0.5);
+  assert.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], [255, 0, 0, 255, 0, 0, 255, 255]);
+  ctx.putImageData(blue, -0.5, 0, -0.5, 0, 1.5, 1);
+  assert.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [0, 0, 255, 255]);
 });

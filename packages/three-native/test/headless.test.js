@@ -23,6 +23,19 @@ test('a headless page can submit a command stream on every frame', { skip: !host
   }
 });
 
+test('a headless page can submit at its top level and again on its first frame', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'threejsc-headless-'));
+  try {
+    const run = spawnSync(hostPath, ['--headless', '1', '--entry', fileURLToPath(new URL('./headless-startup-submit.js', import.meta.url))], { cwd: dir, encoding: 'utf8', timeout: 60_000 });
+    assert.equal(run.status, 0, run.stderr);
+    const log = readFileSync(join(dir, 'host.log'), 'utf8');
+    assert.match(log, /H submitted 2/);
+    assert.doesNotMatch(log, /Only one GPU command stream/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // npm test runs each workspace's tests from its own folder, so a THREEJSC_HOST relative to the repo has to resolve
 // from the repo, not from the working directory.
 test('a THREEJSC_HOST relative to the repo runs the host test from the package folder', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {

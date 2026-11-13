@@ -333,6 +333,77 @@ mod boundary_tests {
         "#).unwrap();
     }
 
+    #[test]
+    fn huge_image_dimensions_return_a_type_error() {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![super::extension::init()],
+            ..Default::default()
+        });
+        runtime.execute_script("image", r#"
+          const draw = {width: 4294967295, height: 4294967295, premultiplied: false, source: [0, 0, 1, 1],
+            dest: [0, 0, 1, 1], smoothing: false,
+            style: {paint: {kind: 'color', rgba: [0, 0, 0, 1]}, alpha: 1, transform: [1, 0, 0, 1, 0, 0]}};
+          let error;
+          try { Deno.core.ops.op_canvas2d_draw_image(new Uint8Array(4), 1, 1, new Uint8Array(4), draw); }
+          catch (e) { error = e; }
+          if (!(error instanceof TypeError)) throw new Error('expected a TypeError');
+        "#).unwrap();
+    }
+
+    /// Draws "I" in 32 px Arial at (10, 40) under scale(4, 4) on a 200x220 canvas, filled or stroked 10 wide with
+    /// miter joins and a miter limit of 1, and returns the painted pixels' box: left, top, right, bottom.
+    #[cfg(windows)]
+    fn scaled_text_box(stroke: bool) -> [i64; 4] {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![super::extension::init()],
+            ..Default::default()
+        });
+        let stroke = if stroke {
+            "{width: 10, miterLimit: 1, join: 'miter'}"
+        } else {
+            "null"
+        };
+        let script = format!(
+            r#"
+          const pixels = new Uint8Array(200 * 220 * 4);
+          Deno.core.ops.op_canvas2d_text(pixels, 200, 220, {{text: 'I', x: 10, y: 40, align: 'start',
+            baseline: 'alphabetic', maxWidth: null, stroke: {stroke},
+            font: {{families: [{{system: 'Arial'}}], size: 32, weight: 400, italic: false}},
+            style: {{paint: {{kind: 'color', rgba: [0, 0, 0, 1]}}, alpha: 1, transform: [4, 0, 0, 4, 0, 0]}}}});
+          const box = [200, 220, -1, -1];
+          for (let i = 0; i < 200 * 220; i++) {{
+            if (!pixels[i * 4 + 3]) continue;
+            const x = i % 200, y = Math.floor(i / 200);
+            box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y);
+            box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y);
+          }}
+          JSON.stringify(box);
+        "#
+        );
+        let value = runtime.execute_script("text", script).unwrap();
+        deno_core::scope!(scope, runtime);
+        let text = deno_core::v8::Local::new(scope, value).to_rust_string_lossy(scope);
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_stroke_under_a_scale_keeps_its_scaled_width() {
+        let fill = scaled_text_box(false);
+        let stroke = scaled_text_box(true);
+        // The stroke reaches half its width, 5 px scaled by 4, past the outline on every side.
+        let reach = [
+            fill[0] - stroke[0],
+            fill[1] - stroke[1],
+            stroke[2] - fill[2],
+            stroke[3] - fill[3],
+        ];
+        assert!(
+            reach.iter().all(|&r| r >= 18),
+            "fill {fill:?}, stroke {stroke:?}"
+        );
+    }
+
     /// Fills "Hi" in 32 px Arial at `x` on a 100x60 canvas and returns the canvas's summed alpha.
     #[cfg(windows)]
     fn text_alpha(x: f64) -> u64 {

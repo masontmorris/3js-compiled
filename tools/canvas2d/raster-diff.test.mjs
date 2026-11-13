@@ -26,3 +26,13 @@ test('the raster diff rejects an Edge reference of another size', { skip: !hostP
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a THREEJSC_HOST that names no file fails the raster diff test instead of skipping it', () => {
+  // A nested node --test that inherits NODE_TEST_CONTEXT reports to its parent instead of stdout.
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const child = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern', '^the raster diff rejects', fileURLToPath(import.meta.url)], {
+    cwd: root, env: { ...env, THREEJSC_HOST: 'target/no-such-host.exe' }, encoding: 'utf8', timeout: 60_000,
+  });
+  assert.notEqual(child.status, 0, child.stdout);
+  assert.match(child.stdout, /# fail 1\b/);
+});
