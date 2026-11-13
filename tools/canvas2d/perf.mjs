@@ -64,11 +64,12 @@ async function nativePage(scene, waitFrames, ids, dir) {
   const script = join(dir, 'steps.json');
   await writeFile(script, JSON.stringify([{ type: 'wait', frames: waitFrames }, { type: 'close' }]));
   const child = spawn(host, ['--entry', resolve('examples/canvas2d/index.js'), '--scene', scene, '--script', script], { cwd: dir, stdio: 'ignore' });
+  // Listen before the first await, or a host that exits during it is never seen.
+  const exited = new Promise((done, fail) => { child.on('exit', done); child.on('error', fail); });
+  const timer = setTimeout(() => child.kill(), 300_000);
   ids.list = [String(child.pid)];
   await ask(`cpu ${child.pid}`);
-  const timer = setTimeout(() => child.kill(), 300_000);
-  const code = await new Promise(done => child.on('exit', done));
-  clearTimeout(timer);
+  const code = await exited.finally(() => clearTimeout(timer));
   if (code !== 0) throw new Error(`host exited with ${code} in ${scene}`);
   return { lines: (await readFile(join(dir, 'host.log'), 'utf8')).split(/\r?\n/) };
 }
