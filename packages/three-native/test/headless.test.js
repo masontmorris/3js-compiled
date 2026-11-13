@@ -23,7 +23,7 @@ test('a headless page can submit a command stream on every frame', { skip: !host
   }
 });
 
-test('a headless page can submit at its top level and again on its first frame', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
+test('a page that submits at its top level can submit again on its first headless frame', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-headless-'));
   try {
     const run = spawnSync(hostPath, ['--headless', '1', '--entry', fileURLToPath(new URL('./headless-startup-submit.js', import.meta.url))], { cwd: dir, encoding: 'utf8', timeout: 60_000 });
