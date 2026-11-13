@@ -74,9 +74,14 @@ struct Delegate {
     input_handled: Rc<Cell<bool>>,
     /// Pointer events given to Servo and not yet reported handled.
     unhandled: Rc<Cell<u32>>,
+    tick_script: Rc<RefCell<TickScript>>,
 }
 
 impl WebViewDelegate for Delegate {
+    fn notify_load_status_changed(&self, _webview: WebView, _status: LoadStatus) {
+        self.tick_script.borrow_mut().navigated();
+    }
+
     fn notify_new_frame_ready(&self, _webview: WebView) {
         self.new_frame.set(true);
     }
@@ -146,20 +151,34 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(20);
 /// the previous one renders.
 const UNPAINTED: usize = 2;
 
-/// Calls `__bridge.tick` with `state` through `proto::TICK`, which returns the viewport size,
-/// the page's reply and the id of the element each of the reply's rects outlines. The page's
-/// global keeps the function, so later evaluations run the compiled function instead of a new one.
-fn tick_script(state: &str) -> String {
-    if std::env::var_os("E2_INIT_ONCE").is_some() {
-        static SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if SENT.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            return format!("globalThis[Symbol.for(\"threejsc.tick\")](() => __bridge.tick({state}))");
+#[derive(Default)]
+struct TickScript {
+    initialized: bool,
+    generation: u64,
+}
+
+impl TickScript {
+    fn next(&self, state: &str) -> String {
+        if self.initialized {
+            format!("globalThis[Symbol.for(\"threejsc.tick\")](() => __bridge.tick({state}))")
+        } else {
+            format!(
+                "(globalThis[Symbol.for(\"threejsc.tick\")] ??= {})(() => __bridge.tick({state}))",
+                proto::TICK
+            )
         }
     }
-    format!(
-        "(globalThis[Symbol.for(\"threejsc.tick\")] ??= {})(() => __bridge.tick({state}))",
-        proto::TICK
-    )
+
+    fn finished(&mut self, generation: u64, succeeded: bool) {
+        if generation == self.generation {
+            self.initialized = succeeded;
+        }
+    }
+
+    fn navigated(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.initialized = false;
+    }
 }
 
 /// Decides when ui-host evaluates `__bridge.tick`: no more often than Servo frames arrive, no
@@ -210,7 +229,7 @@ impl Pacer {
         .filter(|&at| at > now)
         .min()
     }
-    /// The next evaluation to start, as the patch sequence number (0 for a poll) and script.
+    /// The next evaluation to start, as the patch sequence number (0 for a poll) and state.
     fn next(&mut self, now: Instant) -> Option<(u64, String)> {
         let state = self.state.as_ref()?;
         while self
@@ -236,7 +255,7 @@ impl Pacer {
         self.evaluating = true;
         self.unpainted.push_back(now);
         self.last_started = Some(now);
-        Some((seq, tick_script(state)))
+        Some((seq, state.to_owned()))
     }
     /// Whether to ask the host for its next state now.
     fn ready(&mut self, now: Instant) -> bool {
@@ -568,6 +587,7 @@ fn main() {
     // of the latest publications.
     let replies = Rc::new(Cell::new(0u64));
     let mut after_reply: VecDeque<(u64, u64)> = VecDeque::new();
+    let tick_script = Rc::new(RefCell::new(TickScript::default()));
     let webview = WebViewBuilder::new(&servo, ctx.clone())
         .url(Url::from_file_path(&hud).expect("hud path"))
         .hidpi_scale_factor(Scale::new(1.0))
@@ -575,6 +595,7 @@ fn main() {
             new_frame: new_frame.clone(),
             input_handled: input_handled.clone(),
             unhandled: unhandled.clone(),
+            tick_script: tick_script.clone(),
         }))
         .build();
 
@@ -683,7 +704,9 @@ fn main() {
         }
 
         let next = pacer.borrow_mut().next(Instant::now());
-        if let Some((seq, script)) = next {
+        if let Some((seq, state)) = next {
+            let script = tick_script.borrow().next(&state);
+            let generation = tick_script.borrow().generation;
             let started = Instant::now();
             {
                 let mut stats = stats.borrow_mut();
@@ -701,9 +724,11 @@ fn main() {
             let relayout = relayout.clone();
             let placer = placer.clone();
             let replies = replies.clone();
+            let tick_script = tick_script.clone();
             webview.evaluate_javascript(script, move |result| {
                 stats.borrow_mut().round_trip.push(started.elapsed());
                 pacer.borrow_mut().finished();
+                tick_script.borrow_mut().finished(generation, result.is_ok());
                 if !applied.replace(true) {
                     new_frame.set(false);
                 }
@@ -1374,19 +1399,30 @@ mod tests {
     fn tick_source_is_retained_only_after_a_successful_evaluation() {
         let mut script = TickScript::default();
         assert!(script.next("1").contains(proto::TICK));
-        script.finished(false);
+        script.finished(0, false);
         assert!(script.next("2").contains(proto::TICK));
-        script.finished(true);
+        script.finished(0, true);
         let cached = script.next("3");
         assert!(!cached.contains(proto::TICK));
         assert!(cached.contains("__bridge.tick(3)"));
-        script.finished(false);
+        script.finished(0, false);
         assert!(script.next("4").contains(proto::TICK));
         assert!(TickScript::default().next("5").contains(proto::TICK));
     }
 
+    #[test]
+    fn an_old_document_cannot_acknowledge_a_new_documents_tick_source() {
+        let mut script = TickScript::default();
+        script.finished(0, true);
+        script.navigated();
+        script.finished(0, true);
+        assert!(script.next("1").contains(proto::TICK));
+        script.finished(1, true);
+        assert!(!script.next("2").contains(proto::TICK));
+    }
+
     fn tick(seq: u64, state: &str) -> Option<(u64, String)> {
-        Some((seq, tick_script(state)))
+        Some((seq, state.to_owned()))
     }
 
     #[test]
