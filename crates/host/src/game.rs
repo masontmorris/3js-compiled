@@ -1718,6 +1718,28 @@ mod tests {
     }
 
     #[test]
+    fn promise_jobs_run_after_each_page_event() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-jobs-ui-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/ui-event-jobs.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.ui_events(r#"[{"type":"one"},{"type":"two"}]"#.into(), 3)?;
+        game.js
+            .execute_script("host:report", "globalThis.__report()")?;
+        let log = std::fs::read_to_string(log_path)?;
+        assert_eq!(
+            result(&log, "ui-jobs"),
+            "one-A|one-B|one-A-job|two-A|two-B|two-A-job|bridge:dropped-A|bridge:dropped-B|bridge:dropped-A-job"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn wasm_streams_and_unhandled_rejections_keep_the_host_running_as_in_edge() -> Result<()> {
         let log = run_until_green(
             "engine-gaps",
