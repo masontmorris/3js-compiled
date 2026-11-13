@@ -523,8 +523,9 @@ fn captures_and_recordings_hold_the_frame_javascript_produced() {
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_condition_wait_holds_later_steps_until_the_page_is_ready() {
     let dir = workdir("wait-for");
+    // The page sets `ready` in its 21st frame, so the 22nd evaluation, the last this step allows, is the first true.
     let steps = serde_json::json!([
-        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 100},
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 22},
         {"type": "capture", "path": "ready.png"},
         {"type": "wait", "frames": 5},
         {"type": "capture", "path": "later.png"},
@@ -544,14 +545,15 @@ fn a_condition_wait_holds_later_steps_until_the_page_is_ready() {
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_condition_wait_fails_the_run_when_it_times_out() {
     let dir = workdir("wait-for-timeout");
+    // One evaluation short of the one that sees `ready`.
     let steps = serde_json::json!([
-        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 10},
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 21},
         {"type": "close"},
     ]);
     let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
     assert_eq!(status.code(), Some(1), "{log}");
     assert!(
-        log.contains("host failed: condition timed out after 10 frames: globalThis.ready"),
+        log.contains("host failed: condition still false after 21 evaluations: globalThis.ready"),
         "{log}"
     );
 }
