@@ -676,6 +676,11 @@ impl Painter {
         let mut pieces = Vec::with_capacity(run.glyphs.len());
         for (&(id, ..), &point) in run.glyphs.iter().zip(placed) {
             let (dx, dy) = device(point);
+            // A surface is at most u16 wide, so a glyph this far off it cannot reach it, and its mask offsets would
+            // overflow i32.
+            if dx.abs() > 1e9 || dy.abs() > 1e9 {
+                continue;
+            }
             let (ix, iy) = (dx.floor(), dy.floor());
             let offset = ((dx - ix) as f32, (dy - iy) as f32);
             let glyph = id as u16;
