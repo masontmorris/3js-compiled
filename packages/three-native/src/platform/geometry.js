@@ -1,6 +1,7 @@
 // DOMRect, DOMPoint and DOMMatrix with their read-only bases, as Edge 157 has them for what three's dependencies
 // construct and read: rectangles and their edges, points, and 2D or 3D matrices that multiply, translate, scale,
 // invert and transform points.
+import { platformError } from './errors.js';
 
 const RECT = Symbol('rect');
 export class DOMRectReadOnly {
@@ -147,6 +148,7 @@ export class DOMMatrixReadOnly {
   toFloat64Array() { return new Float64Array(this[MATRIX]); }
   toString() {
     const m = this[MATRIX];
+    if (m.some(value => !Number.isFinite(value))) throw platformError("Failed to execute 'toString' on 'DOMMatrixReadOnly': DOMMatrix cannot be serialized with NaN or Infinity values.", 'InvalidStateError');
     return this[IS_2D] ? `matrix(${[m[0], m[1], m[4], m[5], m[12], m[13]].join(', ')})` : `matrix3d(${m.join(', ')})`;
   }
   toJSON() {

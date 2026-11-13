@@ -2,8 +2,8 @@
 //! page makes, and rewrites the file at most every 100 ms, so a change costs the game thread one channel send.
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread::JoinHandle,
@@ -16,6 +16,49 @@ pub enum Change {
     Set(String, String),
     Remove(String),
     Clear,
+}
+
+/// The stored entries in the order their keys were first set, which is the order Edge returns them in, across a
+/// restart too.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Entries(Vec<(String, String)>);
+
+impl Entries {
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(key, _)| key)
+    }
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.0
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn set(&mut self, key: String, value: String) {
+        match self.0.iter_mut().find(|(name, _)| *name == key) {
+            Some((_, current)) => *current = value,
+            None => self.0.push((key, value)),
+        }
+    }
+    fn remove(&mut self, key: &str) {
+        self.0.retain(|(name, _)| name != key);
+    }
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+impl IntoIterator for Entries {
+    type Item = (String, String);
+    type IntoIter = std::vec::IntoIter<(String, String)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
 pub struct Store {
@@ -52,46 +95,51 @@ pub fn default_path(entry: &Path, local_app_data: &Path) -> PathBuf {
         .join("localStorage.json")
 }
 
-/// Reads a store file, which holds one JSON object of string values.
-pub fn read(path: &Path) -> Result<BTreeMap<String, String>> {
+/// One store file. The current form is an array of `[key, value]` pairs in insertion order; an older file is one
+/// JSON object, whose entries are taken in its order.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum File {
+    Pairs(Vec<(String, String)>),
+    Object(std::collections::BTreeMap<String, String>),
+}
+
+/// Reads a store file, which holds an array of key and value pairs or an older JSON object of string values.
+pub fn read(path: &Path) -> Result<Entries> {
     match std::fs::read(path) {
         Ok(bytes) => {
-            serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))
+            let file: File = serde_json::from_slice(&bytes)
+                .with_context(|| format!("parse {}", path.display()))?;
+            Ok(match file {
+                File::Pairs(pairs) => Entries(pairs),
+                File::Object(object) => Entries(object.into_iter().collect()),
+            })
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Entries::default()),
         Err(error) => Err(error).with_context(|| format!("read {}", path.display())),
     }
 }
 
 /// Replaces the file in one rename, so a crash leaves the old contents or the new ones.
-fn write(path: &Path, entries: &BTreeMap<String, String>) -> Result<()> {
+fn write(path: &Path, entries: &Entries) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let partial = path.with_extension("json.partial");
-    std::fs::write(&partial, serde_json::to_vec(entries)?)?;
+    std::fs::write(&partial, serde_json::to_vec(&entries.0)?)?;
     std::fs::rename(&partial, path)?;
     Ok(())
 }
 
-fn apply(entries: &mut BTreeMap<String, String>, change: Change) {
+fn apply(entries: &mut Entries, change: Change) {
     match change {
-        Change::Set(key, value) => {
-            entries.insert(key, value);
-        }
-        Change::Remove(key) => {
-            entries.remove(&key);
-        }
+        Change::Set(key, value) => entries.set(key, value),
+        Change::Remove(key) => entries.remove(&key),
         Change::Clear => entries.clear(),
     }
 }
 
-fn run(
-    path: &Path,
-    mut entries: BTreeMap<String, String>,
-    changes: &Receiver<Change>,
-    log: &dyn Fn(String),
-) {
+fn run(path: &Path, mut entries: Entries, changes: &Receiver<Change>, log: &dyn Fn(String)) {
     let mut last_write = Instant::now() - WRITE_INTERVAL;
     loop {
         let Ok(change) = changes.recv() else { return };
@@ -125,13 +173,10 @@ fn run(
 impl Store {
     /// Opens the store at `path` and returns it with its entries. A file that cannot be read or parsed is logged
     /// and gives an empty store, which replaces it on the first change.
-    pub fn open(
-        path: PathBuf,
-        log: impl Fn(String) + Send + 'static,
-    ) -> Result<(Self, BTreeMap<String, String>)> {
+    pub fn open(path: PathBuf, log: impl Fn(String) + Send + 'static) -> Result<(Self, Entries)> {
         let entries = read(&path).unwrap_or_else(|error| {
             log(format!("localStorage: starting empty: {error:#}"));
-            BTreeMap::new()
+            Entries::default()
         });
         let (changes, received) = mpsc::channel();
         let initial = entries.clone();
@@ -182,7 +227,7 @@ mod tests {
         drop(store);
         let stored = read(&path)?;
         assert_eq!(stored.len(), 9);
-        assert_eq!(stored["key9"], "999");
+        assert_eq!(stored.get("key9").map(String::as_str), Some("999"));
         let (store, entries) = Store::open(path.clone(), |_| {})?;
         assert_eq!(entries, stored);
         store.change(Change::Clear);
@@ -225,7 +270,8 @@ mod tests {
 
     #[test]
     fn keys_keep_their_insertion_order_across_a_restart() -> Result<()> {
-        let dir = std::env::temp_dir().join(format!("threejsc-storage-order-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("threejsc-storage-order-{}", std::process::id()));
         let path = dir.join("localStorage.json");
         let _ = std::fs::remove_dir_all(&dir);
         let (store, entries) = Store::open(path.clone(), |_| {})?;
@@ -236,7 +282,11 @@ mod tests {
         drop(store);
         let (store, entries) = Store::open(path.clone(), |_| {})?;
         let keys: Vec<&str> = entries.keys().map(String::as_str).collect();
-        assert_eq!(keys, ["c", "a", "b"], "the file keeps the order the keys were set");
+        assert_eq!(
+            keys,
+            ["c", "a", "b"],
+            "the file keeps the order the keys were set"
+        );
         drop(store);
         std::fs::remove_dir_all(&dir)?;
         Ok(())

@@ -36,11 +36,11 @@ The input router turns each host input fact into the events Edge fires for it:
 
 ## Gamepads
 
-`navigator.getGamepads()` returns eight slots, as Edge 157 does. Each pad is a `Gamepad` snapshot in the standard mapping, with 17 buttons and 4 axes, which the host sends only when a pad changes. The analog triggers are buttons 6 and 7, pressed above 30 of 255 as in Edge. As in Edge, a page sees no pad until a button is pressed or a stick moves past half way, and `gamepadconnected` and `gamepaddisconnected` fire at the window. XInput pads read as `Xbox 360 Controller (XInput STANDARD GAMEPAD)`, and other pads as `<name> (STANDARD GAMEPAD Vendor: <vid> Product: <pid>)`. `vibrationActuator.playEffect()` logs that rumble is not implemented and resolves. Pads keep reporting while the window is in the background, as Edge reads them while the page is visible.
+`navigator.getGamepads()` returns eight slots, as Edge 157 does. Each pad is a `Gamepad` snapshot in the standard mapping, with 17 buttons and 4 axes, which the host sends only when a pad changes. The analog triggers are buttons 6 and 7, pressed above 30 of 255 as in Edge. A trigger held as the pad's first input exposes the pad with that button already pressed in its first snapshot. As in Edge, a page sees no pad until a button is pressed or a stick moves past half way, and `gamepadconnected` and `gamepaddisconnected` fire at the window. XInput pads read as `Xbox 360 Controller (XInput STANDARD GAMEPAD)`, and other pads as `<name> (STANDARD GAMEPAD Vendor: <vid> Product: <pid>)`. `vibrationActuator.playEffect()` logs that rumble is not implemented and resolves. Pads keep reporting while the window is in the background, as Edge reads them while the page is visible.
 
 ## Storage
 
-`localStorage` keeps its entries in JavaScript for reads and sends each change to a writer thread, which rewrites one JSON file per game at most every 100 ms, with a rename so a crash keeps the old file or the new one. The host writes the last changes when it exits. The quota is Edge's, 5,242,880 UTF-16 code units over keys and values, past which `setItem` throws `QuotaExceededError`. `sessionStorage` lives in memory. The file is `%LOCALAPPDATA%\threejsc\<folder>-<hash>\localStorage.json`, where `<folder>` is the name of the entry module's folder and `<hash>` is 16 hex digits of FNV-1a over the entry's absolute path, so two games built to folders of the same name keep separate files and a rebuild in place keeps its file. `--storage <file>` names another file. Keys come back in insertion order. Edge returns them in an order of its own, before and after a reload, which the stand-in does not copy.
+`localStorage` keeps its entries in JavaScript for reads and sends each change to a writer thread, which rewrites one JSON file per game at most every 100 ms, with a rename so a crash keeps the old file or the new one. The host writes the last changes when it exits. The quota is Edge's, 5,242,880 UTF-16 code units over keys and values, past which `setItem` throws `QuotaExceededError`. `sessionStorage` lives in memory. The file is `%LOCALAPPDATA%\threejsc\<folder>-<hash>\localStorage.json`, where `<folder>` is the name of the entry module's folder and `<hash>` is 16 hex digits of FNV-1a over the entry's absolute path, so two games built to folders of the same name keep separate files and a rebuild in place keeps its file. `--storage <file>` names another file. Keys come back in the order they were first set, before and after a restart, as Edge returns them.
 
 `document.cookie` keeps Edge's order: longest path first, then the order the cookies were last set. It honors `path`, `expires` and `max-age`, serializes a cookie without a name as its value, and ignores `domain`, `secure`, `samesite` and `httponly`. Each game's cookies persist in `cookies.json` beside its `localStorage` file. Session cookies persist too, as Edge keeps them when it restores a session.
 
@@ -60,7 +60,7 @@ The input router turns each host input fact into the events Edge fires for it:
 
 `window.open()` opens an `http:` or `https:` URL in the system's default browser, refuses any other URL and logs it, and returns `null`, as Edge does for a `noopener` open.
 
-`DOMRect`, `DOMRectReadOnly`, `DOMPoint`, `DOMPointReadOnly`, `DOMMatrix` and `DOMMatrixReadOnly` construct, combine, invert, transform points and serialize as in Edge 157. A `DOMMatrix` built from a CSS transform string throws that parsing a transform list is not implemented natively.
+`DOMRect`, `DOMRectReadOnly`, `DOMPoint`, `DOMPointReadOnly`, `DOMMatrix` and `DOMMatrixReadOnly` construct, combine, invert, transform points and serialize as in Edge 157. A matrix whose values include a NaN or an Infinity throws `InvalidStateError` from `toString()`, as Edge does. A `DOMMatrix` built from a CSS transform string throws that parsing a transform list is not implemented natively.
 
 `btoa()` and `atob()` encode Latin-1 strings to and from base64, with Edge's errors for a character outside Latin-1, text that is not base64 and a missing argument.
 
@@ -69,6 +69,19 @@ A promise rejected with no handler fires a trusted, cancelable `unhandledrejecti
 `WebAssembly.compileStreaming()` and `instantiateStreaming()` take a `Response` or a promise of one, as from `fetch()`, with Edge's error for a MIME type other than `application/wasm` and a `CompileError` for bytes that are not a module. The whole body goes to the compiler at once.
 
 `crypto.getRandomValues()` and `crypto.randomUUID()` read the operating system's random source, with Edge's errors for a non-integer array and for more than 65,536 bytes. `crypto.subtle` is not implemented.
+
+## Known differences from Edge 157
+
+None is reached by three.js or folio.
+
+- `window.onerror` reads `undefined` where Edge reads `null`.
+- `SVGElement` and its interfaces are not global constructors, so `instanceof SVGElement` is unavailable.
+- `new Response(blob)` does not take the blob's type as the response's `Content-Type`.
+- The `error` event from a throwing listener has `isTrusted` false where Edge reports true.
+- `AbortSignal.any()` with a non-signal throws a `TypeError` whose message differs from Edge's.
+- A `fetch` aborted after its response resolves still returns the body, where Edge rejects it.
+- `IntersectionObserver` accepts `trackVisibility` without a delay of 100, which Edge rejects with `NotSupportedError`, and `isVisible` is always false.
+- An element's `querySelector` and `querySelectorAll` with an invalid selector name `Document` in the `SyntaxError` where Edge names `Element`.
 
 ## Not implemented
 

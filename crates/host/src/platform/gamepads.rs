@@ -59,9 +59,12 @@ struct Pad {
     gamepad: Gamepad,
 }
 
-/// A scripted pad, which SDL reports as a real one until it is dropped.
+/// A scripted pad, which SDL reports as a real one until it is dropped. Its axes and buttons are kept so a gamepad
+/// opened after they were set can be given the same state.
 struct Virtual {
     joystick: Joystick,
+    axes: Vec<i16>,
+    buttons: u32,
 }
 impl Drop for Virtual {
     fn drop(&mut self) {
@@ -88,7 +91,9 @@ impl Gamepads {
         }
     }
 
-    /// Opens a gamepad SDL reports, in the lowest free slot.
+    /// Opens a gamepad SDL reports, in the lowest free slot. A scripted pad's axes and buttons are re-sent, because
+    /// a value set before its gamepad opened never reaches the gamepad otherwise, then SDL updates the gamepads so
+    /// the pad's first snapshot carries them.
     pub fn added(&mut self, id: u32) -> Result<()> {
         if self.pads.contains_key(&id) {
             return Ok(());
@@ -99,6 +104,21 @@ impl Gamepads {
         };
         let gamepad = self.subsystem.open(JoystickId::new(id))?;
         self.pads.insert(id, Pad { slot, gamepad });
+        if let Some(pad) = self
+            .virtuals
+            .values()
+            .find(|pad| pad.joystick.id().raw() == id)
+        {
+            for (axis, value) in pad.axes.iter().enumerate() {
+                pad.joystick.set_virtual_axis(axis as u32, *value)?;
+            }
+            for button in 0..u32::BITS {
+                if pad.buttons & (1 << button) != 0 {
+                    pad.joystick.set_virtual_button(button, true)?;
+                }
+            }
+            unsafe { sys::joystick::SDL_UpdateJoysticks() };
+        }
         Ok(())
     }
 
@@ -159,31 +179,45 @@ impl Gamepads {
                 return Err(anyhow!("attach a virtual gamepad: {}", sdl3::get_error()));
             }
             let joystick = self.joysticks.open(id.into())?;
-            self.virtuals.insert(index, Virtual { joystick });
+            let axes = vec![0; sys::gamepad::SDL_GAMEPAD_AXIS_COUNT.0 as usize];
+            self.virtuals.insert(
+                index,
+                Virtual {
+                    joystick,
+                    axes,
+                    buttons: 0,
+                },
+            );
         }
         Ok(&self.virtuals[&index].joystick)
     }
 
     /// Presses or releases standard button `button` on virtual pad `index`. Buttons 6 and 7 move its triggers.
     pub fn press(&mut self, index: u8, button: u8, down: bool) -> Result<()> {
-        let joystick = self.virtual_pad(index)?;
+        self.virtual_pad(index)?;
+        let pad = self.virtuals.get_mut(&index).expect("the pad was attached");
         match button {
             6 | 7 => {
-                let axis = if button == 6 {
-                    Axis::TriggerLeft
+                let (axis, slot) = if button == 6 {
+                    (Axis::TriggerLeft, 4)
                 } else {
-                    Axis::TriggerRight
+                    (Axis::TriggerRight, 5)
                 };
-                joystick.set_virtual_axis(
-                    axis.to_ll().0 as u32,
-                    if down { i16::MAX } else { i16::MIN },
-                )?;
+                let raw = if down { i16::MAX } else { i16::MIN };
+                pad.joystick.set_virtual_axis(axis.to_ll().0 as u32, raw)?;
+                pad.axes[slot] = raw;
             }
             _ => {
-                let Some(Some(button)) = BUTTONS.get(usize::from(button)) else {
+                let Some(Some(sdl)) = BUTTONS.get(usize::from(button)) else {
                     return Err(anyhow!("the standard mapping has no button {button}"));
                 };
-                joystick.set_virtual_button(button.to_ll().0 as u32, down)?;
+                let bit = sdl.to_ll().0 as u32;
+                pad.joystick.set_virtual_button(bit, down)?;
+                if down {
+                    pad.buttons |= 1 << bit;
+                } else {
+                    pad.buttons &= !(1 << bit);
+                }
             }
         }
         Ok(())
@@ -192,8 +226,8 @@ impl Gamepads {
     /// Moves axis `axis` of virtual pad `index` to `value`: standard axes 0 to 3 take -1 to 1, and 4 and 5 are
     /// the left and right triggers, which take 0 to 1. SDL reads a virtual trigger over the axis's whole range.
     pub fn tilt(&mut self, index: u8, axis: u8, value: f64) -> Result<()> {
-        let joystick = self.virtual_pad(index)?;
-        let (axis, raw) = match axis {
+        self.virtual_pad(index)?;
+        let (sdl_axis, raw) = match axis {
             0..=3 => (
                 AXES[usize::from(axis)],
                 (value.clamp(-1.0, 1.0) * 32767.5 - 0.5).round() as i16,
@@ -208,7 +242,10 @@ impl Gamepads {
             ),
             _ => return Err(anyhow!("a gamepad has no axis {axis}")),
         };
-        joystick.set_virtual_axis(axis.to_ll().0 as u32, raw)?;
+        let pad = self.virtuals.get_mut(&index).expect("the pad was attached");
+        pad.axes[usize::from(axis)] = raw;
+        pad.joystick
+            .set_virtual_axis(sdl_axis.to_ll().0 as u32, raw)?;
         Ok(())
     }
 }
