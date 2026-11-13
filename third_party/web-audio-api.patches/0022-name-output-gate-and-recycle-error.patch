@@ -1,0 +1,77 @@
+diff --git a/src/context/online.rs b/src/context/online.rs
+index e0a0b4d..482b9e3 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -480,8 +480,8 @@ impl AudioContext {
+                 // No new audio will be produced because it will receive the shutdown command first.
+                 backend_manager_guard.resume()?;
+             }
+-            // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
+-            // callback, so withdraw the request, leave the context as it was and report the error.
++            // A stream that stopped after a device error runs no callback to answer, and a slow callback answers late. The
++            // graph lives in that callback, so withdraw the request, leave the context as it was and report the error.
+             match recycle.wait(ANSWER_DEADLINE) {
+                 Some(recycled) => recycled,
+                 None => {
+@@ -492,7 +492,7 @@ impl AudioContext {
+                     if paused {
+                         backend_manager_guard.suspend()?;
+                     }
+-                    return Err("InvalidStateError: the output stream is not running".into());
++                    return Err("InvalidStateError: the render thread did not answer the device change".into());
+                 }
+             }
+         };
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index 8d7a5f1..26651cf 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -458,13 +458,9 @@ impl RenderThread {
+         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+         self.render_inner(output_buffer, observer.as_deref());
+ 
+-        if self.lifecycle.as_ref().is_some_and(|value| {
+-            Some(value.load(Ordering::Acquire)) != lifecycle
+-                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
+-        }) {
+-            output_buffer.fill(S::from_sample_(0.));
+-            self.buffer_offset = None;
+-        }
++        // A lifecycle call that came in while this callback rendered silences it. Check once after rendering, and again
++        // after the observer, where a stalled callback waits.
++        self.silence_if_stale(output_buffer, lifecycle);
+ 
+         let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+         let callback_budget_ns = if self.sample_rate <= 0. {
+@@ -489,13 +485,7 @@ impl RenderThread {
+             });
+         }
+ 
+-        if self.lifecycle.as_ref().is_some_and(|value| {
+-            Some(value.load(Ordering::Acquire)) != lifecycle
+-                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
+-        }) {
+-            output_buffer.fill(S::from_sample_(0.));
+-            self.buffer_offset = None;
+-        }
++        self.silence_if_stale(output_buffer, lifecycle);
+     }
+ 
+     fn render_inner<S: FromSample<f32> + Clone>(
+@@ -606,6 +596,16 @@ impl RenderThread {
+         }
+     }
+ 
++    fn silence_if_stale<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S], lifecycle: Option<u64>) {
++        if self.lifecycle.as_ref().is_some_and(|value| {
++            Some(value.load(Ordering::Acquire)) != lifecycle
++                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
++        }) {
++            output_buffer.fill(S::from_sample_(0.));
++            self.buffer_offset = None;
++        }
++    }
++
+     fn set_state(&self, state: AudioContextState) {
+         if self.state.swap(state as u8, Ordering::AcqRel) != state as u8 {
+             self.event_sender

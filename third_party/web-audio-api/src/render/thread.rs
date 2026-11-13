@@ -458,13 +458,9 @@ impl RenderThread {
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer, observer.as_deref());
 
-        if self.lifecycle.as_ref().is_some_and(|value| {
-            Some(value.load(Ordering::Acquire)) != lifecycle
-                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
-        }) {
-            output_buffer.fill(S::from_sample_(0.));
-            self.buffer_offset = None;
-        }
+        // A lifecycle call that came in while this callback rendered silences it. Check once after rendering, and again
+        // after the observer, where a stalled callback waits.
+        self.silence_if_stale(output_buffer, lifecycle);
 
         let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let callback_budget_ns = if self.sample_rate <= 0. {
@@ -489,13 +485,7 @@ impl RenderThread {
             });
         }
 
-        if self.lifecycle.as_ref().is_some_and(|value| {
-            Some(value.load(Ordering::Acquire)) != lifecycle
-                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
-        }) {
-            output_buffer.fill(S::from_sample_(0.));
-            self.buffer_offset = None;
-        }
+        self.silence_if_stale(output_buffer, lifecycle);
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(
@@ -603,6 +593,16 @@ impl RenderThread {
                         .push(start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
                 }
             }
+        }
+    }
+
+    fn silence_if_stale<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S], lifecycle: Option<u64>) {
+        if self.lifecycle.as_ref().is_some_and(|value| {
+            Some(value.load(Ordering::Acquire)) != lifecycle
+                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
+        }) {
+            output_buffer.fill(S::from_sample_(0.));
+            self.buffer_offset = None;
         }
     }
 

@@ -480,8 +480,8 @@ impl AudioContext {
                 // No new audio will be produced because it will receive the shutdown command first.
                 backend_manager_guard.resume()?;
             }
-            // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
-            // callback, so withdraw the request, leave the context as it was and report the error.
+            // A stream that stopped after a device error runs no callback to answer, and a slow callback answers late. The
+            // graph lives in that callback, so withdraw the request, leave the context as it was and report the error.
             match recycle.wait(ANSWER_DEADLINE) {
                 Some(recycled) => recycled,
                 None => {
@@ -492,7 +492,7 @@ impl AudioContext {
                     if paused {
                         backend_manager_guard.suspend()?;
                     }
-                    return Err("InvalidStateError: the output stream is not running".into());
+                    return Err("InvalidStateError: the render thread did not answer the device change".into());
                 }
             }
         };
