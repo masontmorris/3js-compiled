@@ -22,7 +22,7 @@ $script = Join-Path $Out 'soak.json'
 $samples = Join-Path $Out 'samples.csv'
 'elapsed_s,proc,pid,handles,working_set_mb,private_mb,gpu_dedicated_mb,window' | Set-Content -Encoding ascii $samples
 $started = Get-Date
-$p = Start-Process -FilePath $HostExe -PassThru -WindowStyle Hidden -ArgumentList (@('--entry', $Entry, '--script', $script) + $HostArgs) `
+$p = Start-Process -FilePath $HostExe -PassThru -WindowStyle Hidden -ArgumentList (@('--entry', "`"$Entry`"", '--script', "`"$script`"") + $HostArgs) `
     -RedirectStandardOutput (Join-Path $Out 'host-stdout.log') -RedirectStandardError (Join-Path $Out 'host-stderr.log')
 Add-Type -Namespace Soak -Name Win -MemberDefinition '[DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr window, int[] rect);'
 function Get-WindowSize($process) {
@@ -43,8 +43,8 @@ function Get-Sample($elapsed, $name, $id) {
     if ($process) {
         $gpu = Get-GpuDedicated $id
         $after = Get-WindowSize $p
-        '{0:F1},{1},{2},{3},{4:F3},{5:F3},{6:F3},{7}' -f $elapsed, $name, $id, $process.HandleCount,
-            ($process.WorkingSet64 / 1MB), ($process.PrivateMemorySize64 / 1MB), $gpu, $(if ($before -eq $after) { $before })
+        [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:F1},{1},{2},{3},{4:F3},{5:F3},{6:F3},{7}', $elapsed, $name, $id, $process.HandleCount,
+            ($process.WorkingSet64 / 1MB), ($process.PrivateMemorySize64 / 1MB), $gpu, $(if ($before -eq $after) { $before }))
     }
 }
 while (-not $p.HasExited) {
