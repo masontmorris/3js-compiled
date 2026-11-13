@@ -311,3 +311,25 @@ deno_core::extension!(
     state = |state| state.put(Canvas2d::default())
 );
 pub use canvas2d_ext as extension;
+
+#[cfg(test)]
+mod boundary_tests {
+    use deno_core::{JsRuntime, RuntimeOptions};
+
+    #[test]
+    fn overflowing_image_rectangle_returns_a_type_error() {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![super::extension::init()],
+            ..Default::default()
+        });
+        runtime.execute_script("image", r#"
+          const draw = {width: 1, height: 1, premultiplied: false, source: [4294967295, 0, 1, 1],
+            dest: [0, 0, 1, 1], smoothing: false,
+            style: {paint: {kind: 'color', rgba: [0, 0, 0, 1]}, alpha: 1, transform: [1, 0, 0, 1, 0, 0]}};
+          let error;
+          try { Deno.core.ops.op_canvas2d_draw_image(new Uint8Array(4), 1, 1, new Uint8Array(4), draw); }
+          catch (e) { error = e; }
+          if (!(error instanceof TypeError)) throw new Error('expected a TypeError');
+        "#).unwrap();
+    }
+}
