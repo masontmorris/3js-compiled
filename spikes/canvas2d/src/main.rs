@@ -201,7 +201,7 @@ impl Canvas for TinySkia {
         let paint = Self::paint(draw.paint)?;
         let (origin_x, origin_y) = origin(draw, run, variant);
         let mut mask = tiny_skia::Mask::new(self.0.width(), self.0.height()).context("mask")?;
-        if variant.pipeline == Pipeline::DWrite {
+        if variant.pipeline == Pipeline::DWrite && draw.op != "strokeText" {
             let (w, h) = (self.0.width(), self.0.height());
             dw::coverage(mask.data_mut(), w, h, &draw.font.data, draw.font.weight, draw.size, run, origin_x, origin_y, variant)?;
             preblend(mask.data_mut(), draw.paint, variant);
