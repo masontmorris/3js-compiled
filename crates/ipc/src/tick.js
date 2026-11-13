@@ -26,15 +26,23 @@
 // 16 elements per rect, and a rect has at most 8 candidates. A box a whole scan finds no element for
 // is not looked for again for 60 evaluations. Every cache holds only the boxes of the latest reply.
 (tick => {
+  const perfStart = performance.now();
+  globalThis.__e2perf = {geometry: 0, geometryCalls: 0}; let style = 0, styleCalls = 0;
+
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
       next: 1, evaluation: 0, from: 0, measured: null, walker: null,
       byBox: new Map(), byIndex: [], pending: new Map(), absent: new Map(),
     };
     const measure = Element.prototype.getBoundingClientRect;
-    S.read = element => measure.call(element);
+    S.read = element => {
+      const t = performance.now();
+      const box = measure.call(element);
+      globalThis.__e2perf.geometry += performance.now() - t; globalThis.__e2perf.geometryCalls++;
+      return box;
+    };
     Element.prototype.getBoundingClientRect = function () {
-      const box = measure.call(this);
+      const box = S.read(this);
       S.measured?.set(this, box);
       return box;
     };
@@ -42,11 +50,14 @@
   })());
   const lastBox = (S.measured = new Map());
   let json;
+  const tickStart = performance.now();
   try {
     json = tick();
   } finally {
     S.measured = null;
   }
+  const tickMs = performance.now() - tickStart;
+  const tickGeometry = globalThis.__e2perf.geometry;
   S.evaluation += 1;
   let rects;
   if (typeof json === "string" && json.includes('"rects"')) {
@@ -179,7 +190,7 @@
   };
   const hittable = new Map();
   const hit = element => {
-    if (!hittable.has(element)) hittable.set(element, getComputedStyle(element).pointerEvents !== "none");
+    if (!hittable.has(element)) hittable.set(element, (() => { const t = performance.now(); const value = getComputedStyle(element).pointerEvents !== "none"; style += performance.now() - t; styleCalls++; return value; })());
     return hittable.get(element);
   };
   const above = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
@@ -235,5 +246,6 @@
   });
   S.byBox = byBox;
   S.byIndex = byIndex;
+  console.log("E2PERF " + JSON.stringify({total: performance.now()-perfStart, tick: tickMs, geometry: globalThis.__e2perf.geometry, tickGeometry, geometryCalls: globalThis.__e2perf.geometryCalls, style, styleCalls, rects: rects.length}));
   return [innerWidth, innerHeight, json, ids, also, missing];
 })

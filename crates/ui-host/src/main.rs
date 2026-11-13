@@ -150,6 +150,12 @@ const UNPAINTED: usize = 2;
 /// the page's reply and the id of the element each of the reply's rects outlines. The page's
 /// global keeps the function, so later evaluations run the compiled function instead of a new one.
 fn tick_script(state: &str) -> String {
+    if std::env::var_os("E2_INIT_ONCE").is_some() {
+        static SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if SENT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return format!("globalThis[Symbol.for(\"threejsc.tick\")](() => __bridge.tick({state}))");
+        }
+    }
     format!(
         "(globalThis[Symbol.for(\"threejsc.tick\")] ??= {})(() => __bridge.tick({state}))",
         proto::TICK
