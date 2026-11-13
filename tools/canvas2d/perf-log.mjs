@@ -12,3 +12,8 @@ export function parse(lines, scene) {
   const failed = lines.some(line => line.includes('scene error'));
   return { loads: spans, draws, firstFrames, dynamic, missing, failed };
 }
+
+// The host's script for a native perf page: wait for the scene, then `waitFrames` frames, then close.
+export function nativeSteps(waitFrames) {
+  return [{ type: 'wait_for', expression: "(() => { if (globalThis.__sceneError) throw new Error(String(globalThis.__sceneError)); return !!globalThis.__sceneReady; })()", timeout_frames: 6000 }, { type: 'wait', frames: waitFrames }, { type: 'close' }];
+}
