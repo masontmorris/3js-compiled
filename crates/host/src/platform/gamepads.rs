@@ -298,30 +298,45 @@ mod tests {
             }
             Ok(())
         };
-        // A trigger as the pad's first input exposes it with buttons[7] already pressed, as Edge does.
-        pads.tilt(0, 5, 1.0)?;
+        // A fresh pad reports both triggers released, not half pressed.
+        pads.press(0, 0, false)?;
         poll(&mut pads)?;
-        let fact = pads.snapshot().expect("the trigger connects the pad");
+        let fact = pads.snapshot().expect("the pad connects");
+        let fresh = &fact["pads"][0];
         assert_eq!(
-            fact["pads"][0]["buttons"][7], 1.0,
+            fresh["buttons"][6], 0.0,
+            "a fresh pad's left trigger is released: {fact}"
+        );
+        assert_eq!(
+            fresh["buttons"][7], 0.0,
+            "a fresh pad's right trigger is released: {fact}"
+        );
+        // A trigger as a second pad's first input exposes it with buttons[7] already pressed, as Edge does.
+        pads.tilt(1, 5, 1.0)?;
+        poll(&mut pads)?;
+        let fact = pads.snapshot().expect("the trigger connects the second pad");
+        let triggered = &fact["pads"][1];
+        assert_eq!(
+            triggered["buttons"][7], 1.0,
             "the first snapshot of the pad carries the trigger: {fact}"
         );
-        pads.press(0, 0, true)?;
-        pads.tilt(0, 4, 0.5)?;
-        pads.tilt(0, 1, -1.0)?;
+        assert_eq!(triggered["buttons"][6], 0.0, "{fact}");
+        pads.press(1, 0, true)?;
+        pads.tilt(1, 4, 0.5)?;
+        pads.tilt(1, 1, -1.0)?;
         poll(&mut pads)?;
         let fact = pads.snapshot().expect("the pad changed");
-        let pad = &fact["pads"][0];
+        let pad = &fact["pads"][1];
         assert_eq!(pad["id"], "Xbox 360 Controller (XInput STANDARD GAMEPAD)");
         assert_eq!(pad["buttons"][0], 1.0);
         assert_eq!(pad["buttons"][1], 0.0);
         assert_eq!(pad["buttons"][7], 1.0);
         assert!((pad["buttons"][6].as_f64().unwrap_or(0.0) - 0.5).abs() < 0.001);
         assert_eq!(pad["axes"][1], -1.0);
-        pads.press(0, 7, false)?;
+        pads.press(1, 7, false)?;
         poll(&mut pads)?;
         let fact = pads.snapshot().expect("the pad changed");
-        assert_eq!(fact["pads"][0]["buttons"][7], 0.0);
+        assert_eq!(fact["pads"][1]["buttons"][7], 0.0);
         Ok(())
     }
 }
