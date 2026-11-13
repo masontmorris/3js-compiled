@@ -15,7 +15,7 @@ const cases = kind => edge.lines.filter(line => line.kind === kind);
 // A host that records each draw and fills whole-pixel rectangles with the fill color, enough to see what the
 // context sends and what its pixels hold.
 const calls = [];
-setCanvasHost({
+const canvasHost = {
   fontLoad: () => 1,
   fillRect: (pixels, width, height, draw) => {
     calls.push(['fillRect', draw]);
@@ -30,7 +30,8 @@ setCanvasHost({
   text: (...args) => calls.push(['text', args[3]]),
   measure: request => ({ width: request.text.length }),
   unpremultiply: (from, to) => to.set(from),
-});
+};
+setCanvasHost(canvasHost);
 const context = () => new Document({}).createElement('canvas').getContext('2d');
 
 test('fillStyle keeps and serializes colors as Edge does', () => {
@@ -466,5 +467,5 @@ test('font sets report failed faces after a load settles', async () => {
     await assert.rejects(face.load());
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.deepEqual(events, [['loadingdone', []], ['loadingerror', [face]]]);
-  } finally { setCanvasHost({ fontLoad: () => 1 }); }
+  } finally { setCanvasHost(canvasHost); }
 });

@@ -381,6 +381,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut events = sdl.event_pump().map_err(anyhow::Error::msg)?;
     let mut index = 0;
     let mut wait = 0u64;
+    let mut condition_frames = 0u64;
     let mut frame = 0u64;
     let mut last = Instant::now();
     let mut row = None;
@@ -520,6 +521,23 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                         break;
                     }
                     Step::Wait { .. } => {}
+                    Step::WaitFor {
+                        expression,
+                        timeout_frames,
+                    } => {
+                        if game.condition(expression)? {
+                            condition_frames = 0;
+                        } else {
+                            if condition_frames >= *timeout_frames {
+                                bail!(
+                                    "condition timed out after {timeout_frames} frames: {expression}"
+                                );
+                            }
+                            condition_frames += 1;
+                            index -= 1;
+                            break;
+                        }
+                    }
                     Step::Key { code, down, repeat } => {
                         scripted = input::scripted_modifiers(scripted, code, *down);
                         game.event(&input::keyboard(code, *down, *repeat, scripted))?;

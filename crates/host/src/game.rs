@@ -483,6 +483,12 @@ impl<'a> Game<'a> {
     pub fn clock_origin(&mut self) -> Instant {
         self.js.op_state().borrow().borrow::<State>().start
     }
+    pub fn condition(&mut self, expression: &str) -> Result<bool> {
+        let result = self
+            .js
+            .execute_script("host:condition", format!("Boolean(({expression}))"))?;
+        Ok(result.open(self.js.v8_isolate()).is_true())
+    }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;

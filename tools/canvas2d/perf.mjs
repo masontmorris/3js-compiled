@@ -62,7 +62,7 @@ async function edgePage(scene, waitFrames, ids) {
 async function nativePage(scene, waitFrames, ids, dir) {
   await mkdir(dir, { recursive: true });
   const script = join(dir, 'steps.json');
-  await writeFile(script, JSON.stringify([{ type: 'wait', frames: waitFrames }, { type: 'close' }]));
+  await writeFile(script, JSON.stringify([{ type: 'wait_for', expression: "(() => { if (globalThis.__sceneError) throw new Error(String(globalThis.__sceneError)); return !!globalThis.__sceneReady; })()", timeoutFrames: 1800 }, { type: 'wait', frames: waitFrames }, { type: 'close' }]));
   const child = spawn(host, ['--entry', resolve('examples/canvas2d/index.js'), '--scene', scene, '--script', script], { cwd: dir, stdio: 'ignore' });
   // Listen before the first await, or a host that exits during it is never seen.
   const exited = new Promise((done, fail) => { child.on('exit', done); child.on('error', fail); });
