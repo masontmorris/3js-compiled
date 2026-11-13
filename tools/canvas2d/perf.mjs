@@ -1,7 +1,8 @@
 // E6's perf rule: the time to draw folio's ten canvases at load, and the per-frame time of one dynamic canvas,
 // in Edge and in the host, interleaved, three runs each. Each page logs the rest of the machine's CPU load as a
 // share of every processor, from busy time less DPC, interrupt and the page's own processes' time; a page over
-// 40 percent is void and the tool says so. Run it under the GPU lease and quiet_run.
+// 40 percent, or one that logged no measurements, is void and the tool says so. Run it under the GPU lease and
+// quiet_run.
 //   node tools/canvas2d/perf.mjs --out <dir> [--host <host.exe>] [--runs 3] [--frames 900]
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -77,9 +78,9 @@ for (let run = 1; run <= runs; run++) {
   for (const side of ['edge', 'native']) {
     for (const [scene, waitFrames] of [['perf', 10], ['dynamic', frames]]) {
       const result = await measured(ids => (side === 'edge' ? edgePage(scene, waitFrames, ids) : nativePage(scene, waitFrames, ids, join(out, `${side}-${scene}-${run}`))));
-      const parsed = parse(result.lines);
+      const parsed = parse(result.lines, scene);
       await writeFile(join(out, `${side}-${scene}-${run}.log`), result.lines.join('\n') + '\n');
-      const row = { run, side, scene, ...parsed, otherPercent: result.otherPercent, ownCores: result.ownCores, void: result.otherPercent > 40 };
+      const row = { run, side, scene, ...parsed, otherPercent: result.otherPercent, ownCores: result.ownCores, void: result.otherPercent > 40 || parsed.missing.length > 0 };
       rows.push(row);
       console.log(JSON.stringify(row));
     }
