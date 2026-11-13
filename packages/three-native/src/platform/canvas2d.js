@@ -153,10 +153,11 @@ function parseWeightRange(value) {
 // A `unicode-range` descriptor as inclusive code point ranges: U+41, U+400-4FF, or U+4?? with wildcards.
 function parseUnicodeRange(value) {
   return String(value).split(',').map(token => {
-    const match = /^\s*u\+([0-9a-f]{1,6})(?:-([0-9a-f]{1,6})|(\?{1,5}))?\s*$/i.exec(token);
+    const match = /^\s*u\+([0-9a-f]{0,6})(?:-([0-9a-f]{1,6})|(\?{1,6}))?\s*$/i.exec(token);
     const wild = match?.[3] ?? '';
-    const range = match && [parseInt(match[1] + '0'.repeat(wild.length), 16), parseInt((match[2] ?? match[1]) + 'f'.repeat(wild.length), 16)];
-    if (!range || match[1].length + wild.length > 6 || range[0] > range[1] || range[1] > 0x10ffff) throw new DOMException(`Failed to set the 'unicodeRange' property on 'FontFace': Failed to set '${value}' as a property value.`, 'SyntaxError');
+    const digits = match?.[1] ?? '';
+    const range = match && [parseInt(digits + '0'.repeat(wild.length), 16), parseInt((match[2] ?? digits) + 'f'.repeat(wild.length), 16)];
+    if (!range || !(digits || wild) || (match[2] && !digits) || digits.length + wild.length > 6 || range[0] > range[1] || range[1] > 0x10ffff) throw new DOMException(`Failed to set the 'unicodeRange' property on 'FontFace': Failed to set '${value}' as a property value.`, 'SyntaxError');
     return range;
   });
 }
@@ -181,6 +182,7 @@ const RANGES = Symbol('unicode ranges');
 let loadGeneration = 0;
 
 export class FontFace {
+  #unicodeRange;
   #source;
   #load = null;
   #resolve;
@@ -190,10 +192,9 @@ export class FontFace {
     this.style = String(descriptors.style ?? 'normal');
     this.weight = String(descriptors.weight ?? 'normal');
     this.stretch = String(descriptors.stretch ?? 'normal');
-    this.unicodeRange = String(descriptors.unicodeRange ?? 'U+0-10FFFF');
+    this.unicodeRange = descriptors.unicodeRange ?? 'U+0-10FFFF';
     this.display = String(descriptors.display ?? 'auto');
     this.weightRange = parseWeightRange(this.weight);
-    this[RANGES] = parseUnicodeRange(this.unicodeRange);
     this.status = 'unloaded';
     this.faceId = null;
     this.loaded = new Promise((resolve, reject) => { this.#resolve = resolve; this.#reject = reject; });
@@ -212,6 +213,12 @@ export class FontFace {
       }
       this.#load = this.loaded;
     }
+  }
+
+  get unicodeRange() { return this.#unicodeRange; }
+  set unicodeRange(value) {
+    this[RANGES] = parseUnicodeRange(value);
+    this.#unicodeRange = String(value);
   }
 
   load() {

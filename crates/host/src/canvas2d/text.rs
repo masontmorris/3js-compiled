@@ -121,9 +121,10 @@ pub struct Chain {
 }
 
 impl Chain {
-    /// The first font, whose metrics the text uses.
+    /// CSS's first available font, whose metrics the text uses: the first listed font whose range holds a space.
     pub fn primary(&self) -> Option<&Instance> {
-        self.instances.first()
+        let index = (0..self.listed).find(|&index| self.allows(index, ' '))?;
+        self.instances.get(index)
     }
 
     /// Whether the instance at `index` may draw `c`: its `unicode-range` holds it, or it has none.
@@ -161,6 +162,19 @@ pub fn chain(fonts: &mut Fonts, spec: &FontSpec) -> Chain {
         }
     }
     if faces.is_empty() {
+        faces.extend(
+            fonts
+                .family(STANDARD, spec.weight, spec.italic)
+                .map(|face| (face, None, None)),
+        );
+    }
+    // When every listed face's range leaves out a space, the standard font follows them as CSS's default font.
+    let holds_space = |ranges: &Option<Ranges>| {
+        ranges
+            .as_ref()
+            .is_none_or(|ranges| ranges.iter().any(|&[min, max]| (min..=max).contains(&0x20)))
+    };
+    if !faces.iter().any(|(.., ranges)| holds_space(ranges)) {
         faces.extend(
             fonts
                 .family(STANDARD, spec.weight, spec.italic)
