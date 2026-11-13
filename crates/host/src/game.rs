@@ -1735,6 +1735,44 @@ mod tests {
     }
 
     #[test]
+    fn the_engine_lets_go_of_nodes_and_buffers_the_page_drops() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-release-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-release.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.frame()?;
+        let held = |game: &Game| {
+            game.js
+                .op_state()
+                .borrow()
+                .borrow::<threejsc_host::audio::Audio>()
+                .held()
+        };
+        let before = held(&game);
+        holds(&mut game, "__churn(); true".into())?;
+        game.frame()?;
+        assert!(held(&game) >= before + 300, "the churn made 300 handles");
+        // The started sources go once they have played and their ended events have reached the page.
+        let started = Instant::now();
+        while held(&game) >= before + 30 && started.elapsed() < std::time::Duration::from_secs(10) {
+            game.js.v8_isolate().low_memory_notification();
+            game.frame()?;
+        }
+        assert!(
+            held(&game) < before + 30,
+            "the engine holds {} handles, from {before}: {}",
+            held(&game),
+            std::fs::read_to_string(&log_path)?
+        );
+        Ok(())
+    }
+
+    #[test]
     fn audio_current_time_is_the_engines_and_advances_by_render_quantum() -> Result<()> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()

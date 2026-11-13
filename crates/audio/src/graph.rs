@@ -588,25 +588,44 @@ impl Graph {
         Ok(self.get(id)?.param(name)?.value())
     }
 
+    fn same_context(&self, from: Id, to: Id) -> Result<()> {
+        let (a, _) = self
+            .nodes
+            .get(&from)
+            .ok_or_else(|| GraphError(format!("no node {from}")))?;
+        let (b, _) = self
+            .nodes
+            .get(&to)
+            .ok_or_else(|| GraphError(format!("no node {to}")))?;
+        if a != b {
+            return err("nodes belong to different contexts");
+        }
+        Ok(())
+    }
+
     pub fn connect(&self, from: Id, to: Id, output: usize, input: usize) -> Result<()> {
+        self.same_context(from, to)?;
         let source = self.get(from)?.audio_node()?;
         source.connect_from_output_to_input(self.get(to)?.audio_node()?, output, input);
         Ok(())
     }
 
     pub fn connect_param(&self, from: Id, to: Id, name: &str, output: usize) -> Result<()> {
+        self.same_context(from, to)?;
         let source = self.get(from)?.audio_node()?;
         source.connect_from_output_to_input(self.get(to)?.param(name)?, output, 0);
         Ok(())
     }
 
     pub fn disconnect(&self, from: Id, to: Id, output: usize, input: usize) -> Result<()> {
+        self.same_context(from, to)?;
         let source = self.get(from)?.audio_node()?;
         source.disconnect_dest_from_output_to_input(self.get(to)?.audio_node()?, output, input);
         Ok(())
     }
 
     pub fn disconnect_param(&self, from: Id, to: Id, name: &str, output: usize) -> Result<()> {
+        self.same_context(from, to)?;
         let source = self.get(from)?.audio_node()?;
         source.disconnect_dest_from_output(self.get(to)?.param(name)?, output);
         Ok(())
@@ -687,6 +706,19 @@ impl Graph {
         Ok(())
     }
 
+    /// How many node and buffer handles the graph holds.
+    pub fn held(&self) -> usize {
+        self.nodes.len() + self.buffers.len()
+    }
+
+    /// Drops the handle of a node or buffer the page no longer holds. The engine keeps a released node while it still
+    /// plays or feeds another, as it does every node whose handle drops.
+    pub fn release(&mut self, id: Id) {
+        if self.nodes.remove(&id).is_none() {
+            self.buffers.remove(&id);
+        }
+    }
+
     /// Drops a closed context and its nodes.
     pub fn forget(&mut self, context: Id) {
         self.contexts.remove(&context);
@@ -700,6 +732,39 @@ impl Graph {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn a_released_node_or_buffer_is_gone() {
+        let (mut graph, _) = Graph::new();
+        let context = graph.offline(1, 128, 48000.);
+        let gain = graph.node(context, "Gain", &Value::Null).unwrap();
+        let buffer = graph.buffer(vec![vec![0.; 4]], 48000.);
+        let source = graph
+            .node(context, "AudioBufferSource", &Value::Null)
+            .unwrap();
+        graph.source_buffer(source, buffer).unwrap();
+        graph.release(gain);
+        graph.release(buffer);
+        assert!(graph.param_value(gain, "gain").is_err());
+        assert!(graph.buffer_data(buffer, 0).is_err());
+        assert!(
+            graph.start(source, 0., 0., -1.).is_ok(),
+            "a source keeps its own copy of the buffer"
+        );
+    }
+
+    #[test]
+    fn connections_reject_nodes_from_different_contexts() {
+        let (mut graph, _) = Graph::new();
+        let a = graph.offline(1, 128, 48000.);
+        let b = graph.offline(1, 128, 48000.);
+        let from = graph.node(a, "Oscillator", &Value::Null).unwrap();
+        let to = graph.node(b, "Gain", &Value::Null).unwrap();
+        assert!(graph.connect(from, to, 0, 0).is_err());
+        assert!(graph.connect_param(from, to, "gain", 0).is_err());
+        assert!(graph.disconnect(from, to, 0, 0).is_err());
+        assert!(graph.disconnect_param(from, to, "gain", 0).is_err());
+    }
 
     #[test]
     fn an_online_context_reports_its_frame_count_each_render_quantum() {
@@ -734,8 +799,14 @@ mod tests {
         let destination = graph.destination(info.id).unwrap();
         graph.connect(tone, destination, 0, 0).unwrap();
         graph.start(tone, 0., 0., -1.).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let frames = seen.load(Ordering::Relaxed);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let frames = loop {
+            let frames = seen.load(Ordering::Relaxed);
+            if frames > seeded || std::time::Instant::now() >= deadline {
+                break frames;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
         let engine = graph.current_time(info.id);
         assert!(frames > seeded, "the sink sees each render quantum");
         assert_eq!(frames % 128, 0);

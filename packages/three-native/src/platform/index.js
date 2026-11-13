@@ -56,9 +56,9 @@ const floats = bytes => new Float32Array(bytes.slice().buffer);
 const view = array => new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
 let endedPump = null;
 // The graph changes a page makes in one task turn go to the engine in one call. AudioParam automation, property sets,
-// connections and source starts and stops queue here in order, as op_audio_batch's commands, and go when the turn's
-// promise jobs run, which is before the frame ends, or before any other audio call, so each call sees the changes
-// made before it.
+// connections, source starts and stops, and releases queue here in order, as op_audio_batch's commands, and go when
+// the turn's promise jobs run, which is before the frame ends, or before any other audio call, so each call sees the
+// changes made before it. A command that fails is reported, as an error in a listener is, and the rest still run.
 const turnEnd = Promise.resolve();
 let batch = { words: [], strings: [], names: new Map(), values: [] };
 let flushQueued = false;
@@ -67,7 +67,11 @@ const flush = () => {
   if (batch.words.length === 0) return;
   const { words, strings, values } = batch;
   batch = { words: [], strings: [], names: new Map(), values: [] };
-  ops.op_audio_batch(new Uint8Array(new Float64Array(words).buffer), strings, values);
+  try {
+    ops.op_audio_batch(new Uint8Array(new Float64Array(words).buffer), strings, values);
+  } catch (error) {
+    (globalThis.reportError ?? globalThis.console?.error)?.(error);
+  }
 };
 const name = text => {
   let index = batch.names.get(text);
@@ -127,6 +131,7 @@ audio.setAudioHost({
   disconnectParam: (from, to, param, output) => queue(5, from, to, name(param), output),
   start: (id, when, offset, duration) => queue(6, id, when, offset, duration),
   stop: (id, when) => queue(7, id, when),
+  release: id => queue(8, id),
   buffer: flushed((channels, rate) => ops.op_audio_buffer(channels.map(view), rate)),
   bufferData: flushed((id, channel) => floats(ops.op_audio_buffer_data(id, channel))),
   sourceBuffer: flushed((node, buffer) => ops.op_audio_source_buffer(node, buffer)),

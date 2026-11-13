@@ -70,6 +70,11 @@ impl Audio {
         self.batched
     }
 
+    /// How many node and buffer handles the engine holds for the page.
+    pub fn held(&self) -> usize {
+        self.graph.held()
+    }
+
     /// An online context's currentTime as the engine reads it.
     pub fn current_time(&self, context: Id) -> f64 {
         self.graph.current_time(context)
@@ -363,8 +368,8 @@ fn op_audio_param(
 }
 
 /// Runs the graph changes a page made in one task turn, in order. `platform/index.js` queues AudioParam automation,
-/// property sets, connections and source starts and stops, and sends them in one call at the end of the turn, or
-/// before any other audio call. Each command is a little-endian f64 code and its arguments; names index `strings`
+/// property sets, connections, source starts and stops, and releases, and sends them in one call at the end of the
+/// turn, or before any other audio call. Each command is a little-endian f64 code and its arguments; names index `strings`
 /// and set values index `values`.
 #[op2]
 fn op_audio_batch(
@@ -388,61 +393,72 @@ fn op_audio_batch(
             .map(String::as_str)
             .ok_or_else(|| fail(format!("no batched string {i}")))
     };
+    // Each command was its own Web Audio call, so one that fails leaves the rest to run, and the error names it.
+    let mut failed = Vec::new();
     let mut at = 0;
+    let mut index = 0;
     while at < words.len() {
         let w = &words[at..];
         let arg = |i: usize| w.get(i).copied().unwrap_or(0.);
         let id = arg(1) as u32;
-        let length = match arg(0) as u32 {
-            0 => {
-                graph
-                    .param(id, string(arg(2))?, string(arg(3))?, arg(4), arg(5), arg(6))
-                    .map_err(fail)?;
-                7
+        let code = arg(0) as u32;
+        let length = match code {
+            0 => 7,
+            1 => 4,
+            2..=6 => 5,
+            7 => 3,
+            8 => 2,
+            code => {
+                failed.push(format!("{index}: no batched command {code}"));
+                break;
             }
-            1 => {
-                let value = values
-                    .get(arg(3) as usize)
-                    .ok_or_else(|| fail("no batched value"))?;
-                graph.set(id, string(arg(2))?, value).map_err(fail)?;
-                4
-            }
-            2 => {
-                graph
-                    .connect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
-                    .map_err(fail)?;
-                5
-            }
-            3 => {
-                graph
-                    .connect_param(id, arg(2) as u32, string(arg(3))?, arg(4) as usize)
-                    .map_err(fail)?;
-                5
-            }
-            4 => {
-                graph
-                    .disconnect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
-                    .map_err(fail)?;
-                5
-            }
-            5 => {
-                graph
-                    .disconnect_param(id, arg(2) as u32, string(arg(3))?, arg(4) as usize)
-                    .map_err(fail)?;
-                5
-            }
-            6 => {
-                graph.start(id, arg(2), arg(3), arg(4)).map_err(fail)?;
-                5
-            }
-            7 => {
-                graph.stop(id, arg(2)).map_err(fail)?;
-                3
-            }
-            code => return Err(fail(format!("no batched command {code}"))),
         };
+        let applied = match code {
+            0 => string(arg(2)).and_then(|param| {
+                graph
+                    .param(id, param, string(arg(3))?, arg(4), arg(5), arg(6))
+                    .map_err(fail)
+            }),
+            1 => values
+                .get(arg(3) as usize)
+                .ok_or_else(|| fail("no batched value"))
+                .and_then(|value| graph.set(id, string(arg(2))?, value).map_err(fail)),
+            2 => graph
+                .connect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
+                .map_err(fail),
+            3 => string(arg(3)).and_then(|param| {
+                graph
+                    .connect_param(id, arg(2) as u32, param, arg(4) as usize)
+                    .map_err(fail)
+            }),
+            4 => graph
+                .disconnect(id, arg(2) as u32, arg(3) as usize, arg(4) as usize)
+                .map_err(fail),
+            5 => string(arg(3)).and_then(|param| {
+                graph
+                    .disconnect_param(id, arg(2) as u32, param, arg(4) as usize)
+                    .map_err(fail)
+            }),
+            6 => graph.start(id, arg(2), arg(3), arg(4)).map_err(fail),
+            7 => graph.stop(id, arg(2)).map_err(fail),
+            _ => {
+                graph.release(id);
+                Ok(())
+            }
+        };
+        match applied {
+            Ok(()) => audio.batched.1 += 1,
+            Err(e) => failed.push(format!("{index}: {e}")),
+        }
         at += length;
-        audio.batched.1 += 1;
+        index += 1;
+    }
+    if !failed.is_empty() {
+        return Err(fail(format!(
+            "{} batched audio commands failed: {}",
+            failed.len(),
+            failed.join("; ")
+        )));
     }
     Ok(())
 }
@@ -737,12 +753,65 @@ mod tests {
                 ops.op_audio_start(tone, 0, 0, -1);",
             )
             .unwrap();
-        std::thread::sleep(Duration::from_millis(300));
-        let read = runtime
-            .execute_script("read", "Atomics.load(new Int32Array(slot), 0)")
+        // A loaded runner may take a while to start the stream, so the test waits for a quantum, up to a deadline.
+        let started = std::time::Instant::now();
+        loop {
+            let read = runtime
+                .execute_script("read", "Atomics.load(new Int32Array(slot), 0)")
+                .unwrap();
+            deno_core::scope!(scope, runtime);
+            let quanta = v8::Local::new(scope, read).int32_value(scope).unwrap();
+            if quanta > 0 {
+                break;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "the page's slot holds {quanta} quanta"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn a_failed_batched_command_is_reported_and_the_rest_still_run() {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![extension::init()],
+            ..Default::default()
+        });
+        runtime.op_state().borrow_mut().put(Audio::new(Options {
+            device: Some("none".into()),
+            csv: std::env::temp_dir().join(format!("threejsc-batch-{}.csv", std::process::id())),
+            ..Default::default()
+        }));
+        let result = runtime
+            .execute_script(
+                "batch",
+                "const ops = Deno.core.ops;
+                const { id } = ops.op_audio_context({ kind: 'offline', channels: 1, length: 128, sampleRate: 48000 });
+                const tone = ops.op_audio_node(id, 'Oscillator', {});
+                const words = [2, tone, 999999, 0, 0, 2, tone, ops.op_audio_destination(id), 0, 0, 6, tone, 0, 0, -1];
+                let error = null;
+                try {
+                    ops.op_audio_batch(new Uint8Array(new Float64Array(words).buffer), [], []);
+                } catch (e) {
+                    error = String(e.message);
+                }
+                error",
+            )
             .unwrap();
-        deno_core::scope!(scope, runtime);
-        let quanta = v8::Local::new(scope, read).int32_value(scope).unwrap();
-        assert!(quanta > 0, "the page's slot holds {quanta} quanta");
+        let message = {
+            deno_core::scope!(scope, runtime);
+            v8::Local::new(scope, result).to_rust_string_lossy(scope)
+        };
+        assert!(
+            message.starts_with("1 batched audio commands failed: 0: "),
+            "{message}"
+        );
+        let audio = runtime.op_state().borrow().borrow::<Audio>().batched();
+        assert_eq!(
+            audio,
+            (1, 2),
+            "the connect and the start after the failure ran"
+        );
     }
 }

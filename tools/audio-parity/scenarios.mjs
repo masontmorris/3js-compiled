@@ -26,6 +26,9 @@ async function attemptAsync(log, label, fn) {
   }
 }
 
+// The types Howler asks canPlayType about, and two it does not.
+export const mediaTypes = ['audio/mpeg;', 'audio/mp3;', 'audio/ogg; codecs="opus"', 'audio/ogg; codecs="vorbis"', 'audio/wav; codecs="1"', 'audio/wav', 'audio/aac;', 'audio/x-caf;', 'audio/x-m4a;', 'audio/m4a;', 'audio/x-m4b;', 'audio/m4b;', 'audio/x-mp4;', 'audio/mp4;', 'audio/webm; codecs="vorbis"', 'audio/mp4; codecs="ec-3"', 'audio/x-flac;', 'audio/flac;', 'video/mp4', 'bogus'];
+
 export const scenarios = {
   async 'context-start'(log) {
     const ctx = new AudioContext();
@@ -319,8 +322,7 @@ export const scenarios = {
 
   async 'audio-element'(log) {
     const audio = new Audio();
-    const types = ['audio/mpeg;', 'audio/mp3;', 'audio/ogg; codecs="opus"', 'audio/ogg; codecs="vorbis"', 'audio/wav; codecs="1"', 'audio/wav', 'audio/aac;', 'audio/x-caf;', 'audio/x-m4a;', 'audio/m4a;', 'audio/x-m4b;', 'audio/m4b;', 'audio/x-mp4;', 'audio/mp4;', 'audio/webm; codecs="vorbis"', 'audio/mp4; codecs="ec-3"', 'audio/x-flac;', 'audio/flac;', 'video/mp4', 'bogus'];
-    log('canPlayType', types.map(type => audio.canPlayType(type)));
+    log('canPlayType', mediaTypes.map(type => audio.canPlayType(type)));
     log('element', audio.constructor.name, audio.tagName, audio instanceof HTMLMediaElement, audio.paused, audio.volume, audio.muted, audio.readyState);
     log('document.createElement', document.createElement('audio').constructor.name);
   },

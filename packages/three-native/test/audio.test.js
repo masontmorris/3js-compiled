@@ -6,7 +6,7 @@ import * as audio from '../src/platform/audio.js';
 import { XMLHttpRequest } from '../src/platform/xhr.js';
 import { Document } from '../src/platform/dom.js';
 import { fetch, setHost } from '../src/platform/images.js';
-import { scenarios } from '../../../tools/audio-parity/scenarios.mjs';
+import { mediaTypes, scenarios } from '../../../tools/audio-parity/scenarios.mjs';
 import { scenarioEnv } from '../../../tools/audio-parity/scenario-env.mjs';
 
 const repo = new URL('../../../', import.meta.url);
@@ -46,7 +46,11 @@ function fakeHost() {
     calls,
     context: spec => {
       const id = next++;
-      if (spec.kind === 'online') clocks.set(id, { held: 0, since: performance.now(), running: true });
+      // The clock starts a few milliseconds after the context, as a device does, so a read in the same turn is 0.
+      if (spec.kind === 'online') {
+        clocks.set(id, { held: 0, since: performance.now(), running: false });
+        setTimeout(() => { if (!clocks.get(id).stopped) run(id, true); }, 5);
+      }
       return { id, sampleRate: spec.sampleRate ?? 48000 };
     },
     currentTime: time,
@@ -55,9 +59,9 @@ function fakeHost() {
     destination: () => next++,
     listener: () => { const id = next++; kinds.set(id, 'Listener'); return id; },
     maxChannelCount: () => 2,
-    suspend: id => { run(id, false); return later(); },
+    suspend: id => { run(id, false); clocks.get(id).stopped = true; return later(); },
     resume: id => { run(id, true); return later(); },
-    close: id => { run(id, false); return later(); },
+    close: id => { run(id, false); clocks.get(id).stopped = true; return later(); },
     render: id => later([new Float32Array(4410), new Float32Array(4410)]),
     node: (context, kind) => { const id = next++; kinds.set(id, kind); return id; },
     set: (...args) => calls.push(['set', ...args]),
@@ -73,6 +77,7 @@ function fakeHost() {
     disconnectParam: (...args) => calls.push(['disconnectParam', ...args]),
     start: (...args) => calls.push(['start', ...args]),
     stop: (...args) => calls.push(['stop', ...args]),
+    release: id => calls.push(['release', id]),
     buffer: () => next++,
     bufferData: () => new Float32Array(0),
     sourceBuffer: (...args) => calls.push(['sourceBuffer', ...args]),
@@ -104,10 +109,16 @@ async function run(name) {
   return JSON.parse(JSON.stringify(log));
 }
 
+// Edge plays Opus and AAC, which the host cannot decode, so the host answers '' for them and a page falls back.
+const UNDECODED = new Set(['audio/ogg; codecs="opus"', 'audio/aac;', 'audio/x-m4a;', 'audio/mp4;', 'video/mp4']);
+const hostAnswers = {
+  'audio-element': log => log.map(([kind, ...rest]) => kind === 'canPlayType' ? [kind, rest[0].map((answer, i) => UNDECODED.has(mediaTypes[i]) ? '' : answer)] : [kind, ...rest]),
+};
+
 for (const name of ['context-start', 'current-time', 'param-errors', 'node-errors', 'statechange-timing', 'statechange-races', 'suspend-resume-close', 'offline-render', 'audio-element', 'xhr']) {
   test(`${name} logs what Edge logs`, async () => {
     install();
-    assert.deepEqual(await run(name), edge[name]);
+    assert.deepEqual(await run(name), hostAnswers[name]?.(edge[name]) ?? edge[name]);
   });
 }
 
@@ -150,4 +161,19 @@ test('a buffer source hands the engine the buffer it holds, and sends a page-wri
   new audio.AudioBufferSourceNode(ctx, { buffer });
   assert.deepEqual(uploads, [[0, 0.5, 0, 0], [0, 0.5, 0.25, 0]]);
   assert.deepEqual(host.calls.filter(c => c[0] === 'sourceBuffer').map(c => c[2]), [77, 77]);
+  assert.deepEqual(host.calls.filter(c => c[0] === 'release').map(c => c[1]), [77], 'the copy the second acquire replaced');
+});
+
+test('native ids cannot be reassigned and unsupported codecs are rejected', () => {
+  install();
+  const a = new AudioContext();
+  const b = new AudioContext();
+  const node = a.createGain();
+  assert.throws(() => { node.id = b.destination.id; }, TypeError);
+  assert.throws(() => { a.id = b.id; }, TypeError);
+  const media = new HTMLMediaElement();
+  for (const type of ['audio/ogg; codecs="opus"', 'audio/aac;', 'audio/x-m4a;', 'audio/mp4;', 'video/mp4']) {
+    assert.equal(media.canPlayType(type), '');
+  }
+  assert.equal(media.canPlayType('audio/ogg; codecs="vorbis"'), 'probably');
 });

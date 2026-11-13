@@ -160,6 +160,10 @@ export class AudioParam {
 const CHANNEL_COUNT_MODES = new Set(['max', 'clamped-max', 'explicit']);
 const CHANNEL_INTERPRETATIONS = new Set(['speakers', 'discrete']);
 
+// The engine's handle to a node or buffer goes once the page can no longer reach it. The engine keeps a node that
+// still plays or feeds another, and a started source stays reachable through `sources` until it ends.
+const unreachable = new FinalizationRegistry(held => { if (held.id !== null) host.release(held.id); });
+
 export class AudioNode extends EventTarget {
   #context;
   #outputs;
@@ -177,7 +181,9 @@ export class AudioNode extends EventTarget {
     this.#channelCount = channelCount;
     this.#channelCountMode = channelCountMode;
     this.#channelInterpretation = channelInterpretation;
-    this.id = kind === 'Destination' || kind === 'Listener' ? hostOptions.id : host.node(context.id, kind, hostOptions);
+    const owned = kind !== 'Destination' && kind !== 'Listener';
+    Object.defineProperty(this, 'id', { value: owned ? host.node(context.id, kind, hostOptions) : hostOptions.id });
+    if (owned) unreachable.register(this, { id: this.id });
     if (options?.channelCount !== undefined) this.channelCount = options.channelCount;
     if (options?.channelCountMode !== undefined) this.channelCountMode = options.channelCountMode;
     if (options?.channelInterpretation !== undefined) this.channelInterpretation = options.channelInterpretation;
@@ -310,20 +316,23 @@ export class AudioScheduledSourceNode extends AudioNode {
   constructor(context, kind, options, layout) {
     super(context, kind, options, { inputs: 0, ...layout });
     this.#interface = `${kind}Node`;
-    sources.set(this.id, this);
   }
   start(when = 0) {
     const prefix = executing(this.#interface, 'start');
     const t = toDouble(when, prefix);
     this.assertUnstarted(prefix);
     if (t < 0) throw new RangeError(`${prefix}: The start time provided (${t}) is less than the minimum bound (0).`);
-    this.#started = true;
+    this.markStarted();
     host.start(this.id, t, 0, -1);
   }
   assertUnstarted(prefix) {
     if (this.#started) throw domError(`${prefix}: cannot call start more than once.`, 'InvalidStateError');
   }
-  markStarted() { this.#started = true; }
+  // A started source stays reachable until it ends, so its ended event can fire.
+  markStarted() {
+    this.#started = true;
+    sources.set(this.id, this);
+  }
   stop(when = 0) {
     const prefix = executing('AudioScheduledSourceNode', 'stop');
     const t = toDouble(when, prefix);
@@ -580,7 +589,7 @@ export class DelayNode extends AudioNode {
 // An AudioBuffer's samples stay in the host after decodeAudioData until a page reads them, so a buffer a game only
 // plays is never copied. Once a page holds its channel arrays, each acquire sends their current contents.
 export class AudioBuffer {
-  #hostId;
+  #host;
   #channels = null;
   #length;
   #sampleRate;
@@ -597,15 +606,16 @@ export class AudioBuffer {
     this.#count = count;
     this.#length = length;
     this.#sampleRate = rate;
-    this.#hostId = options[HOST_ID] ?? null;
-    if (this.#hostId === null) this.#channels = Array.from({ length: count }, () => new Float32Array(length));
+    this.#host = { id: options[HOST_ID] ?? null };
+    unreachable.register(this, this.#host);
+    if (this.#host.id === null) this.#channels = Array.from({ length: count }, () => new Float32Array(length));
   }
   get length() { return this.#length; }
   get sampleRate() { return this.#sampleRate; }
   get numberOfChannels() { return this.#count; }
   get duration() { return this.#length / this.#sampleRate; }
   #materialize() {
-    this.#channels ??= Array.from({ length: this.#count }, (_, c) => host.bufferData(this.#hostId, c));
+    this.#channels ??= Array.from({ length: this.#count }, (_, c) => host.bufferData(this.#host.id, c));
     return this.#channels;
   }
   getChannelData(channel) {
@@ -627,9 +637,13 @@ export class AudioBuffer {
     if (offset >= this.#length) return;
     this.#materialize()[c].set(source.subarray(0, this.#length - offset), offset);
   }
+  // A source keeps its own copy of what it was given, so the copy before this one has no other holder.
   acquire() {
-    if (this.#channels) this.#hostId = host.buffer(this.#channels, this.#sampleRate);
-    return this.#hostId;
+    if (this.#channels) {
+      if (this.#host.id !== null) host.release(this.#host.id);
+      this.#host.id = host.buffer(this.#channels, this.#sampleRate);
+    }
+    return this.#host.id;
   }
 }
 const HOST_ID = Symbol('host buffer');
@@ -649,7 +663,7 @@ export class BaseAudioContext extends EventTarget {
   [PENDING] = 0;
   constructor(info, state) {
     super();
-    this.id = info.id;
+    Object.defineProperty(this, 'id', { value: info.id });
     this.sampleRate = info.sampleRate;
     this.#state = state;
     Object.defineProperty(this, 'sampleRate', { writable: false });
@@ -823,11 +837,12 @@ export function sourceEnded(id) {
   source.dispatchEvent(new Event('ended'));
 }
 
-// Edge 157's answers for Howler's codec checks. The native host decodes MP3, Ogg Vorbis, WAV and FLAC.
+// Edge 157's answers for Howler's codec checks, for the codecs the native host decodes: MP3, Ogg Vorbis, WAV and FLAC.
+// Opus and AAC answer '' so a page falls back to a source the host can play.
 const CAN_PLAY = new Map([
-  ['audio/mpeg;', 'probably'], ['audio/mp3;', 'probably'], ['audio/ogg; codecs="opus"', 'probably'], ['audio/ogg; codecs="vorbis"', 'probably'],
-  ['audio/wav; codecs="1"', 'probably'], ['audio/wav', 'maybe'], ['audio/aac;', 'probably'], ['audio/x-m4a;', 'maybe'], ['audio/mp4;', 'maybe'],
-  ['audio/webm; codecs="vorbis"', 'probably'], ['audio/flac;', 'probably'], ['video/mp4', 'maybe'],
+  ['audio/mpeg;', 'probably'], ['audio/mp3;', 'probably'], ['audio/ogg; codecs="vorbis"', 'probably'],
+  ['audio/wav; codecs="1"', 'probably'], ['audio/wav', 'maybe'],
+  ['audio/webm; codecs="vorbis"', 'probably'], ['audio/flac;', 'probably'],
 ]);
 
 export class HTMLMediaElement extends HTMLElement {
