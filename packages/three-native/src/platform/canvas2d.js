@@ -293,7 +293,7 @@ export class FontFaceSet extends EventTarget {
     const succeeded = this.#succeeded.splice(0), failed = this.#failed.splice(0);
     setTimeout(() => {
       this.#emit('loadingdone', succeeded);
-      if (failed.length) this.#emit('loadingerror', failed);
+      if (failed.some(face => this.#faces.has(face))) this.#emit('loadingerror', failed);
     }, 0);
   }
   get size() { return this.#faces.size; }
@@ -321,7 +321,17 @@ export class FontFaceSet extends EventTarget {
     this.#ready = null;
     return this;
   }
-  delete(face) { const deleted = this.#faces.delete(face); if (deleted) { face[SETS].delete(this); if (this.#pending.has(face)) this.#leave(face); this.#ready = null; } return deleted; }
+  delete(face) {
+    const deleted = this.#faces.delete(face);
+    if (deleted) {
+      face[SETS].delete(this);
+      this.#succeeded = this.#succeeded.filter(entry => entry !== face);
+      this.#failed = this.#failed.filter(entry => entry !== face);
+      if (this.#pending.has(face)) this.#leave(face);
+      this.#ready = null;
+    }
+    return deleted;
+  }
   has(face) { return this.#faces.has(face); }
   clear() { for (const face of this.#faces) this.delete(face); }
   forEach(callback, thisArg) { for (const face of this.#faces) callback.call(thisArg, face, face, this); }
