@@ -17,6 +17,7 @@ for (const { name, draw } of [...FOLIO_CANVASES, ...TEXT_CANVAS_VARIANTS]) {
   const context = draw(canvas);
   const ours = context.getImageData(0, 0, canvas.width, canvas.height).data;
   const bitmap = await createImageBitmap(await (await fetch(new URL(`${name}.png`, refs).href)).blob(), { colorSpaceConversion: 'none' });
+  if (bitmap.width !== canvas.width || bitmap.height !== canvas.height) throw new Error(`${name}.png is ${bitmap.width}x${bitmap.height}, not ${canvas.width}x${canvas.height}`);
   const edge = bitmap[Symbol.for('threejsc.pixels')].data;
   let sum = 0;
   let differing = 0;
