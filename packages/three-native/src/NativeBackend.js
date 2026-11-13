@@ -222,6 +222,45 @@ function copyBuffer(device, buffer) {
   return buffer.handle;
 }
 
+// The pixels the platform's image decoder attached to an image element or ImageBitmap, as straight or premultiplied
+// RGBA8 rows, top row first. The symbol is registered, so each bundled copy of the platform finds them.
+const PIXELS = Symbol.for('threejsc.pixels');
+
+// The bytes copyExternalImageToTexture writes: the source rectangle at `from` of `width` by `height`, taken from the
+// image turned upside down when `flipY` is set, with alpha premultiplied as the destination asks, in the
+// destination's 8-bit RGBA or BGRA order.
+export function externalImageBytes(pixels, { from = {}, flipY = false, width, height, premultiplied = false, format }) {
+  const x = from.x ?? 0;
+  const y = from.y ?? 0;
+  if (x < 0 || y < 0 || x + width > pixels.width || y + height > pixels.height) {
+    throw new DOMException("Failed to execute 'copyExternalImageToTexture' on 'GPUQueue': Copy rect is out of bounds of external image.", 'OperationError');
+  }
+  const bgra = format === 'bgra8unorm' || format === 'bgra8unorm-srgb';
+  if (!bgra && format !== 'rgba8unorm' && format !== 'rgba8unorm-srgb') throw new Error(`copyExternalImageToTexture to ${format} is not implemented on the native device`);
+  const out = new Uint8Array(width * height * 4);
+  const source = pixels.data;
+  const multiply = premultiplied && !pixels.premultiplied;
+  const divide = !premultiplied && pixels.premultiplied;
+  for (let row = 0; row < height; row++) {
+    const sourceRow = flipY ? y + height - 1 - row : y + row;
+    let i = (sourceRow * pixels.width + x) * 4;
+    let o = row * width * 4;
+    for (let column = 0; column < width; column++, i += 4, o += 4) {
+      let r = source[i];
+      let g = source[i + 1];
+      let b = source[i + 2];
+      const a = source[i + 3];
+      if (multiply) { r = Math.round((r * a) / 255); g = Math.round((g * a) / 255); b = Math.round((b * a) / 255); }
+      if (divide && a) { r = Math.min(255, Math.round((r * 255) / a)); g = Math.min(255, Math.round((g * 255) / a)); b = Math.min(255, Math.round((b * 255) / a)); }
+      out[o] = bgra ? b : r;
+      out[o + 1] = g;
+      out[o + 2] = bgra ? r : b;
+      out[o + 3] = a;
+    }
+  }
+  return out;
+}
+
 function notImplemented(method) {
   return () => { throw new Error(`${method} is not implemented on the native device`); };
 }
@@ -682,7 +721,20 @@ export class RecordingDevice {
           bytesPerRow: layout.bytesPerRow ?? 0, rowsPerImage: layout.rowsPerImage ?? 0,
         }, bytes.subarray(offset));
       },
-      copyExternalImageToTexture: notImplemented('GPUQueue.copyExternalImageToTexture'),
+      // Writes an image the platform decoded. Other sources, such as a canvas or a video frame, are not implemented.
+      copyExternalImageToTexture: (source, destination, size) => {
+        const pixels = source?.source?.[PIXELS];
+        if (!pixels) throw new Error(`GPUQueue.copyExternalImageToTexture is not implemented for ${source?.source?.constructor?.name ?? typeof source?.source} sources on the native device`);
+        const texture = destination.texture;
+        if (!(texture instanceof RecordingTexture) || texture.device !== this) throw new Error('Invalid texture');
+        const { width, height, layers } = extent(size);
+        if (layers !== 1) throw new Error('copyExternalImageToTexture of more than one layer is not implemented on the native device');
+        const bytes = externalImageBytes(pixels, {
+          from: origin(source.origin), flipY: !!source.flipY, width, height,
+          premultiplied: !!destination.premultipliedAlpha, format: texture.format,
+        });
+        this.queue.writeTexture({ texture, mipLevel: destination.mipLevel ?? 0, origin: destination.origin }, bytes, { bytesPerRow: width * 4, rowsPerImage: height }, { width, height, depthOrArrayLayers: 1 });
+      },
       // Resolves once the executor has run this frame's earlier work, which a readback after it shows.
       onSubmittedWorkDone: () => {
         if (this.destroyed) return Promise.resolve();

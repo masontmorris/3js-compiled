@@ -1,9 +1,8 @@
 mod game;
-mod input;
 mod renderer;
 
 use anyhow::{Context, Result, bail};
-use game::{Game, Log, RenderProgress};
+use game::{Game, Log, Page, RenderProgress};
 use renderer::{Frame, Rendered, Renderer, Target};
 use sdl3::event::Event;
 use serde_json::{Value, json};
@@ -12,12 +11,13 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 use threejsc_host::{
+    platform::{events as input, gamepads::Gamepads},
     script::{PointerAction, Step},
     worker::Worker,
 };
@@ -35,6 +35,8 @@ struct Options {
     scene: Option<String>,
     script: Option<PathBuf>,
     record: Option<PathBuf>,
+    storage: Option<PathBuf>,
+    hash: String,
     vsync: bool,
 }
 fn options() -> Result<Options> {
@@ -43,11 +45,15 @@ fn options() -> Result<Options> {
     let mut scene = None;
     let mut script = None;
     let mut record = None;
+    let mut storage = None;
+    let mut hash = String::new();
     let mut vsync = true;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
             "--scene" => scene = Some(args.next().context("--scene needs a name")?),
+            "--storage" => storage = Some(args.next().context("--storage needs a file")?.into()),
+            "--hash" => hash = args.next().context("--hash needs a fragment")?,
             "--script" => script = Some(args.next().context("--script needs a path")?.into()),
             "--record" => record = Some(args.next().context("--record needs a directory")?.into()),
             "--vsync" => {
@@ -61,11 +67,19 @@ fn options() -> Result<Options> {
             _ => bail!("unknown argument: {arg}"),
         }
     }
+    let entry: String = entry.context("--entry is required")?;
+    let storage = storage.or_else(|| {
+        std::env::var_os("LOCALAPPDATA").map(|home| {
+            threejsc_host::platform::storage::default_path(Path::new(&entry), Path::new(&home))
+        })
+    });
     Ok(Options {
-        entry: entry.context("--entry is required")?,
+        entry,
         scene,
         script,
         record,
+        storage,
+        hash,
         vsync,
     })
 }
@@ -74,8 +88,33 @@ fn log(log: &Log, message: &str) -> Result<()> {
     println!("{message}");
     Ok(())
 }
-fn pointer(action: PointerAction, x: f64, y: f64, button: i16) -> Value {
-    json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button})
+/// A pointer input fact at (`x`, `y`) in CSS pixels.
+fn pointer(
+    action: PointerAction,
+    x: f64,
+    y: f64,
+    button: i16,
+    clicks: u8,
+    modifiers: &Value,
+) -> Value {
+    let mut fact = json!({"type": match action { PointerAction::Move => "pointermove", PointerAction::Down => "pointerdown", PointerAction::Up => "pointerup" }, "clientX": x, "clientY": y, "button": button, "clicks": clicks});
+    input::merge(&mut fact, modifiers);
+    fact
+}
+/// The window's device pixel ratio and its size in CSS pixels, as Edge rounds them.
+fn css_size(window: &sdl3::video::Window) -> (f64, (u32, u32)) {
+    css_pixels(window.size_in_pixels(), window.display_scale())
+}
+/// The device pixel ratio for display scale `scale`, and a size of `pixels` in CSS pixels.
+fn css_pixels((width, height): (u32, u32), scale: f32) -> (f64, (u32, u32)) {
+    let ratio = f64::from(scale).max(0.25);
+    let css = |pixels: u32| ((f64::from(pixels) / ratio).round() as u32).max(1);
+    (ratio, (css(width), css(height)))
+}
+/// CSS pixels per window coordinate, for a window of `pixel_density` pixels per coordinate at device pixel ratio
+/// `ratio`.
+fn css_scale(pixel_density: f32, ratio: f64) -> f64 {
+    f64::from(pixel_density) / ratio
 }
 /// The GPUErrorFilter name of an error's filter.
 fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
@@ -84,6 +123,13 @@ fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
         wgpu::ErrorFilter::OutOfMemory => "out-of-memory",
         wgpu::ErrorFilter::Internal => "internal",
     }
+}
+/// Sends the coalesced pointer motion and wheel facts.
+fn flush(game: &mut Game<'_>, moved: &mut Option<Value>, wheel: &mut Option<Value>) -> Result<()> {
+    for fact in [moved.take(), wheel.take()].into_iter().flatten() {
+        game.event(&fact)?;
+    }
+    Ok(())
 }
 /// The game thread's share of a frame whose render-thread result has not arrived yet.
 struct Row {
@@ -185,6 +231,8 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         .enable_all()
         .build()?;
     let _entered = runtime.enter();
+    // Gamepads keep reporting while the window is in the background, as Edge reads them while the page is visible.
+    sdl3::hint::set("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
     let sdl = sdl3::init().map_err(anyhow::Error::msg)?;
     let video = sdl.video().map_err(anyhow::Error::msg)?;
     let mut window = video
@@ -196,14 +244,34 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     log(log_file, &adapter)?;
     let (width, height) = window.size_in_pixels();
     let mut size = (width.max(1), height.max(1));
-    let mut game = Game::new(
+    let (mut ratio, css) = css_size(&window);
+    let screen = window
+        .get_display()
+        .and_then(|display| display.get_mode())
+        .map_or((1920, 1080), |mode| (mode.w as u32, mode.h as u32));
+    let page = Page {
+        hash: options.hash.clone(),
+        storage: options.storage.clone(),
+        ratio,
+        screen: (
+            (f64::from(screen.0) / ratio) as u32,
+            (f64::from(screen.1) / ratio) as u32,
+        ),
+    };
+    let mut game = Game::open(
         &options.entry,
         log_file.clone(),
         &runtime,
         options.scene.as_deref(),
-        size,
+        css,
         Some((&target.adapter_limits(), target.adapter_features())),
+        &page,
     )?;
+    let mut gamepads = Gamepads::new(
+        sdl.gamepad().map_err(anyhow::Error::msg)?,
+        sdl.joystick().map_err(anyhow::Error::msg)?,
+    );
+    let mut scripted = sdl3::keyboard::Mod::NOMOD;
     // A display rate forced for testing, as at 60 Hz on a faster display (docs/testing.md): the
     // host paces frames to it and ignores the display's own rate.
     let forced = std::env::var("THREEJSC_DISPLAY_HZ")
@@ -247,7 +315,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut row = None;
     'running: loop {
         let started = Instant::now();
+        let scale = css_scale(window.pixel_density(), ratio);
+        let keyboard = sdl.keyboard();
+        // Motion and wheel events coalesce within a poll, as Edge aligns them to frames, and go out before any
+        // other input, so discrete events keep their order.
+        let mut moved: Option<Value> = None;
+        let mut wheel: Option<Value> = None;
         for event in events.poll_iter() {
+            let modifiers = input::modifiers(keyboard.mod_state());
+            if !matches!(event, Event::MouseMotion { .. } | Event::MouseWheel { .. }) {
+                flush(&mut game, &mut moved, &mut wheel)?;
+            }
             match event {
                 Event::Quit { .. }
                 | Event::Window {
@@ -264,6 +342,18 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                         game.set_display_interval(display_interval(&window))?
                     }
                 }
+                Event::Window {
+                    win_event: sdl3::event::WindowEvent::FocusGained,
+                    ..
+                } => game.event(&json!({"type": "focus", "focused": true}))?,
+                Event::Window {
+                    win_event: sdl3::event::WindowEvent::FocusLost,
+                    ..
+                } => game.event(&json!({"type": "focus", "focused": false}))?,
+                Event::Window {
+                    win_event: sdl3::event::WindowEvent::MouseLeave,
+                    ..
+                } => game.event(&json!({"type": "pointerleave"}))?,
                 Event::KeyDown {
                     scancode: Some(code),
                     keymod,
@@ -287,52 +377,129 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     keymod,
                 ))?,
                 Event::MouseMotion { x, y, .. } => {
-                    game.event(&pointer(PointerAction::Move, x.into(), y.into(), 0))?
+                    moved = Some(pointer(
+                        PointerAction::Move,
+                        f64::from(x) * scale,
+                        f64::from(y) * scale,
+                        0,
+                        0,
+                        &modifiers,
+                    ));
                 }
                 Event::MouseButtonDown {
-                    x, y, mouse_btn, ..
+                    x,
+                    y,
+                    mouse_btn,
+                    clicks,
+                    ..
                 } => game.event(&pointer(
                     PointerAction::Down,
-                    x.into(),
-                    y.into(),
+                    f64::from(x) * scale,
+                    f64::from(y) * scale,
                     input::mouse_button(mouse_btn),
+                    clicks,
+                    &modifiers,
                 ))?,
                 Event::MouseButtonUp {
-                    x, y, mouse_btn, ..
+                    x,
+                    y,
+                    mouse_btn,
+                    clicks,
+                    ..
                 } => game.event(&pointer(
                     PointerAction::Up,
-                    x.into(),
-                    y.into(),
+                    f64::from(x) * scale,
+                    f64::from(y) * scale,
                     input::mouse_button(mouse_btn),
+                    clicks,
+                    &modifiers,
                 ))?,
-                Event::MouseWheel { x, y, .. } => {
+                Event::MouseWheel {
+                    x,
+                    y,
+                    mouse_x,
+                    mouse_y,
+                    ..
+                } => {
                     let (x, y) = input::wheel(x, y);
-                    game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?
+                    let sum = |key: &str| {
+                        wheel
+                            .as_ref()
+                            .and_then(|fact| fact[key].as_f64())
+                            .unwrap_or(0.0)
+                    };
+                    let mut fact = json!({"type": "wheel", "deltaX": sum("deltaX") + x, "deltaY": sum("deltaY") + y, "clientX": f64::from(mouse_x) * scale, "clientY": f64::from(mouse_y) * scale});
+                    input::merge(&mut fact, &modifiers);
+                    wheel = Some(fact);
                 }
+                Event::GamepadAdded { which, .. } => gamepads.added(which.raw())?,
+                Event::GamepadRemoved { which, .. } => gamepads.removed(which.raw()),
                 _ => {}
             }
         }
+        flush(&mut game, &mut moved, &mut wheel)?;
         let mut capture = None;
         if wait == 0 {
             while let Some(step) = steps.get(index) {
                 index += 1;
+                let modifiers = input::modifiers(scripted);
                 match step {
-                    Step::Wait { frames } if *frames > 0 => { wait = *frames; break; }
-                    Step::Wait { .. } => {},
-                    Step::Key { code, down } => game.event(&input::keyboard(code, *down, false, sdl3::keyboard::Mod::NOMOD))?,
-                    Step::Pointer { action, x, y, button } => game.event(&pointer(*action, *x, *y, i16::from(*button)))?,
-                    Step::Wheel { x, y } => game.event(&json!({"type":"wheel", "deltaX":x, "deltaY":y}))?,
-                    Step::Gamepad { button, down, index } => game.event(&json!({"type":"gamepadbutton", "button":button, "down":down, "index":index}))?,
-                    Step::Resize { width, height } => { if *width == 0 || *height == 0 { bail!("resize dimensions must be nonzero"); } window.set_size(*width, *height)?; },
-                    Step::Capture { path } => { capture = Some(path.clone()); break; },
+                    Step::Wait { frames } if *frames > 0 => {
+                        wait = *frames;
+                        break;
+                    }
+                    Step::Wait { .. } => {}
+                    Step::Key { code, down, repeat } => {
+                        scripted = input::scripted_modifiers(scripted, code, *down);
+                        game.event(&input::keyboard(code, *down, *repeat, scripted))?;
+                    }
+                    Step::Pointer {
+                        action,
+                        x,
+                        y,
+                        button,
+                    } => {
+                        game.event(&pointer(*action, *x, *y, i16::from(*button), 1, &modifiers))?
+                    }
+                    Step::Wheel { x, y } => {
+                        let mut fact = json!({"type":"wheel", "deltaX":x, "deltaY":y});
+                        input::merge(&mut fact, &modifiers);
+                        game.event(&fact)?;
+                    }
+                    Step::Gamepad {
+                        button,
+                        down,
+                        index,
+                    } => gamepads.press(*index, *button, *down)?,
+                    Step::GamepadAxis { axis, value, index } => {
+                        gamepads.tilt(*index, *axis, *value)?
+                    }
+                    Step::Focus { focused } => {
+                        game.event(&json!({"type": "focus", "focused": focused}))?
+                    }
+                    Step::Resize { width, height } => {
+                        if *width == 0 || *height == 0 {
+                            bail!("resize dimensions must be nonzero");
+                        }
+                        window.set_size(*width, *height)?;
+                    }
+                    Step::Capture { path } => {
+                        capture = Some(path.clone());
+                        break;
+                    }
                     Step::Close => break 'running,
                 }
             }
         }
+        if let Some(fact) = gamepads.snapshot() {
+            game.event(&fact)?;
+        }
         let (width, height) = window.size_in_pixels();
         if width > 0 && height > 0 && (width, height) != size {
             size = (width, height);
-            game.event(&json!({"type": "resize", "width": width, "height": height}))?;
+            let (new_ratio, (css_width, css_height)) = css_size(&window);
+            ratio = new_ratio;
+            game.event(&json!({"type": "resize", "width": css_width, "height": css_height, "ratio": ratio}))?;
         }
         let clear = game.frame()?;
         let captures = capture
@@ -380,4 +547,29 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     csv.flush()?;
     log(log_file, &format!("closed after {frame} frames"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_display_scale_of_one_and_a_half_divides_pixels_into_css_pixels() {
+        // Office's display scale. Edge's window of 1920x1080 pixels there is 1280x720 CSS pixels at a device pixel
+        // ratio of 1.5, and the pointer at window pixel (300, 150) is at client (200, 100).
+        assert_eq!(css_pixels((1920, 1080), 1.5), (1.5, (1280, 720)));
+        assert_eq!(css_pixels((1280, 720), 1.0), (1.0, (1280, 720)));
+        assert_eq!(
+            css_pixels((1, 1), 1.5),
+            (1.5, (1, 1)),
+            "a window keeps at least one CSS pixel"
+        );
+        let scale = css_scale(1.0, 1.5);
+        assert_eq!((300.0 * scale, 150.0 * scale), (200.0, 100.0));
+        assert_eq!(
+            css_scale(2.0, 2.0),
+            1.0,
+            "a window whose coordinates are points has a pixel density"
+        );
+    }
 }

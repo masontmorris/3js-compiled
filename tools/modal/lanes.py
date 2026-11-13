@@ -32,7 +32,7 @@ gate_image = (
     .add_local_dir(ROOT / "packages", "/src/packages", copy=True, ignore=["**/node_modules"])
     .add_local_dir(ROOT / "tools", "/src/tools", copy=True, ignore=["**/__pycache__"])
     .run_commands("cd /src && npm ci --no-audit --no-fund")
-    .add_local_dir(ROOT / "examples", "/src/examples", ignore=["**/scene-bundle.js"])
+    .add_local_dir(ROOT / "examples", "/src/examples", ignore=["**/scene-bundle.js", "**/platform-bundle.js"])
 )
 app = modal.App("threejsc-e3")
 

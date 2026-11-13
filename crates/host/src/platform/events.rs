@@ -1,3 +1,5 @@
+//! Keyboard, pointer and wheel input facts in DOM terms, from SDL events and script steps.
+
 use sdl3::{
     keyboard::{Mod, Scancode},
     mouse::MouseButton,
@@ -187,7 +189,54 @@ pub fn keyboard(code: &str, down: bool, repeat: bool, modifiers: Mod) -> Value {
     } else {
         key.to_owned()
     };
-    json!({"type": if down { "keydown" } else { "keyup" }, "code": code, "key": key, "repeat": repeat})
+    let mut fact = json!({"type": if down { "keydown" } else { "keyup" }, "code": code, "key": key, "repeat": repeat});
+    merge(&mut fact, &modifiers_of(modifiers));
+    fact
+}
+
+fn modifiers_of(modifiers: Mod) -> Value {
+    json!({
+        "shift": modifiers.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
+        "ctrl": modifiers.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD),
+        "alt": modifiers.intersects(Mod::LALTMOD | Mod::RALTMOD),
+        "meta": modifiers.intersects(Mod::LGUIMOD | Mod::RGUIMOD),
+    })
+}
+
+/// The modifier fields of a pointer or wheel fact.
+pub fn modifiers(modifiers: Mod) -> Value {
+    modifiers_of(modifiers)
+}
+
+/// Copies `fields` into the fact object `fact`.
+pub fn merge(fact: &mut Value, fields: &Value) {
+    if let (Some(fact), Some(fields)) = (fact.as_object_mut(), fields.as_object()) {
+        for (key, value) in fields {
+            fact.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+/// The modifier state after a scripted key, as SDL tracks it for real keys: a modifier key holds its bit while it
+/// is down, and Caps Lock toggles on each press.
+pub fn scripted_modifiers(modifiers: Mod, code: &str, down: bool) -> Mod {
+    let bit = match code {
+        "ShiftLeft" => Mod::LSHIFTMOD,
+        "ShiftRight" => Mod::RSHIFTMOD,
+        "ControlLeft" => Mod::LCTRLMOD,
+        "ControlRight" => Mod::RCTRLMOD,
+        "AltLeft" => Mod::LALTMOD,
+        "AltRight" => Mod::RALTMOD,
+        "MetaLeft" => Mod::LGUIMOD,
+        "MetaRight" => Mod::RGUIMOD,
+        "CapsLock" if down => return modifiers ^ Mod::CAPSMOD,
+        _ => return modifiers,
+    };
+    if down {
+        modifiers | bit
+    } else {
+        modifiers - bit
+    }
 }
 
 pub fn scancode_code(code: Scancode) -> &'static str {
@@ -207,8 +256,9 @@ pub fn mouse_button(button: MouseButton) -> i16 {
     }
 }
 
-pub fn wheel(x: f32, y: f32) -> (f32, f32) {
-    (x, -y)
+/// Edge's pixel deltas on Windows for a wheel turned `x` and `y` notches: 100 px a notch, with positive Y down.
+pub fn wheel(x: f32, y: f32) -> (f64, f64) {
+    (f64::from(x) * 100.0, f64::from(-y) * 100.0)
 }
 
 #[cfg(test)]
@@ -252,6 +302,19 @@ mod tests {
             keyboard("ShiftLeft", true, true, Mod::LSHIFTMOD)["repeat"],
             true
         );
+        assert_eq!(keyboard("KeyW", true, false, Mod::LCTRLMOD)["ctrl"], true);
+    }
+
+    #[test]
+    fn scripted_modifier_keys_hold_their_bits() {
+        let held = scripted_modifiers(Mod::NOMOD, "ShiftLeft", true);
+        assert_eq!(keyboard("KeyW", true, false, held)["key"], "W");
+        assert_eq!(keyboard("KeyW", true, false, held)["shift"], true);
+        let released = scripted_modifiers(held, "ShiftLeft", false);
+        assert_eq!(keyboard("KeyW", true, false, released)["key"], "w");
+        let caps = scripted_modifiers(Mod::NOMOD, "CapsLock", true);
+        assert_eq!(scripted_modifiers(caps, "CapsLock", false), caps);
+        assert_eq!(scripted_modifiers(caps, "CapsLock", true), Mod::NOMOD);
     }
 
     #[test]
@@ -269,7 +332,7 @@ mod tests {
 
     #[test]
     fn wheel_axes_use_dom_directions() {
-        assert_eq!(wheel(2.0, 3.0), (2.0, -3.0));
-        assert_eq!(wheel(-2.0, -3.0), (-2.0, 3.0));
+        assert_eq!(wheel(2.0, 3.0), (200.0, -300.0));
+        assert_eq!(wheel(-0.5, -1.0), (-50.0, 100.0));
     }
 }
