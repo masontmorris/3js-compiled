@@ -40,6 +40,12 @@ jobs:
           --skip game::tests::the_game_thread_wakes_as_the_render_thread_finishes
           --skip game::tests::with_vsync_off_a_frame_runs_while_the_render_thread_draws_the_one_before
       - run: cargo test --locked -p threejsc-audio
+      # Replays the recorded scenes and fuzz streams on WARP, the software DX12 adapter. The host
+      # ships on DX12 (crates/host/src/renderer.rs). One test thread, because the executor's own
+      # GPU tests open their own devices, and WARP can fault when devices compile at once.
+      - env:
+          WGPU_BACKEND: dx12
+        run: cargo test --locked -p threejsc-gpu --lib --test replay -- --ignored --test-threads 1
 
   js:
     runs-on: windows-latest
