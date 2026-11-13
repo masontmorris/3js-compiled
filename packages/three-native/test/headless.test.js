@@ -7,7 +7,8 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const hostPath = [resolve(root, process.env.THREEJSC_HOST ?? 'target/release/host.exe')].find(path => existsSync(path));
+// A THREEJSC_HOST that is set is used even when it names no file, so a wrong setting fails instead of skipping.
+const hostPath = process.env.THREEJSC_HOST ? resolve(root, process.env.THREEJSC_HOST) : [join(root, 'target/release/host.exe')].find(path => existsSync(path));
 
 test('a headless page can submit a command stream on every frame', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-headless-'));

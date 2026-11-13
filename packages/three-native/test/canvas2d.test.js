@@ -192,7 +192,8 @@ test('gradients reject offsets outside 0 to 1 and colors that do not parse', () 
 // measureText runs in the host, whose ops shape and measure the text, headless so it needs no GPU. Set
 // THREEJSC_HOST to the host executable; the test is skipped when none is built.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const hostPath = [resolve(root, process.env.THREEJSC_HOST ?? 'target/release/host.exe')].find(path => existsSync(path));
+// A THREEJSC_HOST that is set is used even when it names no file, so a wrong setting fails instead of skipping.
+const hostPath = process.env.THREEJSC_HOST ? resolve(root, process.env.THREEJSC_HOST) : [join(root, 'target/release/host.exe')].find(path => existsSync(path));
 
 test('measureText matches Edge for folio\'s fonts, Windows fonts and every alignment and baseline', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-canvas2d-'));
