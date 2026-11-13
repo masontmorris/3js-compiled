@@ -183,7 +183,7 @@ pub struct AudioContext {
     /// true from the moment close starts
     closing: AtomicBool,
     /// Counts suspends and resumes, so a suspend that a later one overtook leaves the stream alone
-    lifecycle: AtomicU64,
+    lifecycle: Arc<AtomicU64>,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
     /// Render statistics shared with the render thread, which also carry the render observer
@@ -342,7 +342,7 @@ impl AudioContext {
             startup_pending,
             paused: AtomicBool::new(false),
             closing: AtomicBool::new(false),
-            lifecycle: AtomicU64::new(0),
+            lifecycle: Arc::clone(&render_thread_init.lifecycle),
             render_thread_init,
             stats,
         })
@@ -409,6 +409,10 @@ impl AudioContext {
         self.playback_stats.clone()
     }
 
+    #[cfg(feature = "test-control")]
+    /// Queue a marker for tests waiting for previously queued events.
+    pub fn test_event_marker(&self) { let _ = self.base.send_event(EventDispatch::sink_change()); }
+
     /// Update the current audio output device.
     ///
     /// The provided `sink_id` string must match a device name `enumerate_devices_sync`.
@@ -445,6 +449,8 @@ impl AudioContext {
 
         // Flush out the ctrl msg receiver, cache
         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
+        #[cfg(feature = "test-control")]
+        crate::test_control::recycle_drained(pending_msgs.len());
 
         // Acquire the active audio graph from the current render thread, shutting it down. The new render thread starts
         // suspended when this one was, as after a suspend whose continuation has not paused the stream yet.
@@ -455,38 +461,39 @@ impl AudioContext {
 
             let msg = pending_msgs.remove(0);
             match msg {
-                ControlMessage::Startup { graph, suspended } => (graph, suspended),
+                ControlMessage::Startup { graph, suspended } => {
+                    let suspend_pending = pending_msgs.iter().any(|msg| matches!(msg, ControlMessage::Suspend { .. }));
+                    let suspended = suspended || (suspend_pending && self.state() == AudioContextState::Suspended);
+                    (graph, suspended)
+                },
                 _ => unreachable!(),
             }
         } else {
             // Acquire the audio graph from the current render thread, shutting it down
             log::debug!("SinkChange: recover graph from render thread");
 
-            let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
-            let message = ControlMessage::CloseAndRecycle { sender: graph_send };
+            let recycle = Arc::new(crate::message::Recycle::new());
+            let message = ControlMessage::CloseAndRecycle { recycle: Arc::clone(&recycle) };
             ctrl_msg_send.send(message).unwrap();
             if paused {
                 // We must wake up the render thread to be able to handle the shutdown.
                 // No new audio will be produced because it will receive the shutdown command first.
                 backend_manager_guard.resume()?;
             }
-            // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
-            // callback, so withdraw the request, leave the context as it was and report the error.
-            match graph_recv.recv_timeout(ANSWER_DEADLINE) {
-                Ok(recycled) => recycled,
-                Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
+            // A stream that stopped after a device error runs no callback to answer, and a slow callback answers late. The
+            // graph lives in that callback, so withdraw the request, leave the context as it was and report the error.
+            match recycle.wait(ANSWER_DEADLINE) {
+                Some(recycled) => recycled,
+                None => {
+                    let _ = self.render_thread_init.ctrl_msg_recv.try_recv();
                     for msg in pending_msgs {
                         ctrl_msg_send.send(msg).unwrap();
                     }
                     if paused {
                         backend_manager_guard.suspend()?;
                     }
-                    return Err("InvalidStateError: the output stream is not running".into());
+                    return Err("InvalidStateError: the render thread did not answer the device change".into());
                 }
-                // The render thread took the request just now, so its answer is on the way
-                Err(_) => graph_recv
-                    .recv()
-                    .map_err(|_| "InvalidStateError: the render thread is gone")?,
             }
         };
 
@@ -790,6 +797,7 @@ impl AudioContext {
             log::debug!("Close no-op - context is already closed");
             return None;
         }
+        self.lifecycle.fetch_add(1, Ordering::AcqRel);
 
         // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
         self.render_capacity.stop();

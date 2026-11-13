@@ -308,6 +308,7 @@ impl AudioBackendManager for CubebBackend {
         let RenderThreadInit {
             state,
             startup_pending,
+            lifecycle,
             frames_played,
             stats,
             ctrl_msg_recv,
@@ -350,6 +351,7 @@ impl AudioBackendManager for CubebBackend {
                 event_send,
             );
             renderer.set_startup_pending(startup_pending);
+            renderer.set_lifecycle(lifecycle);
             renderer.spawn_garbage_collector_thread();
 
             let params = cubeb::StreamParamsBuilder::new()

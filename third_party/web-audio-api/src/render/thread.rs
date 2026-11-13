@@ -39,6 +39,7 @@ pub(crate) struct RenderThread {
     suspended: bool,
     state: Arc<AtomicU8>,
     startup_pending: Option<Arc<AtomicBool>>,
+    lifecycle: Option<Arc<AtomicU64>>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
@@ -102,6 +103,7 @@ impl RenderThread {
             suspended: false,
             state,
             startup_pending: None,
+            lifecycle: None,
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
@@ -116,6 +118,10 @@ impl RenderThread {
 
     pub(crate) fn set_startup_pending(&mut self, startup_pending: Arc<AtomicBool>) {
         self.startup_pending = Some(startup_pending);
+    }
+
+    pub(crate) fn set_lifecycle(&mut self, lifecycle: Arc<AtomicU64>) {
+        self.lifecycle = Some(lifecycle);
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
@@ -189,11 +195,18 @@ impl RenderThread {
             MarkCycleBreaker { id } => {
                 self.graph.as_mut().unwrap().mark_cycle_breaker(id);
             }
-            CloseAndRecycle { sender } => {
-                self.set_state(AudioContextState::Suspended);
-                let _ = sender.send((self.graph.take().unwrap(), self.suspended));
-                self.receiver = None;
-                return ControlFlow::Break(()); // no further handling of ctrl msgs
+            CloseAndRecycle { recycle } => {
+                #[cfg(feature = "test-control")]
+                crate::test_control::recycle_barrier(0);
+                let receiver = self.receiver.take();
+                match recycle.deliver(self.graph.take().unwrap(), self.suspended) {
+                    Ok(()) => return ControlFlow::Break(()),
+                    Err((graph, suspended)) => {
+                        self.graph = Some(graph);
+                        self.suspended = suspended;
+                        self.receiver = receiver;
+                    }
+                }
             }
             Startup { graph, suspended } => {
                 debug_assert!(self.graph.is_none());
@@ -423,6 +436,7 @@ impl RenderThread {
     }
 
     pub fn render<S: FromSample<f32> + ToSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
+        let lifecycle = self.lifecycle.as_ref().map(|value| value.load(Ordering::Acquire));
         // Collect timing information
         let render_start = Instant::now();
         let frames = output_buffer.len() / self.number_of_channels;
@@ -443,6 +457,10 @@ impl RenderThread {
         };
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer, observer.as_deref());
+
+        // A lifecycle call that came in while this callback rendered silences it. Check once after rendering, and again
+        // after the observer, where a stalled callback waits.
+        self.silence_if_stale(output_buffer, lifecycle);
 
         let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let callback_budget_ns = if self.sample_rate <= 0. {
@@ -466,6 +484,8 @@ impl RenderThread {
                 quantum_ns: &self.quantum_ns,
             });
         }
+
+        self.silence_if_stale(output_buffer, lifecycle);
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(
@@ -576,11 +596,22 @@ impl RenderThread {
         }
     }
 
+    fn silence_if_stale<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S], lifecycle: Option<u64>) {
+        if self.lifecycle.as_ref().is_some_and(|value| {
+            Some(value.load(Ordering::Acquire)) != lifecycle
+                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
+        }) {
+            output_buffer.fill(S::from_sample_(0.));
+            self.buffer_offset = None;
+        }
+    }
+
     fn set_state(&self, state: AudioContextState) {
-        self.state.store(state as u8, Ordering::Relaxed);
-        self.event_sender
-            .try_send(EventDispatch::state_change(state))
-            .ok();
+        if self.state.swap(state as u8, Ordering::AcqRel) != state as u8 {
+            self.event_sender
+                .try_send(EventDispatch::state_change(state))
+                .ok();
+        }
     }
 }
 

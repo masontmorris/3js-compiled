@@ -1,4 +1,12 @@
 use std::thread;
+#[cfg(feature = "test-control")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(feature = "test-control")]
+static PAUSE_NEXT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "test-control")]
+pub(crate) fn pause_next() { PAUSE_NEXT.store(true, Ordering::Release); }
 use std::time::{Duration, Instant};
 
 use super::{
@@ -88,6 +96,7 @@ impl AudioBackendManager for NoneBackend {
         let RenderThreadInit {
             state,
             startup_pending,
+            lifecycle,
             frames_played,
             stats,
             ctrl_msg_recv,
@@ -104,6 +113,7 @@ impl AudioBackendManager for NoneBackend {
             event_send,
         );
         render_thread.set_startup_pending(startup_pending);
+        render_thread.set_lifecycle(lifecycle);
         render_thread.spawn_garbage_collector_thread();
 
         // Use a bounded channel for real-time safety. A maximum of 32 control messages (resume,
@@ -116,6 +126,9 @@ impl AudioBackendManager for NoneBackend {
             render_thread,
             receiver,
             sample_rate,
+            #[cfg(feature = "test-control")]
+            running: !PAUSE_NEXT.swap(false, Ordering::AcqRel),
+            #[cfg(not(feature = "test-control"))]
             running: true,
         };
 

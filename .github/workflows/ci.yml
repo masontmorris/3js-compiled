@@ -39,6 +39,7 @@ jobs:
           cargo test --locked --workspace --
           --skip game::tests::the_game_thread_wakes_as_the_render_thread_finishes
           --skip game::tests::with_vsync_off_a_frame_runs_while_the_render_thread_draws_the_one_before
+      - run: cargo test --locked -p threejsc-audio
 
   js:
     runs-on: windows-latest

@@ -60,6 +60,7 @@ default = ["cpal"]
 
 # Expose structured runtime diagnostics for AudioContext and the render graph.
 diagnostics = []
+test-control = []
 
 # Make AudioWorklet inputs follow the Web Audio spec for inactive inputs:
 # inputs[n] is an empty slice when no connected source is actively processing.

@@ -59,6 +59,48 @@ pub use spatial::AudioListener;
 
 mod io;
 
+#[cfg(feature = "test-control")]
+/// Controls for deterministic backend tests.
+pub mod test_control {
+    use std::sync::{mpsc, Mutex};
+
+    static RECYCLE_BARRIER: Mutex<Option<(u8, mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    static RECYCLE_DRAINED: Mutex<Option<mpsc::Sender<usize>>> = Mutex::new(None);
+
+    /// Observe the number of messages saved by the next sink change.
+    pub fn watch_next_recycle_drain() -> mpsc::Receiver<usize> {
+        let (send, recv) = mpsc::channel();
+        *RECYCLE_DRAINED.lock().unwrap() = Some(send);
+        recv
+    }
+
+    pub(crate) fn recycle_drained(count: usize) {
+        if let Some(send) = RECYCLE_DRAINED.lock().unwrap().take() {
+            let _ = send.send(count);
+        }
+    }
+
+    /// Stop the next graph recycle after the render thread takes the request.
+    pub fn hold_next_recycle(stage: u8) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+        let (entered_send, entered_recv) = mpsc::channel();
+        let (release_send, release_recv) = mpsc::channel();
+        *RECYCLE_BARRIER.lock().unwrap() = Some((stage, entered_send, release_recv));
+        (entered_recv, release_send)
+    }
+
+    pub(crate) fn recycle_barrier(stage: u8) {
+        let mut guard = RECYCLE_BARRIER.lock().unwrap();
+        let barrier = if guard.as_ref().is_some_and(|item| item.0 == stage) { guard.take() } else { None };
+        drop(guard);
+        if let Some((_, entered, release)) = barrier {
+            let _ = entered.send(());
+            let _ = release.recv();
+        }
+    }
+    /// Pause the next none backend before its first callback.
+    pub fn pause_next_none_backend() { crate::io::none::pause_next(); }
+}
+
 mod analysis;
 mod message;
 

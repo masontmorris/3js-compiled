@@ -100,7 +100,7 @@ The recorder runs in Node, where no host answers three's pipeline error scopes, 
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and on each push to `main`, on GitHub's free `windows-latest` runners, because Windows is the first target. The `rust` job runs `cargo fmt --all --check`, then `npm ci`, because the host's tests bundle the example scenes with esbuild, then `cargo clippy --locked --workspace -- -D warnings` and `cargo test --locked --workspace`. The `js` job runs `npm test` and `npm run check`, with naga-cli 30.0.1 and the Windows SDK's `dxc.exe`.
+`.github/workflows/ci.yml` runs on every pull request and on each push to `main`, on GitHub's free `windows-latest` runners, because Windows is the first target. The `rust` job runs `cargo fmt --all --check`, then `npm ci`, because the host's tests bundle the example scenes with esbuild, then `cargo clippy --locked --workspace -- -D warnings`, `cargo test --locked --workspace`, and `cargo test --locked -p threejsc-audio`. The workspace run builds the audio crate with its `output` feature, so the second run tests it on the no-output backend, where the device-change regressions run without a device. The `js` job runs `npm test` and `npm run check`, with naga-cli 30.0.1 and the Windows SDK's `dxc.exe`.
 
 The runners have no hardware GPU and no audio device, so CI leaves out every test marked `#[ignore]`:
 

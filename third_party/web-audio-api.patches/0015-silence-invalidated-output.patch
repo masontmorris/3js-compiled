@@ -1,0 +1,195 @@
+diff --git a/src/context/online.rs b/src/context/online.rs
+index 5fd22fe..d669dc9 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -183,7 +183,7 @@ pub struct AudioContext {
+     /// true from the moment close starts
+     closing: AtomicBool,
+     /// Counts suspends and resumes, so a suspend that a later one overtook leaves the stream alone
+-    lifecycle: AtomicU64,
++    lifecycle: Arc<AtomicU64>,
+     /// Initializer for the render thread (when restart is required)
+     render_thread_init: RenderThreadInit,
+     /// Render statistics shared with the render thread, which also carry the render observer
+@@ -342,7 +342,7 @@ impl AudioContext {
+             startup_pending,
+             paused: AtomicBool::new(false),
+             closing: AtomicBool::new(false),
+-            lifecycle: AtomicU64::new(0),
++            lifecycle: Arc::clone(&render_thread_init.lifecycle),
+             render_thread_init,
+             stats,
+         })
+@@ -790,6 +790,7 @@ impl AudioContext {
+             log::debug!("Close no-op - context is already closed");
+             return None;
+         }
++        self.lifecycle.fetch_add(1, Ordering::AcqRel);
+ 
+         // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
+         self.render_capacity.stop();
+diff --git a/src/io/cpal.rs b/src/io/cpal.rs
+index 6be4071..1ee531a 100644
+--- a/src/io/cpal.rs
++++ b/src/io/cpal.rs
+@@ -211,6 +211,7 @@ impl AudioBackendManager for CpalBackend {
+         let RenderThreadInit {
+             state,
+             startup_pending,
++            lifecycle,
+             frames_played,
+             stats,
+             ctrl_msg_recv,
+@@ -309,6 +310,7 @@ impl AudioBackendManager for CpalBackend {
+             event_send.clone(),
+         );
+         renderer.set_startup_pending(Arc::clone(&startup_pending));
++        renderer.set_lifecycle(Arc::clone(&lifecycle));
+         renderer.spawn_garbage_collector_thread();
+ 
+         log::debug!(
+@@ -354,6 +356,7 @@ impl AudioBackendManager for CpalBackend {
+                     event_send,
+                 );
+                 renderer.set_startup_pending(startup_pending);
++                renderer.set_lifecycle(lifecycle);
+                 renderer.spawn_garbage_collector_thread();
+ 
+                 let spawned = spawn_output_stream(
+diff --git a/src/io/cubeb.rs b/src/io/cubeb.rs
+index fa47321..6686276 100644
+--- a/src/io/cubeb.rs
++++ b/src/io/cubeb.rs
+@@ -308,6 +308,7 @@ impl AudioBackendManager for CubebBackend {
+         let RenderThreadInit {
+             state,
+             startup_pending,
++            lifecycle,
+             frames_played,
+             stats,
+             ctrl_msg_recv,
+@@ -350,6 +351,7 @@ impl AudioBackendManager for CubebBackend {
+                 event_send,
+             );
+             renderer.set_startup_pending(startup_pending);
++            renderer.set_lifecycle(lifecycle);
+             renderer.spawn_garbage_collector_thread();
+ 
+             let params = cubeb::StreamParamsBuilder::new()
+diff --git a/src/io/mod.rs b/src/io/mod.rs
+index a132c48..e6ddfa9 100644
+--- a/src/io/mod.rs
++++ b/src/io/mod.rs
+@@ -99,6 +99,7 @@ pub(crate) struct ControlThreadInit {
+ pub(crate) struct RenderThreadInit {
+     pub state: Arc<AtomicU8>,
+     pub startup_pending: Arc<AtomicBool>,
++    pub lifecycle: Arc<AtomicU64>,
+     pub frames_played: Arc<AtomicU64>,
+     pub stats: AudioStats,
+     pub ctrl_msg_recv: Receiver<ControlMessage>,
+@@ -109,6 +110,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
+     // Track audio context state - synced from render thread to control thread
+     let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
+     let startup_pending = Arc::new(AtomicBool::new(true));
++    let lifecycle = Arc::new(AtomicU64::new(0));
+ 
+     // Track number of frames - synced from render thread to control thread
+     let frames_played = Arc::new(AtomicU64::new(0));
+@@ -138,6 +140,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
+     let render_thread_init = RenderThreadInit {
+         state,
+         startup_pending,
++        lifecycle,
+         frames_played,
+         stats,
+         ctrl_msg_recv,
+diff --git a/src/io/none.rs b/src/io/none.rs
+index 2cda2e8..2c1b8d0 100644
+--- a/src/io/none.rs
++++ b/src/io/none.rs
+@@ -88,6 +88,7 @@ impl AudioBackendManager for NoneBackend {
+         let RenderThreadInit {
+             state,
+             startup_pending,
++            lifecycle,
+             frames_played,
+             stats,
+             ctrl_msg_recv,
+@@ -104,6 +105,7 @@ impl AudioBackendManager for NoneBackend {
+             event_send,
+         );
+         render_thread.set_startup_pending(startup_pending);
++        render_thread.set_lifecycle(lifecycle);
+         render_thread.spawn_garbage_collector_thread();
+ 
+         // Use a bounded channel for real-time safety. A maximum of 32 control messages (resume,
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index 94cfd1a..3321136 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -39,6 +39,7 @@ pub(crate) struct RenderThread {
+     suspended: bool,
+     state: Arc<AtomicU8>,
+     startup_pending: Option<Arc<AtomicBool>>,
++    lifecycle: Option<Arc<AtomicU64>>,
+     frames_played: Arc<AtomicU64>,
+     receiver: Option<Receiver<ControlMessage>>,
+     buffer_offset: Option<(usize, AudioRenderQuantum)>,
+@@ -102,6 +103,7 @@ impl RenderThread {
+             suspended: false,
+             state,
+             startup_pending: None,
++            lifecycle: None,
+             frames_played,
+             receiver: Some(receiver),
+             buffer_offset: None,
+@@ -118,6 +120,10 @@ impl RenderThread {
+         self.startup_pending = Some(startup_pending);
+     }
+ 
++    pub(crate) fn set_lifecycle(&mut self, lifecycle: Arc<AtomicU64>) {
++        self.lifecycle = Some(lifecycle);
++    }
++
+     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
+         if self.garbage_collector.is_none() {
+             let (gc_producer, gc_consumer) = llq::Queue::new().split();
+@@ -423,6 +429,7 @@ impl RenderThread {
+     }
+ 
+     pub fn render<S: FromSample<f32> + ToSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
++        let lifecycle = self.lifecycle.as_ref().map(|value| value.load(Ordering::Acquire));
+         // Collect timing information
+         let render_start = Instant::now();
+         let frames = output_buffer.len() / self.number_of_channels;
+@@ -444,6 +451,14 @@ impl RenderThread {
+         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+         self.render_inner(output_buffer, observer.as_deref());
+ 
++        if self.lifecycle.as_ref().is_some_and(|value| {
++            Some(value.load(Ordering::Acquire)) != lifecycle
++                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
++        }) {
++            output_buffer.fill(S::from_sample_(0.));
++            self.buffer_offset = None;
++        }
++
+         let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+         let callback_budget_ns = if self.sample_rate <= 0. {
+             0
+@@ -466,6 +481,14 @@ impl RenderThread {
+                 quantum_ns: &self.quantum_ns,
+             });
+         }
++
++        if self.lifecycle.as_ref().is_some_and(|value| {
++            Some(value.load(Ordering::Acquire)) != lifecycle
++                || self.state.load(Ordering::Acquire) != AudioContextState::Running as u8
++        }) {
++            output_buffer.fill(S::from_sample_(0.));
++            self.buffer_offset = None;
++        }
+     }
+ 
+     fn render_inner<S: FromSample<f32> + Clone>(
