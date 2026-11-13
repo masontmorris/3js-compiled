@@ -34,3 +34,12 @@ test('a THREEJSC_HOST relative to the repo runs the host test from the package f
   assert.match(child.stdout, /# pass 1\b/);
   assert.match(child.stdout, /# skipped 0\b/);
 });
+
+test('a THREEJSC_HOST that names no file fails the host test instead of skipping it', () => {
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const child = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern', '^a headless page', fileURLToPath(import.meta.url)], {
+    cwd: join(root, 'packages/three-native'), env: { ...env, THREEJSC_HOST: 'target/no-such-host.exe' }, encoding: 'utf8', timeout: 60_000,
+  });
+  assert.notEqual(child.status, 0, child.stdout);
+  assert.match(child.stdout, /# fail 1\b/);
+});
