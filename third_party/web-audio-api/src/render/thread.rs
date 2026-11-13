@@ -196,6 +196,8 @@ impl RenderThread {
                 self.graph.as_mut().unwrap().mark_cycle_breaker(id);
             }
             CloseAndRecycle { sender } => {
+                #[cfg(feature = "test-control")]
+                crate::test_control::recycle_barrier();
                 self.set_state(AudioContextState::Suspended);
                 let _ = sender.send((self.graph.take().unwrap(), self.suspended));
                 self.receiver = None;

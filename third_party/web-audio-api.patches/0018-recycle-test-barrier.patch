@@ -1,0 +1,43 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index 3c87f61..bc5b6f4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -62,6 +62,25 @@ mod io;
+ #[cfg(feature = "test-control")]
+ /// Controls for deterministic backend tests.
+ pub mod test_control {
++    use std::sync::{mpsc, Mutex};
++
++    static RECYCLE_BARRIER: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
++
++    /// Stop the next graph recycle after the render thread takes the request.
++    pub fn hold_next_recycle() -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
++        let (entered_send, entered_recv) = mpsc::channel();
++        let (release_send, release_recv) = mpsc::channel();
++        *RECYCLE_BARRIER.lock().unwrap() = Some((entered_send, release_recv));
++        (entered_recv, release_send)
++    }
++
++    pub(crate) fn recycle_barrier() {
++        let barrier = RECYCLE_BARRIER.lock().unwrap().take();
++        if let Some((entered, release)) = barrier {
++            let _ = entered.send(());
++            let _ = release.recv();
++        }
++    }
+     /// Pause the next none backend before its first callback.
+     pub fn pause_next_none_backend() { crate::io::none::pause_next(); }
+ }
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index 3321136..6e5116f 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -196,6 +196,8 @@ impl RenderThread {
+                 self.graph.as_mut().unwrap().mark_cycle_breaker(id);
+             }
+             CloseAndRecycle { sender } => {
++                #[cfg(feature = "test-control")]
++                crate::test_control::recycle_barrier();
+                 self.set_state(AudioContextState::Suspended);
+                 let _ = sender.send((self.graph.take().unwrap(), self.suspended));
+                 self.receiver = None;

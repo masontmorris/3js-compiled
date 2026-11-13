@@ -62,6 +62,25 @@ mod io;
 #[cfg(feature = "test-control")]
 /// Controls for deterministic backend tests.
 pub mod test_control {
+    use std::sync::{mpsc, Mutex};
+
+    static RECYCLE_BARRIER: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+
+    /// Stop the next graph recycle after the render thread takes the request.
+    pub fn hold_next_recycle() -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+        let (entered_send, entered_recv) = mpsc::channel();
+        let (release_send, release_recv) = mpsc::channel();
+        *RECYCLE_BARRIER.lock().unwrap() = Some((entered_send, release_recv));
+        (entered_recv, release_send)
+    }
+
+    pub(crate) fn recycle_barrier() {
+        let barrier = RECYCLE_BARRIER.lock().unwrap().take();
+        if let Some((entered, release)) = barrier {
+            let _ = entered.send(());
+            let _ = release.recv();
+        }
+    }
     /// Pause the next none backend before its first callback.
     pub fn pause_next_none_backend() { crate::io::none::pause_next(); }
 }
