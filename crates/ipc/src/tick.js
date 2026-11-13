@@ -10,7 +10,7 @@
 //
 // A rect's candidates are the elements whose border box it is (to within 1 px) when the tick
 // returns: those the page measured with that box during the tick (by their last
-// `getBoundingClientRect`), else those the same box, then the rect at the same index, named in the
+// `getBoundingClientRect`, or a viewport box read after an `offsetWidth` read), else those the same box, then the rect at the same index, named in the
 // last reply, else those a document scan finds; with each, its ancestors, descendants and next
 // siblings of the same box. The rect names the topmost hit-testable candidate, the last in
 // document order whose `pointer-events` is not `none`, or the topmost candidate when none is
@@ -28,7 +28,7 @@
 (tick => {
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
-      next: 1, evaluation: 0, from: 0, measured: null, walker: null,
+      next: 1, evaluation: 0, from: 0, measured: null, offsets: null, walker: null,
       byBox: new Map(), byIndex: [], pending: new Map(), absent: new Map(),
     };
     const measure = Element.prototype.getBoundingClientRect;
@@ -38,14 +38,28 @@
       S.measured?.set(this, box);
       return box;
     };
+    const width = typeof HTMLElement === "undefined" ? null :
+      Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    if (width?.get && width.configurable) {
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+        ...width,
+        get() {
+          const value = width.get.call(this);
+          S.offsets?.add(this);
+          return value;
+        },
+      });
+    }
     return S;
   })());
   const lastBox = (S.measured = new Map());
+  const offsetElements = (S.offsets = new Set());
   let json;
   try {
     json = tick();
   } finally {
     S.measured = null;
+    S.offsets = null;
   }
   S.evaluation += 1;
   let rects;
@@ -55,6 +69,10 @@
   if (!Array.isArray(rects)) return [innerWidth, innerHeight, json, [], [], []];
 
   const started = performance.now();
+  for (const element of offsetElements) {
+    if (performance.now() >= started + 2) break;
+    if (element.isConnected) lastBox.set(element, S.read(element));
+  }
   const boxes = new Map(lastBox);
   const boxOf = element => {
     let box = boxes.get(element);
