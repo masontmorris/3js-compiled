@@ -205,6 +205,11 @@ impl Target {
     pub fn adapter_limits(&self) -> wgpu::Limits {
         self.adapter.limits()
     }
+
+    /// The features a device requested from this adapter can have.
+    pub fn adapter_features(&self) -> wgpu::Features {
+        self.adapter.features()
+    }
 }
 impl Renderer {
     pub fn new(target: Target) -> Self {

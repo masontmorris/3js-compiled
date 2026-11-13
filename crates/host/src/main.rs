@@ -202,7 +202,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         &runtime,
         options.scene.as_deref(),
         size,
-        Some(&target.adapter_limits()),
+        Some((&target.adapter_limits(), target.adapter_features())),
     )?;
     // A display rate forced for testing, as at 60 Hz on a faster display (docs/testing.md): the
     // host paces frames to it and ignores the display's own rate.

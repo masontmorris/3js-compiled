@@ -8,11 +8,59 @@ use crate::decode;
 struct Buffer {
     raw: wgpu::Buffer,
     size: u64,
+    /// The usages the stream created the buffer with. `raw` can have more, as `hidden_usages` says.
     usage: wgpu::BufferUsages,
     destroyed: bool,
-    /// Whether the buffer was created mapped and its unmap has not reached the executor.
+    /// Whether the buffer is mapped, at creation or by `MAP_BUFFER`, and its unmap has not reached the executor.
     mapped: bool,
 }
+
+/// The usages a buffer created with `usage` gets beyond it. Where a timestamp tick is not a nanosecond, a resolve
+/// converts its timestamps in place in its destination through a storage binding. wgpu validates the usages `raw` has,
+/// so a bind group checks that such a buffer has a binding usage of its own. One that the stream gave `UNIFORM` and
+/// not `STORAGE` can still bind as storage there, where Edge raises an error.
+fn hidden_usages(usage: wgpu::BufferUsages, converts: bool) -> wgpu::BufferUsages {
+    if converts && usage.contains(wgpu::BufferUsages::QUERY_RESOLVE) {
+        wgpu::BufferUsages::STORAGE
+    } else {
+        wgpu::BufferUsages::empty()
+    }
+}
+
+struct QuerySet {
+    raw: wgpu::QuerySet,
+    count: u32,
+    destroyed: bool,
+}
+
+/// Converts resolved timestamps from the adapter's ticks to the nanoseconds WebGPU gives, in place, by multiplying
+/// each by `multiplier / 2^shift` in 16-bit limbs, as Dawn does.
+struct TimestampConversion {
+    pipeline: wgpu::ComputePipeline,
+    multiplier: u32,
+    shift: u32,
+}
+
+const TIMESTAMP_CONVERSION: &str = "
+struct Params { count: u32, multiplier: u32, shift: u32, unused: u32 }
+@group(0) @binding(0) var<storage, read_write> times: array<vec2u>;
+@group(0) @binding(1) var<uniform> params: Params;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x >= params.count) { return; }
+    let time = times[id.x];
+    var limbs = array<u32, 5>(time.x & 0xffffu, time.x >> 16u, time.y & 0xffffu, time.y >> 16u, 0u);
+    var carry = 0u;
+    for (var i = 0u; i < 4u; i++) {
+        let value = limbs[i] * params.multiplier + carry;
+        limbs[i] = value & 0xffffu;
+        carry = value >> 16u;
+    }
+    limbs[4] = carry;
+    for (var i = 0u; i < 4u; i++) {
+        limbs[i] = (limbs[i] >> params.shift) | ((limbs[i + 1u] << (16u - params.shift)) & 0xffffu);
+    }
+    times[id.x] = vec2u(limbs[0] | (limbs[1] << 16u), limbs[2] | (limbs[3] << 16u));
+}";
 
 /// The `CREATE_BUFFER` usage bit that creates the buffer mapped, as `mappedAtCreation` does, until
 /// its `UNMAP_BUFFER`.
@@ -109,6 +157,81 @@ enum SurfaceClear {
 /// receives the canvas and whether the frame acquired it, and returns `None` when it cannot encode.
 pub type Trailer<'a> = &'a mut dyn FnMut(&wgpu::Texture, bool) -> Option<wgpu::CommandBuffer>;
 
+impl TimestampConversion {
+    fn new(device: &wgpu::Device, period: f32) -> Self {
+        let scaled = |shift: u32| (f64::from(period) * f64::from(1u32 << shift)).round();
+        let shift = (0..=16)
+            .rev()
+            .find(|&shift| scaled(shift) < 65536.0)
+            .unwrap_or(0);
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("timestamp conversion"),
+            source: wgpu::ShaderSource::Wgsl(TIMESTAMP_CONVERSION.into()),
+        });
+        Self {
+            pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("timestamp conversion"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
+            multiplier: scaled(shift).min(65535.0) as u32,
+            shift,
+        }
+    }
+
+    /// Encodes the conversion of the `count` timestamps at `offset` in `buffer`, which has storage usage.
+    fn encode(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffer: &wgpu::Buffer,
+        offset: u64,
+        count: u32,
+    ) -> Result<(), String> {
+        let params = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("timestamp conversion"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: true,
+        });
+        params
+            .get_mapped_range_mut(..)
+            .map_err(|error| error.to_string())?
+            .copy_from_slice(
+                &[count, self.multiplier, self.shift, 0]
+                    .map(u32::to_le_bytes)
+                    .concat(),
+            );
+        params.unmap();
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("timestamp conversion"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer,
+                        offset,
+                        size: std::num::NonZeroU64::new(u64::from(count) * 8),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups(count.div_ceil(64), 1, 1);
+        Ok(())
+    }
+}
+
 /// The resources that stream handles name. As in WebGPU, a create that fails validation leaves an
 /// invalid object, here `None`: using it raises an error, and destroying it raises nothing.
 pub struct Executor {
@@ -126,6 +249,10 @@ pub struct Executor {
     bind_groups: HashMap<u32, Option<BindGroup>>,
     pipeline_layouts: HashMap<u32, Option<wgpu::PipelineLayout>>,
     render_pipelines: HashMap<u32, Option<wgpu::RenderPipeline>>,
+    compute_pipelines: HashMap<u32, Option<wgpu::ComputePipeline>>,
+    query_sets: HashMap<u32, Option<QuerySet>>,
+    /// The device's timestamp conversion, made at its first resolve where a tick is not a nanosecond.
+    conversion: Option<TimestampConversion>,
     /// Each render bundle's validity. A pass copies a bundle's commands when it executes it.
     render_bundles: HashMap<u32, Option<()>>,
     labels: HashMap<u32, String>,
@@ -138,6 +265,9 @@ pub struct Executor {
     empty_index: bool,
     encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
+    compute_pass: Option<wgpu::ComputePass<'static>>,
+    /// Whether the open pass, valid or ignored, is a compute pass.
+    computing: bool,
     render_pass_scope: Option<wgpu::ErrorScopeGuard>,
     /// Why the open render pass's commands are ignored, if they are.
     ignored_pass: Option<Ignored>,
@@ -279,6 +409,13 @@ fn copy_image<'a>(
     })
 }
 
+/// A pass's timestamp writes from `at` in `payload`: the query set handle and the two indexes, or `None`.
+fn timestamp_writes(payload: &[u8], at: usize) -> Option<(u32, Option<u32>, Option<u32>)> {
+    let index = |offset| Some(u32_at(payload, at + offset)).filter(|index| *index != u32::MAX);
+    let set = u32_at(payload, at);
+    (set != 0).then(|| (set, index(4), index(8)))
+}
+
 /// How a command uses the buffer or texture `handle` names in `table`.
 fn usage<T>(table: &HashMap<u32, Option<T>>, handle: u32, destroyed: impl Fn(&T) -> bool) -> Use {
     match table.get(&handle) {
@@ -335,6 +472,9 @@ impl Executor {
             bind_groups: HashMap::new(),
             pipeline_layouts: HashMap::new(),
             render_pipelines: HashMap::new(),
+            compute_pipelines: HashMap::new(),
+            query_sets: HashMap::new(),
+            conversion: None,
             render_bundles: HashMap::new(),
             labels: HashMap::new(),
             frame: 0,
@@ -344,6 +484,8 @@ impl Executor {
             empty_index: false,
             encoder: None,
             render_pass: None,
+            compute_pass: None,
+            computing: false,
             render_pass_scope: None,
             ignored_pass: None,
             invalid_encoder: false,
@@ -400,19 +542,26 @@ impl Executor {
             || self.bind_groups.contains_key(&handle)
             || self.pipeline_layouts.contains_key(&handle)
             || self.render_pipelines.contains_key(&handle)
+            || self.compute_pipelines.contains_key(&handle)
+            || self.query_sets.contains_key(&handle)
             || self.render_bundles.contains_key(&handle)
+    }
+
+    /// Whether a render or compute pass is open, valid or ignored.
+    fn pass_open(&self) -> bool {
+        self.render_pass.is_some() || self.compute_pass.is_some() || self.ignored_pass.is_some()
     }
 
     /// The handle whose label names the resource a command creates, uses, or draws with.
     fn subject(&self, opcode: u16, payload: &[u8]) -> Option<u32> {
         let at = |offset: usize| (payload.len() >= offset + 4).then(|| u32_at(payload, offset));
         match opcode {
-            16 | 17 | 18 | 27 | 28 => at(4),
-            14 if at(0) == Some(0) => payload.len().checked_sub(32).and_then(at),
+            16 | 17 | 18 | 27 | 28 | 56 => at(4),
+            14 if at(0) == Some(0) => payload.len().checked_sub(44).and_then(at),
             14 => at(8),
-            23 | 24 => self.pipeline,
+            23 | 24 | 51 | 52 => self.pipeline,
             25 | 26 => self.pass_view,
-            34 | 35 | 37 | 43..=47 => None,
+            34 | 35 | 37 | 43..=47 | 50 | 53 => None,
             _ => at(0),
         }
     }
@@ -474,10 +623,20 @@ impl Executor {
             };
             responses.extend(response);
             let label = self.label(subject).or(before);
-            // A readback's errors reject its request.
-            let request = (matches!(record.opcode, 27 | 28) && record.payload.len() >= 4)
+            // A readback's errors reject its request. A map's reject its request and raise a
+            // validation error too, as `mapAsync()` does.
+            let request = (matches!(record.opcode, 27 | 28 | 56) && record.payload.len() >= 4)
                 .then(|| u32_at(record.payload, 0));
             for (filter, message) in error.into_iter().chain(uncaptured) {
+                if record.opcode == 56 {
+                    self.raise(
+                        &mut responses,
+                        command,
+                        label.clone(),
+                        filter,
+                        message.clone(),
+                    );
+                }
                 match request {
                     Some(_) => responses.push(Response::Error {
                         frame: self.frame,
@@ -496,12 +655,10 @@ impl Executor {
             }
         }
         self.clear_unwritten_surface();
-        if self.render_pass.is_some()
-            || self.ignored_pass.is_some()
-            || self.invalid_encoder
-            || self.encoder.is_some()
-        {
+        if self.pass_open() || self.invalid_encoder || self.encoder.is_some() {
             self.render_pass = None;
+            self.compute_pass = None;
+            self.computing = false;
             self.render_pass_scope = None;
             self.ignored_pass = None;
             self.invalid_encoder = false;
@@ -522,6 +679,7 @@ impl Executor {
             if let Some(Some(texture)) = self.textures.remove(&handle) {
                 texture.raw.destroy();
             }
+            self.query_sets.remove(&handle);
             self.views.retain(|_, (parent, _)| *parent != handle);
         }
         for handle in std::mem::take(&mut self.surface_handles) {
@@ -595,8 +753,8 @@ impl Executor {
         trailer: Option<Trailer<'_>>,
     ) -> Result<Option<Response>, String> {
         size(payload, 0)?;
-        if self.render_pass.is_some() || self.ignored_pass.is_some() {
-            return Err("cannot submit an active render pass".into());
+        if self.pass_open() {
+            return Err("cannot submit an active pass".into());
         }
         let destroyed = self.destroyed_use.take();
         if std::mem::take(&mut self.invalid_encoder) {
@@ -655,6 +813,25 @@ impl Executor {
         usage(&self.textures, handle, |texture| texture.destroyed)
     }
 
+    fn query_set_use(&self, handle: u32) -> Use {
+        usage(&self.query_sets, handle, |set| set.destroyed)
+    }
+
+    /// Whether resolved timestamps need converting to nanoseconds, because a tick is not one.
+    fn converts(&self) -> bool {
+        self.device
+            .features()
+            .contains(wgpu::Features::TIMESTAMP_QUERY)
+            && self.queue.get_timestamp_period() != 1.0
+    }
+
+    fn conversion(&mut self) -> &TimestampConversion {
+        let period = self.queue.get_timestamp_period();
+        let device = &self.device;
+        self.conversion
+            .get_or_insert_with(|| TimestampConversion::new(device, period))
+    }
+
     /// The worst use among the buffers and textures a command names, and its object's kind.
     fn worst_use(&self, buffers: &[u32], textures: &[u32]) -> (Use, &'static str) {
         let buffers = buffers
@@ -674,6 +851,7 @@ impl Executor {
     fn free_pass(&mut self, kind: &'static str) {
         self.destroyed_use.get_or_insert(kind);
         drop(self.render_pass.take());
+        drop(self.compute_pass.take());
         drop(self.render_pass_scope.take());
         self.ignored_pass = Some(Ignored::Freed);
     }
@@ -745,8 +923,16 @@ impl Executor {
             let resource = match u32_at(entry, 4) {
                 1 => {
                     buffers.push(handle);
+                    let buffer = valid(&self.buffers, handle, "buffer")?;
+                    if buffer.raw.usage() != buffer.usage
+                        && !buffer
+                            .usage
+                            .intersects(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::STORAGE)
+                    {
+                        return Err("a bound buffer has neither UNIFORM nor STORAGE usage".into());
+                    }
                     wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &valid(&self.buffers, handle, "buffer")?.raw,
+                        buffer: &buffer.raw,
                         offset,
                         size: std::num::NonZeroU64::new(size),
                     })
@@ -864,8 +1050,10 @@ impl Executor {
             .iter()
             .filter(|name| *name != "core-features-and-limits")
         {
-            features |= wgpu::Features::from_name(name)
-                .ok_or_else(|| format!("unsupported device feature {name}"))?;
+            // WebGPU names features in kebab case, which wgpu parses.
+            features |= name
+                .parse::<wgpu::Features>()
+                .map_err(|()| format!("unsupported device feature {name}"))?;
         }
         if self.device.features() == features && self.device.limits() == request.limits {
             return Ok(None);
@@ -885,6 +1073,8 @@ impl Executor {
         .map_err(|error| error.to_string())?;
         report_uncaptured(&device, &self.uncaptured);
         self.render_pass = None;
+        self.compute_pass = None;
+        self.computing = false;
         self.render_pass_scope = None;
         self.encoder = None;
         self.ignored_pass = None;
@@ -902,6 +1092,9 @@ impl Executor {
         self.bind_groups.clear();
         self.pipeline_layouts.clear();
         self.render_pipelines.clear();
+        self.compute_pipelines.clear();
+        self.query_sets.clear();
+        self.conversion = None;
         self.render_bundles.clear();
         self.labels.clear();
         self.surface = None;
@@ -928,8 +1121,8 @@ impl Executor {
     /// Encodes a copy or a buffer clear, outside a render pass as WebGPU requires.
     fn copy(&mut self, opcode: u16, payload: &[u8]) -> Result<Option<Response>, String> {
         size(payload, [32, 20, 56, 56, 60][usize::from(opcode - 38)])?;
-        if self.render_pass.is_some() || self.ignored_pass.is_some() {
-            return Err("a copy cannot be encoded in a render pass".into());
+        if self.pass_open() {
+            return Err("a copy cannot be encoded in a pass".into());
         }
         if self.invalid_encoder {
             return Ok(None);
@@ -1037,6 +1230,7 @@ impl Executor {
     /// ignores its later commands and raises `error` when it ends.
     fn invalidate_pass(&mut self, error: String) {
         drop(self.render_pass.take());
+        drop(self.compute_pass.take());
         drop(self.render_pass_scope.take());
         self.ignored_pass = Some(Ignored::Invalid(error));
     }
@@ -1122,7 +1316,7 @@ impl Executor {
                             self.device.create_buffer(&wgpu::BufferDescriptor {
                                 label: Some(label),
                                 size: len,
-                                usage,
+                                usage: usage | hidden_usages(usage, self.converts()),
                                 mapped_at_creation: mapped,
                             })
                         })
@@ -1771,35 +1965,37 @@ impl Executor {
                 keep(&mut self.render_pipelines, handle, pipeline)
             }
             14 => {
-                if self.render_pass.is_some() || self.ignored_pass.is_some() {
-                    return Err("render pass already active".into());
+                if self.pass_open() {
+                    return Err("a pass is already active".into());
                 }
-                if payload.len() < 36 || !(payload.len() - 36).is_multiple_of(52) {
+                if payload.len() < 48 || !(payload.len() - 48).is_multiple_of(52) {
                     return Err("invalid render pass length".into());
                 }
-                if u32_at(payload, 0) as usize != (payload.len() - 36) / 52 {
+                if u32_at(payload, 0) as usize != (payload.len() - 48) / 52 {
                     return Err("invalid color attachment count".into());
                 }
                 // A pass whose attachment is destroyed fails its submit, as in WebGPU.
                 let mut attachments = Vec::new();
-                for entry in payload[4..payload.len() - 32].as_chunks::<52>().0 {
+                for entry in payload[4..payload.len() - 44].as_chunks::<52>().0 {
                     let flags = u32_at(entry, 0);
                     attachments.extend((flags & 1 != 0).then(|| u32_at(entry, 4)));
                     attachments.extend((flags & 2 != 0).then(|| u32_at(entry, 8)));
                 }
                 attachments
-                    .extend(Some(u32_at(payload, payload.len() - 32)).filter(|view| *view != 0));
+                    .extend(Some(u32_at(payload, payload.len() - 44)).filter(|view| *view != 0));
+                let timestamps = timestamp_writes(payload, payload.len() - 12);
                 let used = attachments
                     .iter()
                     .map(|view| match self.views.get(view) {
-                        None => Use::Freed,
-                        Some((_, None)) => Use::Invalid,
-                        Some((texture, Some(_))) => self.texture_use(*texture),
+                        None => (Use::Freed, "texture"),
+                        Some((_, None)) => (Use::Invalid, "texture"),
+                        Some((texture, Some(_))) => (self.texture_use(*texture), "texture"),
                     })
-                    .max()
-                    .unwrap_or(Use::Live);
+                    .chain(timestamps.map(|(set, ..)| (self.query_set_use(set), "query set")))
+                    .max_by_key(|(used, _)| *used);
+                let (used, kind) = used.unwrap_or((Use::Live, "texture"));
                 if matches!(used, Use::Destroyed | Use::Freed) {
-                    self.destroyed_use.get_or_insert("texture");
+                    self.destroyed_use.get_or_insert(kind);
                 }
                 if used == Use::Freed {
                     self.pipeline = None;
@@ -1810,7 +2006,7 @@ impl Executor {
                 let mut colors = Vec::new();
                 let mut writes_surface = false;
                 let mut invalid = false;
-                for entry in payload[4..payload.len() - 32].as_chunks::<52>().0 {
+                for entry in payload[4..payload.len() - 44].as_chunks::<52>().0 {
                     let flags = u32_at(entry, 0);
                     if flags == 0 {
                         colors.push(None);
@@ -1869,7 +2065,7 @@ impl Executor {
                         ops: wgpu::Operations { load, store },
                     }));
                 }
-                let depth_entry = &payload[payload.len() - 32..];
+                let depth_entry = &payload[payload.len() - 44..payload.len() - 12];
                 let depth_view = u32_at(depth_entry, 0);
                 let depth = if depth_view == 0 {
                     None
@@ -1930,12 +2126,23 @@ impl Executor {
                 self.empty_vertex_slots = 0;
                 self.empty_index = false;
                 self.pass_view = self.subject(14, payload);
-                if invalid {
-                    self.ignored_pass = Some(Ignored::Invalid(
-                        "a render pass attachment is invalid due to a previous error".into(),
-                    ));
+                if invalid || used == Use::Invalid {
+                    self.ignored_pass = Some(Ignored::Invalid(if invalid {
+                        "a render pass attachment is invalid due to a previous error".into()
+                    } else {
+                        "the query set is invalid due to a previous error".into()
+                    }));
                     return Ok(None);
                 }
+                let timestamp_writes =
+                    timestamps.map(|(set, begin, end)| wgpu::RenderPassTimestampWrites {
+                        query_set: &self.query_sets[&set]
+                            .as_ref()
+                            .expect("a used query set")
+                            .raw,
+                        beginning_of_pass_write_index: begin,
+                        end_of_pass_write_index: end,
+                    });
                 let encoder = self
                     .encoder
                     .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
@@ -1945,7 +2152,7 @@ impl Executor {
                         label: None,
                         color_attachments: &colors,
                         depth_stencil_attachment: depth,
-                        timestamp_writes: None,
+                        timestamp_writes,
                         occlusion_query_set: None,
                         multiview_mask: None,
                     })
@@ -1955,6 +2162,25 @@ impl Executor {
                     self.surface_clear = SurfaceClear::Encoded;
                 }
                 self.render_pass = Some(pass);
+                Ok(None)
+            }
+            15 if self.computing => {
+                size(payload, 4)?;
+                let pipeline = entry(
+                    &self.compute_pipelines,
+                    u32_at(payload, 0),
+                    "compute pipeline",
+                )?
+                .cloned();
+                let Some(pass) = self.compute_pass.as_mut() else {
+                    return Ok(None);
+                };
+                let Some(pipeline) = pipeline else {
+                    self.invalidate_pass(invalid("compute pipeline"));
+                    return Ok(None);
+                };
+                pass.set_pipeline(&pipeline);
+                self.pipeline = Some(u32_at(payload, 0));
                 Ok(None)
             }
             15 => {
@@ -1994,9 +2220,13 @@ impl Executor {
                     .iter()
                     .map(|value| u32::from_le_bytes(*value))
                     .collect();
-                let Some(pass) = active(&mut self.render_pass, &self.ignored_pass)? else {
+                if self.computing {
+                    if self.compute_pass.is_none() {
+                        return Ok(None);
+                    }
+                } else if active(&mut self.render_pass, &self.ignored_pass)?.is_none() {
                     return Ok(None);
-                };
+                }
                 let Some((group, (used, kind))) = group else {
                     self.invalidate_pass(invalid("bind group"));
                     return Ok(None);
@@ -2011,7 +2241,12 @@ impl Executor {
                     }
                     Use::Live | Use::Invalid => {}
                 }
-                pass.set_bind_group(u32_at(payload, 0), &group, &offsets);
+                let index = u32_at(payload, 0);
+                if let Some(pass) = &mut self.compute_pass {
+                    pass.set_bind_group(index, &group, &offsets);
+                } else if let Some(pass) = &mut self.render_pass {
+                    pass.set_bind_group(index, &group, &offsets);
+                }
                 Ok(None)
             }
             17 | 18 => {
@@ -2155,6 +2390,9 @@ impl Executor {
             }
             25 => {
                 size(payload, 0)?;
+                if self.computing {
+                    return Err("no active render pass".into());
+                }
                 // WebGPU reports an invalid pass once, when its encoder finishes, and the stream
                 // records no finish, so the first invalid pass in an encoder reports as it ends.
                 match self.ignored_pass.take() {
@@ -2282,21 +2520,35 @@ impl Executor {
                 if self.handle_used(handle) {
                     return Err("invalid or duplicate bind group layout handle".into());
                 }
-                let layout = entry(
-                    &self.render_pipelines,
-                    u32_at(payload, 4),
-                    "render pipeline",
-                )?
-                .ok_or_else(|| invalid("render pipeline"))
-                .and_then(|pipeline| {
-                    self.scoped(|| pipeline.get_bind_group_layout(u32_at(payload, 8)))
-                });
+                let index = u32_at(payload, 8);
+                let layout = match self.compute_pipelines.get(&u32_at(payload, 4)) {
+                    Some(pipeline) => pipeline
+                        .as_ref()
+                        .ok_or_else(|| invalid("compute pipeline"))
+                        .and_then(|pipeline| self.scoped(|| pipeline.get_bind_group_layout(index))),
+                    None => entry(
+                        &self.render_pipelines,
+                        u32_at(payload, 4),
+                        "render pipeline",
+                    )?
+                    .ok_or_else(|| invalid("render pipeline"))
+                    .and_then(|pipeline| self.scoped(|| pipeline.get_bind_group_layout(index))),
+                };
                 keep(&mut self.bind_group_layouts, handle, layout)
             }
             29 => {
                 size(payload, 4)?;
                 let handle = u32_at(payload, 0);
+                if let Some(set) = self.query_sets.get_mut(&handle) {
+                    if let Some(set) = set {
+                        set.destroyed = true;
+                    }
+                    self.destroyed.push(handle);
+                    self.labels.remove(&handle);
+                    return Ok(None);
+                }
                 if self.shaders.remove(&handle).is_none()
+                    && self.compute_pipelines.remove(&handle).is_none()
                     && self.views.remove(&handle).is_none()
                     && self.samplers.remove(&handle).is_none()
                     && self.bind_groups.remove(&handle).is_none()
@@ -2352,12 +2604,16 @@ impl Executor {
                 if (opcode == 44) != label.is_empty() {
                     return Err("invalid debug command".into());
                 }
-                if self.ignored_pass.is_some()
-                    || (self.render_pass.is_none() && self.invalid_encoder)
-                {
+                if self.ignored_pass.is_some() || (!self.pass_open() && self.invalid_encoder) {
                     return Ok(None);
                 }
                 if let Some(pass) = &mut self.render_pass {
+                    match opcode {
+                        43 => pass.push_debug_group(label),
+                        44 => pass.pop_debug_group(),
+                        _ => pass.insert_debug_marker(label),
+                    }
+                } else if let Some(pass) = &mut self.compute_pass {
                     match opcode {
                         43 => pass.push_debug_group(label),
                         44 => pass.pop_debug_group(),
@@ -2377,11 +2633,13 @@ impl Executor {
             }
             26 => self.submit(payload, None),
             48 => {
-                if payload.len() < 4 {
+                if payload.len() < 12 {
                     return Err("truncated buffer unmap".into());
                 }
-                let bytes = &payload[4..];
-                // As in WebGPU, the unmap of an invalid buffer does nothing.
+                let offset = u64_at(payload, 4);
+                let bytes = &payload[12..];
+                // As in WebGPU, the unmap of an invalid buffer, or of one that is not mapped because
+                // its map failed or was cancelled, does nothing.
                 let Some(buffer) = self
                     .buffers
                     .get_mut(&u32_at(payload, 0))
@@ -2389,13 +2647,18 @@ impl Executor {
                 else {
                     return Ok(None);
                 };
-                if !std::mem::take(&mut buffer.mapped) || bytes.len() as u64 != buffer.size {
-                    return Err("invalid buffer unmap".into());
+                if !std::mem::take(&mut buffer.mapped) {
+                    return Ok(None);
                 }
                 if !bytes.is_empty() {
+                    let end = offset
+                        .checked_add(bytes.len() as u64)
+                        .filter(|end| *end <= buffer.size)
+                        .ok_or("invalid buffer unmap")?;
                     buffer
                         .raw
-                        .get_mapped_range_mut(..)
+                        .slice(offset..end)
+                        .get_mapped_range_mut()
                         .map_err(|error| error.to_string())?
                         .copy_from_slice(bytes);
                 }
@@ -2424,6 +2687,334 @@ impl Executor {
                     error: scope.error.map(|message| (scope.filter, message)),
                 }))
             }
+            49 => {
+                if payload.len() < 20 {
+                    return Err("truncated compute pipeline".into());
+                }
+                let handle = u32_at(payload, 0);
+                let label_end = 20usize
+                    .checked_add(u32_at(payload, 12) as usize)
+                    .ok_or("invalid compute pipeline length")?;
+                if label_end.checked_add(u32_at(payload, 16) as usize) != Some(payload.len()) {
+                    return Err("invalid compute pipeline length".into());
+                }
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate compute pipeline handle".into());
+                }
+                let label = std::str::from_utf8(&payload[20..label_end])
+                    .map_err(|_| "invalid compute pipeline label")?;
+                let entry_point = std::str::from_utf8(&payload[label_end..])
+                    .map_err(|_| "invalid compute pipeline entry point")?;
+                self.set_label(handle, label);
+                let pipeline = (|| {
+                    let layout = match u32_at(payload, 4) {
+                        0 => None,
+                        handle => Some(valid(&self.pipeline_layouts, handle, "pipeline layout")?),
+                    };
+                    let module = entry(&self.shaders, u32_at(payload, 8), "shader")?
+                        .ok_or_else(|| format!("pipeline {label} uses an invalid shader"))?;
+                    let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                    let pipeline =
+                        self.device
+                            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                                label: Some(label),
+                                layout,
+                                module,
+                                entry_point: (!entry_point.is_empty()).then_some(entry_point),
+                                compilation_options: Default::default(),
+                                cache: None,
+                            });
+                    match pollster::block_on(scope.pop()) {
+                        Some(error) => Err(format!("pipeline {label}: {error}")),
+                        None => Ok(pipeline),
+                    }
+                })();
+                keep(&mut self.compute_pipelines, handle, pipeline)
+            }
+            50 => {
+                size(payload, 12)?;
+                if self.pass_open() {
+                    return Err("a pass is already active".into());
+                }
+                self.computing = true;
+                self.pipeline = None;
+                let timestamps = timestamp_writes(payload, 0);
+                if let Some((set, ..)) = timestamps {
+                    match self.query_set_use(set) {
+                        Use::Freed => {
+                            self.destroyed_use.get_or_insert("query set");
+                            self.ignored_pass = Some(Ignored::Freed);
+                            return Ok(None);
+                        }
+                        Use::Invalid => {
+                            self.ignored_pass = Some(Ignored::Invalid(invalid("query set")));
+                            return Ok(None);
+                        }
+                        Use::Destroyed => {
+                            self.destroyed_use.get_or_insert("query set");
+                        }
+                        Use::Live => {}
+                    }
+                }
+                let timestamp_writes =
+                    timestamps.map(|(set, begin, end)| wgpu::ComputePassTimestampWrites {
+                        query_set: &self.query_sets[&set]
+                            .as_ref()
+                            .expect("a used query set")
+                            .raw,
+                        beginning_of_pass_write_index: begin,
+                        end_of_pass_write_index: end,
+                    });
+                let encoder = self
+                    .encoder
+                    .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
+                let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let pass = encoder
+                    .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: None,
+                        timestamp_writes,
+                    })
+                    .forget_lifetime();
+                self.render_pass_scope = Some(scope);
+                self.compute_pass = Some(pass);
+                Ok(None)
+            }
+            51 => {
+                size(payload, 12)?;
+                if !self.computing {
+                    return Err("no active compute pass".into());
+                }
+                if let Some(pass) = &mut self.compute_pass {
+                    pass.dispatch_workgroups(
+                        u32_at(payload, 0),
+                        u32_at(payload, 4),
+                        u32_at(payload, 8),
+                    );
+                }
+                Ok(None)
+            }
+            52 => {
+                size(payload, 12)?;
+                if !self.computing {
+                    return Err("no active compute pass".into());
+                }
+                if self.compute_pass.is_none() {
+                    return Ok(None);
+                }
+                let handle = u32_at(payload, 0);
+                match self.buffer_use(handle) {
+                    Use::Freed => {
+                        self.free_pass("buffer");
+                        return Ok(None);
+                    }
+                    Use::Invalid => {
+                        self.invalidate_pass(invalid("buffer"));
+                        return Ok(None);
+                    }
+                    Use::Destroyed => {
+                        self.destroyed_use.get_or_insert("buffer");
+                    }
+                    Use::Live => {}
+                }
+                let buffer = &self.buffers[&handle].as_ref().expect("a live buffer").raw;
+                self.compute_pass
+                    .as_mut()
+                    .expect("an active compute pass")
+                    .dispatch_workgroups_indirect(buffer, u64_at(payload, 4));
+                Ok(None)
+            }
+            53 => {
+                size(payload, 0)?;
+                if !std::mem::take(&mut self.computing) {
+                    return Err("no active compute pass".into());
+                }
+                match self.ignored_pass.take() {
+                    Some(Ignored::Invalid(error)) => {
+                        return if std::mem::replace(&mut self.invalid_encoder, true) {
+                            Ok(None)
+                        } else {
+                            Err(error)
+                        };
+                    }
+                    Some(Ignored::Freed) => return Ok(None),
+                    None => {}
+                }
+                drop(self.compute_pass.take().ok_or("no active compute pass")?);
+                let scope = self
+                    .render_pass_scope
+                    .take()
+                    .expect("active pass has an error scope");
+                if let Some(error) = pollster::block_on(scope.pop()) {
+                    self.encoder = None;
+                    self.encoder_dropped(false);
+                    return if std::mem::replace(&mut self.invalid_encoder, true) {
+                        Ok(None)
+                    } else {
+                        Err(error.to_string())
+                    };
+                }
+                Ok(None)
+            }
+            54 => {
+                if payload.len() < 16 {
+                    return Err("truncated query set".into());
+                }
+                let handle = u32_at(payload, 0);
+                if 16usize.checked_add(u32_at(payload, 12) as usize) != Some(payload.len()) {
+                    return Err("invalid query set label length".into());
+                }
+                if self.handle_used(handle) {
+                    return Err("invalid or duplicate query set handle".into());
+                }
+                let label =
+                    std::str::from_utf8(&payload[16..]).map_err(|_| "invalid query set label")?;
+                self.set_label(handle, label);
+                let count = u32_at(payload, 8);
+                let set = match u32_at(payload, 4) {
+                    1 => self
+                        .scoped(|| {
+                            self.device.create_query_set(&wgpu::QuerySetDescriptor {
+                                label: Some(label),
+                                ty: wgpu::QueryType::Timestamp,
+                                count,
+                            })
+                        })
+                        .map(|raw| QuerySet {
+                            raw,
+                            count,
+                            destroyed: false,
+                        }),
+                    _ => Err("unsupported query type".into()),
+                };
+                keep(&mut self.query_sets, handle, set)
+            }
+            55 => {
+                size(payload, 24)?;
+                if self.pass_open() {
+                    return Err("a resolve cannot be encoded in a pass".into());
+                }
+                if self.invalid_encoder {
+                    return Ok(None);
+                }
+                let (set, first, count, handle) = (
+                    u32_at(payload, 0),
+                    u32_at(payload, 4),
+                    u32_at(payload, 8),
+                    u32_at(payload, 12),
+                );
+                let offset = u64_at(payload, 16);
+                let used = [
+                    (self.query_set_use(set), "query set"),
+                    (self.buffer_use(handle), "buffer"),
+                ]
+                .into_iter()
+                .max_by_key(|(used, _)| *used)
+                .expect("two uses");
+                match used {
+                    (Use::Invalid, _) => {
+                        return self.invalidate_encoder(
+                            "a resolve uses an object that is invalid due to a previous error"
+                                .into(),
+                        );
+                    }
+                    (Use::Freed, kind) => {
+                        self.destroyed_use.get_or_insert(kind);
+                        return Ok(None);
+                    }
+                    (Use::Destroyed, kind) => {
+                        self.destroyed_use.get_or_insert(kind);
+                    }
+                    (Use::Live, _) => {}
+                }
+                let Some(end) = first.checked_add(count) else {
+                    return self.invalidate_encoder("the query range overflows".into());
+                };
+                let query_count = self.query_sets[&set]
+                    .as_ref()
+                    .expect("a used query set")
+                    .count;
+                let buffer = self.buffers[&handle].as_ref().expect("a used buffer");
+                // The conversion runs only after a resolve that WebGPU accepts, which binds nothing
+                // out of the buffer's range.
+                let accepted = count > 0
+                    && end <= query_count
+                    && offset.is_multiple_of(256)
+                    && buffer.usage.contains(wgpu::BufferUsages::QUERY_RESOLVE)
+                    && offset
+                        .checked_add(u64::from(count) * 8)
+                        .is_some_and(|end| end <= buffer.size);
+                if accepted && self.converts() {
+                    self.conversion();
+                }
+                let mut encoder = self
+                    .encoder
+                    .take()
+                    .unwrap_or_else(|| self.device.create_command_encoder(&Default::default()));
+                let query_set = &self.query_sets[&set]
+                    .as_ref()
+                    .expect("a used query set")
+                    .raw;
+                let buffer = &self.buffers[&handle].as_ref().expect("a used buffer").raw;
+                encoder.resolve_query_set(query_set, first..end, buffer, offset);
+                if let Some(conversion) = self
+                    .conversion
+                    .as_ref()
+                    .filter(|_| accepted && self.converts())
+                {
+                    conversion.encode(&self.device, &mut encoder, buffer, offset, count)?;
+                }
+                self.encoder = Some(encoder);
+                Ok(None)
+            }
+            56 => {
+                size(payload, 28)?;
+                let (request, handle) = (u32_at(payload, 0), u32_at(payload, 4));
+                let (offset, len) = (u64_at(payload, 12), u64_at(payload, 20));
+                if matches!(self.buffer_use(handle), Use::Destroyed | Use::Freed) {
+                    return Err("a destroyed buffer is mapped".into());
+                }
+                let buffer = valid(&self.buffers, handle, "buffer")?;
+                let (mode, usage) = match u32_at(payload, 8) {
+                    1 => (wgpu::MapMode::Read, wgpu::BufferUsages::MAP_READ),
+                    2 => (wgpu::MapMode::Write, wgpu::BufferUsages::MAP_WRITE),
+                    _ => return Err("invalid buffer map mode".into()),
+                };
+                if request == 0
+                    || buffer.mapped
+                    || !buffer.usage.contains(usage)
+                    || !offset.is_multiple_of(8)
+                    || !len.is_multiple_of(4)
+                    || offset.checked_add(len).is_none_or(|end| end > buffer.size)
+                {
+                    return Err("invalid buffer map".into());
+                }
+                // The executor reads the range at once, as it does a readback, and the buffer stays
+                // mapped, so a submit that uses it fails, until its unmap.
+                let bytes = if len == 0 {
+                    Vec::new()
+                } else {
+                    let slice = buffer.raw.slice(offset..offset + len);
+                    let (tx, rx) = mpsc::channel();
+                    slice.map_async(mode, move |result| {
+                        let _ = tx.send(result);
+                    });
+                    self.device
+                        .poll(wgpu::PollType::wait_indefinitely())
+                        .map_err(|e| e.to_string())?;
+                    rx.recv()
+                        .map_err(|e| e.to_string())?
+                        .map_err(|e| e.to_string())?;
+                    slice
+                        .get_mapped_range()
+                        .map_err(|e| e.to_string())?
+                        .to_vec()
+                };
+                // wgpu cannot map an empty range, so a buffer mapped for one stays unmapped here.
+                if let Some(Some(buffer)) = self.buffers.get_mut(&handle) {
+                    buffer.mapped = len != 0;
+                }
+                Ok(Some(Response::Readback { request, bytes }))
+            }
             _ => Err(format!("GPU opcode {opcode} is not implemented")),
         }
     }
@@ -2451,9 +3042,7 @@ mod tests {
         bytes
     }
 
-    #[test]
-    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
-    fn destroyed_invalid_objects_leave_no_labels() {
+    fn software() -> (wgpu::Device, wgpu::Queue) {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::VULKAN),
             flags: wgpu::InstanceFlags::default(),
@@ -2466,8 +3055,74 @@ mod tests {
             ..Default::default()
         }))
         .expect("a software adapter is required");
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+        pollster::block_on(adapter.request_device(&Default::default())).unwrap()
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn timestamp_conversion_scales_ticks_exactly() {
+        let (device, queue) = software();
+        let ticks: [u64; 6] = [
+            0,
+            1,
+            12_345,
+            0xffff_ffff,
+            0x1_0000_0001,
+            123_456_789_012_345,
+        ];
+        let bytes: Vec<u8> = ticks.iter().flat_map(|tick| tick.to_le_bytes()).collect();
+        for period in [100.0, 41.666_668, 1.5, 10.0, 0.25] {
+            let conversion = TimestampConversion::new(&device, period);
+            let times = device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: 512,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let staging = device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: 48,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&times, 256, &bytes);
+            let mut encoder = device.create_command_encoder(&Default::default());
+            conversion
+                .encode(&device, &mut encoder, &times, 256, ticks.len() as u32)
+                .unwrap();
+            encoder.copy_buffer_to_buffer(&times, 256, &staging, 0, 48);
+            queue.submit([encoder.finish()]);
+            staging.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+            let converted: Vec<u64> = staging
+                .slice(..)
+                .get_mapped_range()
+                .unwrap()
+                .chunks(8)
+                .map(|time| u64::from_le_bytes(time.try_into().unwrap()))
+                .collect();
+            let exact: Vec<u64> = ticks
+                .iter()
+                .map(|&tick| {
+                    ((u128::from(tick) * u128::from(conversion.multiplier)) >> conversion.shift)
+                        as u64
+                })
+                .collect();
+            assert_eq!(converted, exact, "period {period}");
+            let large = 123_456_789_012_345.0 * f64::from(period);
+            assert!(
+                (converted[5] as f64 - large).abs() / large < 2e-5,
+                "period {period}: {converted:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn destroyed_invalid_objects_leave_no_labels() {
+        let (device, queue) = software();
         let count = 100_000u32;
         let mut records = Vec::new();
         for handle in 1..=count {
