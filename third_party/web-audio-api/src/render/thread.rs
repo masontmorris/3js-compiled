@@ -577,10 +577,11 @@ impl RenderThread {
     }
 
     fn set_state(&self, state: AudioContextState) {
-        self.state.store(state as u8, Ordering::Relaxed);
-        self.event_sender
-            .try_send(EventDispatch::state_change(state))
-            .ok();
+        if self.state.swap(state as u8, Ordering::AcqRel) != state as u8 {
+            self.event_sender
+                .try_send(EventDispatch::state_change(state))
+                .ok();
+        }
     }
 }
 
