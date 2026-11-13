@@ -274,6 +274,11 @@ fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<ch
     chosen
 }
 
+/// Unicode's default-ignorable code points, which the shaper hides.
+fn default_ignorable(c: char) -> bool {
+    matches!(c as u32, 0xAD | 0x34F | 0x61C | 0x115F..=0x1160 | 0x17B4..=0x17B5 | 0x180B..=0x180F | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x206F | 0x3164 | 0xFE00..=0xFE0F | 0xFEFF | 0xFFA0 | 0xFFF0..=0xFFF8 | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A | 0xE0000..=0xE0FFF)
+}
+
 /// CJK and fullwidth punctuation, which takes the font of the text around it.
 fn common_cjk(c: char) -> bool {
     matches!(c as u32, 0x3000..=0x303F | 0xFF00..=0xFF0F | 0xFF1A..=0xFF20)
@@ -392,9 +397,18 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             .build();
         let mut buffer = UnicodeBuffer::new();
         if missing {
-            // No font maps U+10FFFF, so each character shapes as the face's missing glyph even when the face maps
-            // it outside its range.
-            buffer.push_str(&piece.chars().map(|_| '\u{10ffff}').collect::<String>());
+            // No font maps U+10FFFF, so a character the face maps outside its range shapes as the missing glyph.
+            // The rest, such as a variation selector, shape as themselves.
+            let swapped: String = piece
+                .chars()
+                .map(|c| {
+                    let excluded = !default_ignorable(c)
+                        && !chain.allows(index, c)
+                        && charmaps[index].map(c).is_some();
+                    if excluded { '\u{10ffff}' } else { c }
+                })
+                .collect();
+            buffer.push_str(&swapped);
         } else {
             buffer.push_str(piece);
         }
