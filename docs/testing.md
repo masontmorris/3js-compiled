@@ -97,3 +97,16 @@ The replay parity test compares `basic-cube`, `standard-shadow`, and `invalid-wg
 The recorder runs in Node, where no host answers three's pipeline error scopes, so `scenes.mjs` records `invalid-wgsl` with `--fail-pipelines=invalid-wgsl-material`, which answers the error scope around that material's pipeline with an error after frame 0, as the host does. As in Edge, frame 0 draws the invalid pipeline and so draws nothing, and frame 1 skips the material.
 
 `standard-shadow-off` records `standard-shadow` with the shadow map disabled (`tools/scenes/record.mjs --no-shadows`). It scores 0.00278 over the frame and 0.111 inside the shadow on both adapters, and the test asserts that it fails both bounds. Regenerate the Edge references with `tools/parity` after a scene change, and remeasure the bounds when the references or the software adapters change.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on each push to `main`, on GitHub's free `windows-latest` runners, because Windows is the first target. The `rust` job runs `cargo fmt --all --check`, `cargo clippy --locked --workspace -- -D warnings` and `cargo test --locked --workspace` after `npm ci`, because the host's tests bundle the example scenes with esbuild. The `js` job runs `npm test` and `npm run check`, with naga-cli 30.0.1 and the Windows SDK's `dxc.exe`.
+
+The runners have no hardware GPU and no audio device, so CI leaves out every test marked `#[ignore]`:
+
+- The scripted host tests in `crates/host/tests/gpu.rs` open a window on the hardware GPU. Run them under the GPU lease.
+- The replay tests in `crates/gpu/tests/replay.rs` and the executor's own GPU tests need an adapter. Run them on WARP locally or in the Modal `gpu_replay` lane.
+
+CI also skips two host tests by name: `the_game_thread_wakes_as_the_render_thread_finishes` and `with_vsync_off_a_frame_runs_while_the_render_thread_draws_the_one_before`. They assert that frames start within 0.75 ms and 2.5 ms of each other behind 0.5 ms and 2 ms render jobs. On a hosted runner the first measured 0.787 ms. Plain `cargo test` still runs both on your machine.
+
+CI does not run the Modal lanes, the perf tools in `tools/perf` that capture PresentMon traces, and the Edge captures in `tools/parity` and `tools/platform`. Mark any new test that needs a GPU, a window or an audio device `#[ignore = "<what it needs>"]` so CI stays deterministic.
