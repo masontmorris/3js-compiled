@@ -43,6 +43,8 @@ The rule is lane 5's: once the context runs steadily, `baseLatency + outputLaten
 | Run | Device | Host at start | Host steady | Edge at start | Edge steady | Limit |
 | --- | --- | --- | --- | --- | --- | --- |
 | Lane 5 at 0b20cfd | Speakers (Steam Streaming Speakers) | 0.051 s | 0.044 s | 0.010 s | 0.052, 0.063, 0.071 s | 0.052 s |
+
+All readings in this table were taken on MASON-DESKTOP, host and Edge on the same device in the same session.
 | Probe, Edge only | Edge's default output | | | 0.010 s | 0.050 s | |
 
 Edge reports an `outputLatency` of 0 until its device reports one, so its reading at start is `baseLatency` alone. The `context-start` scenario's "latency under 50 ms" row reads at startup, on different devices, so it is information only.
