@@ -8,7 +8,7 @@ The game's JavaScript runs in V8 inside a Rust host program. three.js keeps its 
 
 ## Status
 
-Nothing runs yet. Windows comes first. Linux and Steam Deck come after.
+Windows runs today. The host opens a window and runs three.js game code on DirectX 12, with audio, canvas 2D and HTML HUDs in Servo. `docs/build.md` lists the examples, such as `examples/clear.js`, `examples/scenes` and `examples/hud`. Folio-2025 is not ported yet. Linux and Steam Deck come after.
 
 The `spikes` folder holds the experiments that chose this design, with their code and measurements. Start with `spikes/README.md`.
 
