@@ -1,0 +1,146 @@
+diff --git a/src/context/online.rs b/src/context/online.rs
+index e6bb704..19acfd1 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -470,8 +470,8 @@ impl AudioContext {
+             // Acquire the audio graph from the current render thread, shutting it down
+             log::debug!("SinkChange: recover graph from render thread");
+ 
+-            let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
+-            let message = ControlMessage::CloseAndRecycle { sender: graph_send };
++            let recycle = Arc::new(crate::message::Recycle::new());
++            let message = ControlMessage::CloseAndRecycle { recycle: Arc::clone(&recycle) };
+             ctrl_msg_send.send(message).unwrap();
+             if paused {
+                 // We must wake up the render thread to be able to handle the shutdown.
+@@ -480,9 +480,10 @@ impl AudioContext {
+             }
+             // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
+             // callback, so withdraw the request, leave the context as it was and report the error.
+-            match graph_recv.recv_timeout(ANSWER_DEADLINE) {
+-                Ok(recycled) => recycled,
+-                Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
++            match recycle.wait(ANSWER_DEADLINE) {
++                Some(recycled) => recycled,
++                None => {
++                    let _ = self.render_thread_init.ctrl_msg_recv.try_recv();
+                     for msg in pending_msgs {
+                         ctrl_msg_send.send(msg).unwrap();
+                     }
+@@ -491,10 +492,6 @@ impl AudioContext {
+                     }
+                     return Err("InvalidStateError: the output stream is not running".into());
+                 }
+-                // The render thread took the request just now, so its answer is on the way
+-                Err(_) => graph_recv
+-                    .recv()
+-                    .map_err(|_| "InvalidStateError: the render thread is gone")?,
+             }
+         };
+ 
+diff --git a/src/message.rs b/src/message.rs
+index 66a9425..bee243d 100644
+--- a/src/message.rs
++++ b/src/message.rs
+@@ -1,6 +1,8 @@
+ //! Message passing from control to render node
+ 
+ use std::any::Any;
++use std::sync::atomic::{AtomicU8, Ordering};
++use std::time::Duration;
+ 
+ #[cfg(feature = "diagnostics")]
+ use crate::context::AudioBackendDiagnostics;
+@@ -9,6 +11,51 @@ use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
+ use crate::render::graph::Graph;
+ use crate::render::AudioProcessor;
+ 
++const RECYCLE_ACTIVE: u8 = 0;
++const RECYCLE_CANCELLED: u8 = 1;
++const RECYCLE_DELIVERED: u8 = 2;
++
++/// A graph stays in the slot until either the control thread commits the move or the renderer cancels it.
++pub(crate) struct Recycle {
++    state: AtomicU8,
++    graph_send: crossbeam_channel::Sender<(Graph, bool)>,
++    graph_recv: crossbeam_channel::Receiver<(Graph, bool)>,
++    ready_send: crossbeam_channel::Sender<()>,
++    ready_recv: crossbeam_channel::Receiver<()>,
++}
++
++impl Recycle {
++    pub fn new() -> Self {
++        let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
++        let (ready_send, ready_recv) = crossbeam_channel::bounded(1);
++        Self { state: AtomicU8::new(RECYCLE_ACTIVE), graph_send, graph_recv, ready_send, ready_recv }
++    }
++
++    pub fn wait(&self, deadline: Duration) -> Option<(Graph, bool)> {
++        let _ = self.ready_recv.recv_timeout(deadline);
++        if self.state.compare_exchange(RECYCLE_ACTIVE, RECYCLE_CANCELLED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
++            None
++        } else {
++            debug_assert_eq!(self.state.load(Ordering::Acquire), RECYCLE_DELIVERED);
++            Some(self.graph_recv.try_recv().expect("delivered graph is available"))
++        }
++    }
++
++    pub fn deliver(&self, graph: Graph, suspended: bool) -> Result<(), (Graph, bool)> {
++        self.graph_send.try_send((graph, suspended)).expect("recycle slot is empty");
++        #[cfg(feature = "test-control")]
++        crate::test_control::recycle_barrier(1);
++        if self.state.compare_exchange(RECYCLE_ACTIVE, RECYCLE_DELIVERED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
++            #[cfg(feature = "test-control")]
++            crate::test_control::recycle_barrier(2);
++            let _ = self.ready_send.try_send(());
++            Ok(())
++        } else {
++            Err(self.graph_recv.try_recv().expect("cancelled graph is available"))
++        }
++    }
++}
++
+ /// Commands from the control thread to the render thread
+ pub(crate) enum ControlMessage {
+     /// Register a new node in the audio graph
+@@ -45,7 +92,7 @@ pub(crate) enum ControlMessage {
+ 
+     /// Shut down and recycle the audio graph, with whether the render thread was suspended
+     CloseAndRecycle {
+-        sender: crossbeam_channel::Sender<(Graph, bool)>,
++        recycle: std::sync::Arc<Recycle>,
+     },
+ 
+     /// Start rendering with given audio graph, suspended when the render thread it came from was
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index 3b3fcb6..8d7a5f1 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -195,17 +195,18 @@ impl RenderThread {
+             MarkCycleBreaker { id } => {
+                 self.graph.as_mut().unwrap().mark_cycle_breaker(id);
+             }
+-            CloseAndRecycle { sender } => {
++            CloseAndRecycle { recycle } => {
+                 #[cfg(feature = "test-control")]
+                 crate::test_control::recycle_barrier(0);
+-                #[cfg(feature = "test-control")]
+-                crate::test_control::recycle_barrier(1);
+-                #[cfg(feature = "test-control")]
+-                crate::test_control::recycle_barrier(2);
+-                self.set_state(AudioContextState::Suspended);
+-                let _ = sender.send((self.graph.take().unwrap(), self.suspended));
+-                self.receiver = None;
+-                return ControlFlow::Break(()); // no further handling of ctrl msgs
++                let receiver = self.receiver.take();
++                match recycle.deliver(self.graph.take().unwrap(), self.suspended) {
++                    Ok(()) => return ControlFlow::Break(()),
++                    Err((graph, suspended)) => {
++                        self.graph = Some(graph);
++                        self.suspended = suspended;
++                        self.receiver = receiver;
++                    }
++                }
+             }
+             Startup { graph, suspended } => {
+                 debug_assert!(self.graph.is_none());

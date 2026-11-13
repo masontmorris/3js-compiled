@@ -195,17 +195,18 @@ impl RenderThread {
             MarkCycleBreaker { id } => {
                 self.graph.as_mut().unwrap().mark_cycle_breaker(id);
             }
-            CloseAndRecycle { sender } => {
+            CloseAndRecycle { recycle } => {
                 #[cfg(feature = "test-control")]
                 crate::test_control::recycle_barrier(0);
-                #[cfg(feature = "test-control")]
-                crate::test_control::recycle_barrier(1);
-                #[cfg(feature = "test-control")]
-                crate::test_control::recycle_barrier(2);
-                self.set_state(AudioContextState::Suspended);
-                let _ = sender.send((self.graph.take().unwrap(), self.suspended));
-                self.receiver = None;
-                return ControlFlow::Break(()); // no further handling of ctrl msgs
+                let receiver = self.receiver.take();
+                match recycle.deliver(self.graph.take().unwrap(), self.suspended) {
+                    Ok(()) => return ControlFlow::Break(()),
+                    Err((graph, suspended)) => {
+                        self.graph = Some(graph);
+                        self.suspended = suspended;
+                        self.receiver = receiver;
+                    }
+                }
             }
             Startup { graph, suspended } => {
                 debug_assert!(self.graph.is_none());

@@ -470,8 +470,8 @@ impl AudioContext {
             // Acquire the audio graph from the current render thread, shutting it down
             log::debug!("SinkChange: recover graph from render thread");
 
-            let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
-            let message = ControlMessage::CloseAndRecycle { sender: graph_send };
+            let recycle = Arc::new(crate::message::Recycle::new());
+            let message = ControlMessage::CloseAndRecycle { recycle: Arc::clone(&recycle) };
             ctrl_msg_send.send(message).unwrap();
             if paused {
                 // We must wake up the render thread to be able to handle the shutdown.
@@ -480,9 +480,10 @@ impl AudioContext {
             }
             // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
             // callback, so withdraw the request, leave the context as it was and report the error.
-            match graph_recv.recv_timeout(ANSWER_DEADLINE) {
-                Ok(recycled) => recycled,
-                Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
+            match recycle.wait(ANSWER_DEADLINE) {
+                Some(recycled) => recycled,
+                None => {
+                    let _ = self.render_thread_init.ctrl_msg_recv.try_recv();
                     for msg in pending_msgs {
                         ctrl_msg_send.send(msg).unwrap();
                     }
@@ -491,10 +492,6 @@ impl AudioContext {
                     }
                     return Err("InvalidStateError: the output stream is not running".into());
                 }
-                // The render thread took the request just now, so its answer is on the way
-                Err(_) => graph_recv
-                    .recv()
-                    .map_err(|_| "InvalidStateError: the render thread is gone")?,
             }
         };
 
