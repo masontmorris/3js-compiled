@@ -1,0 +1,248 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 03:24:32 -0500
+Subject: [PATCH 4/10] Add a render observer to AudioContext
+
+AudioContext::set_render_observer() hands an observer every callback's
+output samples, its render time and budget, and the render time of each
+quantum it rendered, on the render thread. Quanta are timed only while an
+observer is set. It lets an embedder record what the device receives and
+watch for underruns without a second output path.
+---
+ src/context/online.rs | 11 ++++++++++-
+ src/lib.rs            |  1 +
+ src/render/thread.rs  | 39 ++++++++++++++++++++++++++++++++++---
+ src/stats.rs          | 45 +++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 92 insertions(+), 4 deletions(-)
+
+diff --git a/src/context/online.rs b/src/context/online.rs
+index a461db9..0e55fef 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -148,6 +148,8 @@ pub struct AudioContext {
+     startup_pending: std::sync::Arc<AtomicBool>,
+     /// Initializer for the render thread (when restart is required)
+     render_thread_init: RenderThreadInit,
++    /// Render statistics shared with the render thread, which also carry the render observer
++    stats: crate::stats::AudioStats,
+ }
+ 
+ impl std::fmt::Debug for AudioContext {
+@@ -284,7 +286,7 @@ impl AudioContext {
+ 
+         // Setup AudioRenderCapacity for this context
+         let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
+-        let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
++        let playback_stats = AudioPlaybackStats::new(base.clone(), stats.clone());
+ 
+         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
+         // event handling of the initial events that are emitted right after render thread
+@@ -298,6 +300,7 @@ impl AudioContext {
+             playback_stats,
+             startup_pending,
+             render_thread_init,
++            stats,
+         })
+     }
+ 
+@@ -346,6 +349,12 @@ impl AudioContext {
+         self.render_capacity.clone()
+     }
+ 
++    /// Sets the observer that sees each callback's output and render timing, or clears it with
++    /// `None`. It persists across output device changes.
++    pub fn set_render_observer(&self, observer: Option<Box<dyn crate::RenderObserver>>) {
++        self.stats.set_observer(observer);
++    }
++
+     /// Returns an [`AudioPlaybackStats`] instance associated with this `AudioContext`.
+     #[must_use]
+     pub fn playback_stats(&self) -> AudioPlaybackStats {
+diff --git a/src/lib.rs b/src/lib.rs
+index 70d9a77..d534d14 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -28,6 +28,7 @@ pub use capacity::*;
+ 
+ mod playback_stats;
+ pub use playback_stats::*;
++pub use stats::{RenderObserver, RenderReport};
+ 
+ pub mod context;
+ 
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index c684954..a3d0dcb 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -8,7 +8,7 @@ use std::sync::Arc;
+ use std::time::{Duration, Instant};
+ 
+ use crossbeam_channel::{Receiver, Sender};
+-use dasp_sample::FromSample;
++use dasp_sample::{FromSample, ToSample};
+ use futures_channel::{mpsc, oneshot};
+ use futures_util::StreamExt as _;
+ 
+@@ -23,7 +23,7 @@ use crate::events::{EventDispatch, EventLoop};
+ use crate::message::ControlMessage;
+ use crate::node::ChannelInterpretation;
+ use crate::render::AudioWorkletGlobalScope;
+-use crate::stats::AudioStats;
++use crate::stats::{AudioStats, RenderReport};
+ use crate::RENDER_QUANTUM_SIZE;
+ 
+ use super::graph::Graph;
+@@ -45,6 +45,10 @@ pub(crate) struct RenderThread {
+     stats: AudioStats,
+     event_sender: Sender<EventDispatch>,
+     garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
++    /// Render time of each quantum in the current callback, kept only while an observer is set
++    quantum_ns: Vec<u64>,
++    observed: Vec<f32>,
++    timed: bool,
+ }
+ 
+ // SAFETY:
+@@ -104,6 +108,9 @@ impl RenderThread {
+             stats,
+             event_sender,
+             garbage_collector: None,
++            quantum_ns: Vec::with_capacity(64),
++            observed: Vec::new(),
++            timed: false,
+         }
+     }
+ 
+@@ -410,10 +417,14 @@ impl RenderThread {
+         self.graph.take().unwrap().before_drop(&scope);
+     }
+ 
+-    pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
++    pub fn render<S: FromSample<f32> + ToSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
+         // Collect timing information
+         let render_start = Instant::now();
+         let frames = output_buffer.len() / self.number_of_channels;
++        let observer = self.stats.observer();
++        let frame = self.frames_played.load(Ordering::Relaxed);
++        self.quantum_ns.clear();
++        self.timed = observer.is_some();
+ 
+         // Perform actual rendering
+ 
+@@ -436,6 +447,20 @@ impl RenderThread {
+         };
+         self.stats
+             .record_render_callback(render_duration_ns, callback_budget_ns);
++
++        if let Some(observer) = observer {
++            self.observed.clear();
++            self.observed
++                .extend(output_buffer.iter().map(|s| s.clone().to_sample_()));
++            observer.0.rendered(&RenderReport {
++                samples: &self.observed,
++                channels: self.number_of_channels,
++                frame,
++                render_ns: render_duration_ns,
++                budget_ns: callback_budget_ns,
++                quantum_ns: &self.quantum_ns,
++            });
++        }
+     }
+ 
+     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
+@@ -485,6 +510,7 @@ impl RenderThread {
+         let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
+ 
+         for data in output_buffer.chunks_mut(chunk_size) {
++            let quantum_start = self.timed.then(Instant::now);
+             // update time
+             let current_frame = self
+                 .frames_played
+@@ -528,6 +554,13 @@ impl RenderThread {
+ 
+             // handle addition/removal of nodes/edges
+             self.handle_control_messages();
++
++            if let Some(start) = quantum_start {
++                if self.quantum_ns.len() < self.quantum_ns.capacity() {
++                    self.quantum_ns
++                        .push(start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
++                }
++            }
+         }
+     }
+ 
+diff --git a/src/stats.rs b/src/stats.rs
+index c959bf1..de92235 100644
+--- a/src/stats.rs
++++ b/src/stats.rs
+@@ -1,6 +1,33 @@
+ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+ use std::sync::Arc;
+ 
++use arc_swap::ArcSwapOption;
++
++/// What one system-level audio callback rendered, as [`RenderObserver::rendered`] sees it.
++#[derive(Debug)]
++pub struct RenderReport<'a> {
++    /// The samples the callback handed to the device, interleaved.
++    pub samples: &'a [f32],
++    /// The number of channels in `samples`.
++    pub channels: usize,
++    /// The context frame of the callback's first sample. While the context is suspended or starting, the
++    /// callback hands the device silence and the frame does not advance.
++    pub frame: u64,
++    /// The time the callback took to render, in nanoseconds.
++    pub render_ns: u64,
++    /// The time the callback's frames last at the context's sample rate, in nanoseconds.
++    pub budget_ns: u64,
++    /// The render time of each render quantum the callback rendered, in nanoseconds.
++    pub quantum_ns: &'a [u64],
++}
++
++/// Sees every callback's output on the render thread. It must not block or allocate.
++pub trait RenderObserver: Send + Sync {
++    fn rendered(&self, report: &RenderReport<'_>);
++}
++
++pub(crate) struct Observer(pub Box<dyn RenderObserver>);
++
+ #[derive(Clone, Debug)]
+ pub(crate) struct AudioStats {
+     inner: Arc<AudioStatsInner>,
+@@ -21,6 +48,13 @@ struct AudioStatsInner {
+     latency_count: AtomicU64,
+     latency_min_ns: AtomicU64,
+     latency_max_ns: AtomicU64,
++    observer: ArcSwapOption<Observer>,
++}
++
++impl std::fmt::Debug for Observer {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str("Observer")
++    }
+ }
+ 
+ #[derive(Copy, Clone, Debug)]
+@@ -60,10 +94,21 @@ impl AudioStats {
+                 latency_count: AtomicU64::new(0),
+                 latency_min_ns: AtomicU64::new(u64::MAX),
+                 latency_max_ns: AtomicU64::new(0),
++                observer: ArcSwapOption::empty(),
+             }),
+         }
+     }
+ 
++    pub(crate) fn set_observer(&self, observer: Option<Box<dyn RenderObserver>>) {
++        self.inner
++            .observer
++            .store(observer.map(|o| Arc::new(Observer(o))));
++    }
++
++    pub(crate) fn observer(&self) -> Option<Arc<Observer>> {
++        self.inner.observer.load_full()
++    }
++
+     pub(crate) fn record_render_callback(&self, render_duration_ns: u64, callback_budget_ns: u64) {
+         self.inner.callback_count.fetch_add(1, Ordering::Relaxed);
+         self.inner

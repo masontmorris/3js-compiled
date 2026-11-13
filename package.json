@@ -1,0 +1,22 @@
+{
+  "name": "3js-compiled",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "node tools/install/patch-three.mjs",
+    "build:scenes": "node tools/scenes/build.mjs",
+    "build:platform": "node tools/platform/build.mjs",
+    "build:canvas2d": "node tools/platform/build-canvas2d.mjs",
+    "test": "npm test -w packages/three-native && node --test tools/perf/*.test.mjs tools/audio-parity/*.test.mjs tools/canvas2d/*.test.mjs",
+    "check": "node tools/wgsl-gate/gate.mjs",
+    "build:audio": "node tools/audio-parity/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "howler": "2.2.4",
+    "playwright-core": "1.65.0",
+    "pngjs": "7.0.0"
+  }
+}

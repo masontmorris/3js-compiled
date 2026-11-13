@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>canvas 2D rasterizer spike</title></head>
+<body>
+<script type="module">
+import { FOLIO_CANVASES, TEXT_CANVAS_VARIANTS } from '/examples/canvas2d/src/folio-canvases.js';
+
+const fonts = [
+  new FontFace('Amatic SC', 'url(/examples/canvas2d/fonts/AmaticSC-Bold.ttf)', { weight: '700' }),
+  new FontFace('Nunito', 'url(/examples/canvas2d/fonts/Nunito-wght.ttf)', { weight: '200 1000' }),
+];
+for (const font of fonts) document.fonts.add(await font.load());
+
+const METRICS = ['width', 'actualBoundingBoxLeft', 'actualBoundingBoxRight', 'actualBoundingBoxAscent', 'actualBoundingBoxDescent',
+  'fontBoundingBoxAscent', 'fontBoundingBoxDescent', 'emHeightAscent', 'emHeightDescent', 'hangingBaseline', 'alphabeticBaseline', 'ideographicBaseline'];
+const STATE = ['font', 'textAlign', 'textBaseline', 'fillStyle', 'strokeStyle', 'lineWidth', 'globalAlpha'];
+
+// Records each case's calls with the state each draw saw, so the spike replays them without a JavaScript engine.
+function record(drawCase) {
+  const canvas = document.createElement('canvas');
+  const ops = [];
+  const gradients = new Map();
+  const raw = new Map();
+  let context;
+  const paint = value => gradients.get(value) ?? value;
+  const wrapped = new Proxy({}, {
+    get(_, name) {
+      const value = context[name];
+      if (typeof value !== 'function') return value;
+      return (...args) => {
+        if (name === 'createLinearGradient') {
+          const gradient = context.createLinearGradient(...args);
+          const description = { linear: args, stops: [] };
+          gradients.set(gradient, description);
+          const proxy = new Proxy(gradient, { get: (target, key) => key === 'addColorStop' ? (offset, color) => { description.stops.push([offset, color]); target.addColorStop(offset, color); } : target[key] });
+          raw.set(proxy, gradient);
+          return proxy;
+        }
+        if (name === 'measureText') {
+          const metrics = context.measureText(...args);
+          ops.push({ op: 'measureText', text: String(args[0]), font: context.font, metrics: Object.fromEntries(METRICS.map(key => [key, metrics[key]])) });
+          return metrics;
+        }
+        const state = Object.fromEntries(STATE.map(key => [key, paint(context[key])]));
+        const op = { op: name, args, state };
+        if (name === 'fillText' || name === 'strokeText') {
+          const metrics = context.measureText(String(args[0]));
+          op.metrics = Object.fromEntries(METRICS.map(key => [key, metrics[key]]));
+        }
+        ops.push(op);
+        return value.apply(context, args);
+      };
+    },
+    set(_, name, value) {
+      context[name] = raw.get(value) ?? value;
+      return true;
+    },
+  });
+  const proxy = new Proxy(canvas, {
+    get(target, name) {
+      if (name === 'getContext') return type => { context = target.getContext(type); return wrapped; };
+      const value = target[name];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(target, name, value) {
+      target[name] = value;
+      if (name === 'width' || name === 'height') ops.push({ op: 'resize', width: target.width, height: target.height });
+      return true;
+    },
+  });
+  drawCase.draw(proxy);
+  return { name: drawCase.name, source: drawCase.source, width: canvas.width, height: canvas.height, ops, png: canvas.toDataURL('image/png') };
+}
+
+globalThis.__cases = [...FOLIO_CANVASES, ...TEXT_CANVAS_VARIANTS].map(record);
+globalThis.__ready = true;
+</script>
+</body>
+</html>

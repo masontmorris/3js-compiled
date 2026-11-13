@@ -1,0 +1,49 @@
+HRTF data: Chromium's composite IRCAM set
+
+Files
+  Composite.flac and README, copied unchanged from chromium/chromium at
+  09931c1f02320a1b1175af4f338c992c02342f89, path
+  third_party/blink/renderer/platform/audio/resources/. Their git blob ids
+  there are 209b1747bbc41eb8881346ab8371eda0a46bb1f5 (Composite.flac) and
+  f152871abc6bbd057147bd5100c4449e45522d6d (README).
+  Composite.flac concatenates the 240 IRC_Composite_C_R0195_T<azimuth>_P<elevation>
+  responses as its README describes. threejsc_audio::init() decodes it and
+  hands it to the engine's port of Chromium's HRTF panner.
+
+Acknowledgement
+  These head-related impulse responses come from the LISTEN HRTF database,
+  measured by the Room Acoustics Team of IRCAM (Institut de Recherche et
+  Coordination Acoustique/Musique), Olivier Warusfel, in the LISTEN project
+  with AKG. http://recherche.ircam.fr/equipes/salles/listen/
+
+Terms
+  IRCAM's LISTEN pages state no terms. The terms below are the copy that
+  libmysofa ships with LISTEN data, in tests/LICENSE.LISTEN_1002_IRC_1002_C_HRIR
+  (https://github.com/hoene/libmysofa/blob/main/tests/LICENSE.LISTEN_1002_IRC_1002_C_HRIR):
+
+    Listen HRTF Database (IRCAM)
+
+    Available: http://recherche.ircam.fr/equipes/salles/listen/
+
+    Copyright (c) 2002 IRCAM (Institut de Recherche et Coordination
+    Acoustique/Musique). All Rights Reserved
+
+    Use of Materials
+
+    The Listen database is public and available for any use. We would however
+    appreciate an acknowledgment of the database somewhere in the description
+    of your work (e.g. paper) or in your development.
+
+    Contacts:
+
+    Olivier Warusfel, Room Acoustics Team, IRCAM 1, place Igor Stravinsky
+    75004 PARIS, France
+
+  Chromium and WebKit ship these files without a separate license. WebKit added
+  the individual responses in r74433 (https://bugs.webkit.org/show_bug.cgi?id=50998)
+  and rebuilt the concatenated file in r132993
+  (https://bugs.webkit.org/show_bug.cgi?id=98294). Neither records how the
+  composite set was derived from the LISTEN subjects.
+
+  The repository's operator chose on 2026-11-12 to ship this set on the terms
+  above, the same footing on which web-audio-api-rs ships LISTEN subject 1003.

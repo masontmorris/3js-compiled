@@ -1,0 +1,38 @@
+diff --git a/src/context/online.rs b/src/context/online.rs
+index 19acfd1..e0a0b4d 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -449,6 +449,8 @@ impl AudioContext {
+ 
+         // Flush out the ctrl msg receiver, cache
+         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
++        #[cfg(feature = "test-control")]
++        crate::test_control::recycle_drained(pending_msgs.len());
+ 
+         // Acquire the active audio graph from the current render thread, shutting it down. The new render thread starts
+         // suspended when this one was, as after a suspend whose continuation has not paused the stream yet.
+diff --git a/src/lib.rs b/src/lib.rs
+index 398ce5f..04a18e0 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -65,6 +65,20 @@ pub mod test_control {
+     use std::sync::{mpsc, Mutex};
+ 
+     static RECYCLE_BARRIER: Mutex<Option<(u8, mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
++    static RECYCLE_DRAINED: Mutex<Option<mpsc::Sender<usize>>> = Mutex::new(None);
++
++    /// Observe the number of messages saved by the next sink change.
++    pub fn watch_next_recycle_drain() -> mpsc::Receiver<usize> {
++        let (send, recv) = mpsc::channel();
++        *RECYCLE_DRAINED.lock().unwrap() = Some(send);
++        recv
++    }
++
++    pub(crate) fn recycle_drained(count: usize) {
++        if let Some(send) = RECYCLE_DRAINED.lock().unwrap().take() {
++            let _ = send.send(count);
++        }
++    }
+ 
+     /// Stop the next graph recycle after the render thread takes the request.
+     pub fn hold_next_recycle(stage: u8) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {

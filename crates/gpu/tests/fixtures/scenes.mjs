@@ -1,0 +1,30 @@
+// Records example scenes for the replay tests and adds a surface readback to the last frame.
+// The Edge references come from tools/parity: <scene>-web.png saved here as <scene>-edge.png.
+// standard-shadow-off records standard-shadow with its shadow map disabled, a render the gate must reject.
+// Usage, from the repository root: node crates/gpu/tests/fixtures/scenes.mjs
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { CommandEncoder, decodeCommands, Opcode, streamFrame } from '../../../../packages/three-native/src/commands.js';
+
+// invalid-wgsl's pipeline validation is answered after frame 0, as the host answers it, so three stops drawing the
+// invalid material in frame 1 as it does in Edge and in the host.
+const fixtures = [['basic-cube', 'basic-cube'], ['standard-shadow', 'standard-shadow'],
+  ['invalid-wgsl', 'invalid-wgsl', '--fail-pipelines=invalid-wgsl-material'], ['standard-shadow-off', 'standard-shadow', '--no-shadows']];
+for (const [fixture, scene, ...flags] of fixtures) {
+  const dir = mkdtempSync(join(tmpdir(), 'threejsc-scene-'));
+  execFileSync(process.execPath, ['tools/scenes/record.mjs', scene, dir, '2', ...flags], { stdio: 'inherit' });
+  for (const index of [0, 1]) {
+    const bytes = new Uint8Array(readFileSync(join(dir, `00${index}.bin`)));
+    const records = decodeCommands(bytes);
+    const frame = new CommandEncoder();
+    for (const { opcode, payload } of records) frame.append(opcode, payload);
+    if (index === 1) {
+      const acquire = records.find(record => record.opcode === Opcode.ACQUIRE_SURFACE);
+      const surface = new DataView(acquire.payload.buffer).getUint32(0, true);
+      frame.readTexture(0xffffffff, surface, { mip: 0, x: 0, y: 0, layer: 0, width: 1280, height: 720 });
+    }
+    writeFileSync(new URL(`./${fixture}-${index}.bin`, import.meta.url), frame.finish(streamFrame(bytes)));
+  }
+}

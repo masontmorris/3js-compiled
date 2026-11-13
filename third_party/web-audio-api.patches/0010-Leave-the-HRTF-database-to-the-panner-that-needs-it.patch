@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 14:20:00 -0500
+Subject: [PATCH 10/10] Leave the HRTF database to the panner that needs it
+
+An online context pre-created the built-in HRTF sphere for every sample
+rate, which costs a second or more while the context is made and only
+serves panners when the embedder set no Chromium responses. The host
+always sets them, so the load was dead work at every context start, and
+its cost showed up as currentTime already partway through when a page
+first read it. Panners still load either database on first use.
+---
+ src/context/concrete_base.rs | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/src/context/concrete_base.rs b/src/context/concrete_base.rs
+index 014cd13..4d713c6 100644
+--- a/src/context/concrete_base.rs
++++ b/src/context/concrete_base.rs
+@@ -216,11 +216,6 @@ impl ConcreteBaseAudioContext {
+             LISTENER_PARAM_IDS.end,
+         );
+ 
+-        // For an online AudioContext, pre-create the HRTF-database for panner nodes
+-        if !offline {
+-            crate::node::load_hrtf_processor(sample_rate as u32);
+-        }
+-
+         base
+     }
+ 

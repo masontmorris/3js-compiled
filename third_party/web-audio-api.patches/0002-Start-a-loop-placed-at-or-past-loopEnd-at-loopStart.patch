@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 01:19:33 -0500
+Subject: [PATCH 2/10] Start a loop placed at or past loopEnd at loopStart
+
+A looping source started at an offset at or past loopEnd clamped its
+playhead to loopEnd and then never entered the loop, so it played on to
+the buffer end. Chromium moves such a playhead to loopStart. Do the same.
+---
+ src/node/audio_buffer_source.rs | 31 +++++++++++++++++++++++++++++--
+ 1 file changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/src/node/audio_buffer_source.rs b/src/node/audio_buffer_source.rs
+index 16f3b31..bbc5fd8 100644
+--- a/src/node/audio_buffer_source.rs
++++ b/src/node/audio_buffer_source.rs
+@@ -691,8 +691,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
+                     // clamp offset to buffer boundaries
+                     self.offset = self.offset.max(0.).min(buffer_duration);
+ 
+-                    if is_looping && computed_playback_rate >= 0. && self.offset > actual_loop_end {
+-                        self.offset = actual_loop_end;
++                    // Chromium moves a playhead at or past the loop end to the loop start
++                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
++                    {
++                        self.offset = actual_loop_start;
+                     }
+ 
+                     if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start
+@@ -1915,6 +1917,31 @@ mod tests {
+         });
+     }
+ 
++    #[test]
++    fn test_loop_offset_past_loop_end_starts_at_loop_start() {
++        let sample_rate = 48_000.;
++        let length = 64;
++        let mut context = OfflineAudioContext::new(1, length, sample_rate);
++
++        let ramp: Vec<f32> = (0..100).map(|i| i as f32).collect();
++        let mut buffer = context.create_buffer(1, ramp.len(), sample_rate);
++        buffer.copy_to_channel(&ramp, 0);
++
++        let mut src = context.create_buffer_source();
++        src.connect(&context.destination());
++        src.set_buffer(buffer);
++        src.set_loop(true);
++        src.set_loop_start(10. / sample_rate as f64);
++        src.set_loop_end(30. / sample_rate as f64);
++        src.start_at_with_offset(0., 50. / sample_rate as f64);
++
++        let result = context.start_rendering_sync();
++        let channel = result.get_channel_data(0);
++
++        let expected: Vec<f32> = (0..length).map(|i| (10 + i % 20) as f32).collect();
++        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-4);
++    }
++
+     #[test]
+     // Regression test: a valid but one-ULP-wide loop region must not hang the render
+     // thread. Naively wrapping `buffer_time` via repeated +=/-= would take billions of

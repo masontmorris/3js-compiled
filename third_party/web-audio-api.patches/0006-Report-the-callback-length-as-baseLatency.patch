@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 05:54:47 -0500
+Subject: [PATCH 6/10] Report the callback length as baseLatency
+
+baseLatency was always zero, as in Gecko. Chromium reports the length of
+the system-level callback the context renders into, which is 10 ms for
+WASAPI shared mode. Report the average callback length so far, or zero
+before the first callback.
+---
+ src/context/online.rs | 12 ++++++++----
+ src/stats.rs          |  7 +++++++
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/src/context/online.rs b/src/context/online.rs
+index 0e55fef..a40ae17 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -307,12 +307,16 @@ impl AudioContext {
+     /// This represents the number of seconds of processing latency incurred by
+     /// the `AudioContext` passing the audio from the `AudioDestinationNode`
+     /// to the audio subsystem.
+-    // We don't do any buffering between rendering the audio and sending
+-    // it to the audio subsystem, so this value is zero. (see Gecko)
+-    #[allow(clippy::unused_self)]
++    // Chromium reports the length of the system-level callback the context renders
++    // into. The device asks for one period at a time, and sometimes two after a late
++    // callback, so this is the shortest callback so far, or zero before the first.
+     #[must_use]
+     pub fn base_latency(&self) -> f64 {
+-        0.
++        let stats = self.stats.snapshot();
++        if stats.callback_count == 0 {
++            return 0.;
++        }
++        stats.callback_budget_min_ns as f64 / 1e9
+     }
+ 
+     /// The estimation in seconds of audio output latency, i.e., the interval
+diff --git a/src/stats.rs b/src/stats.rs
+index de92235..1392e0b 100644
+--- a/src/stats.rs
++++ b/src/stats.rs
+@@ -38,6 +38,7 @@ struct AudioStatsInner {
+     callback_count: AtomicU64,
+     render_duration_ns_total: AtomicU64,
+     callback_budget_ns_total: AtomicU64,
++    callback_budget_min_ns: AtomicU64,
+     underrun_count: AtomicU64,
+     peak_load_ppm: AtomicU64,
+     underrun_duration_ns_total: AtomicU64,
+@@ -62,6 +63,7 @@ pub(crate) struct AudioStatsSnapshot {
+     pub callback_count: u64,
+     pub render_duration_ns_total: u64,
+     pub callback_budget_ns_total: u64,
++    pub callback_budget_min_ns: u64,
+     pub underrun_count: u64,
+     pub underrun_duration_ns_total: u64,
+     pub underrun_events_total: u64,
+@@ -84,6 +86,7 @@ impl AudioStats {
+                 callback_count: AtomicU64::new(0),
+                 render_duration_ns_total: AtomicU64::new(0),
+                 callback_budget_ns_total: AtomicU64::new(0),
++                callback_budget_min_ns: AtomicU64::new(u64::MAX),
+                 underrun_count: AtomicU64::new(0),
+                 peak_load_ppm: AtomicU64::new(0),
+                 underrun_duration_ns_total: AtomicU64::new(0),
+@@ -117,6 +120,9 @@ impl AudioStats {
+         self.inner
+             .callback_budget_ns_total
+             .fetch_add(callback_budget_ns, Ordering::Relaxed);
++        self.inner
++            .callback_budget_min_ns
++            .fetch_min(callback_budget_ns, Ordering::Relaxed);
+         let load_ppm = render_duration_ns
+             .saturating_mul(1_000_000)
+             .checked_div(callback_budget_ns)
+@@ -182,6 +188,7 @@ impl AudioStats {
+             callback_count: self.inner.callback_count.load(Ordering::Relaxed),
+             render_duration_ns_total: self.inner.render_duration_ns_total.load(Ordering::Relaxed),
+             callback_budget_ns_total: self.inner.callback_budget_ns_total.load(Ordering::Relaxed),
++            callback_budget_min_ns: self.inner.callback_budget_min_ns.load(Ordering::Relaxed),
+             underrun_count: self.inner.underrun_count.load(Ordering::Relaxed),
+             underrun_duration_ns_total: self
+                 .inner
