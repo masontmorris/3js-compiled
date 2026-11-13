@@ -1545,6 +1545,7 @@ mod tests {
             ("matchMedia", "true false false"),
             ("navigator", "Win32 true 8"),
             ("localStorage runs", "1"),
+            ("key order", "c,a,b"),
             ("cookie before", "\"\""),
             ("crypto", "true true"),
             ("fetch", "image/png 124"),
@@ -1568,6 +1569,7 @@ mod tests {
         );
         let second = run_platform(&runtime, &storage, 2)?;
         assert_eq!(result(&second, "localStorage runs"), "2");
+        assert_eq!(result(&second, "key order"), "c,a,b", "{second}");
         assert_eq!(result(&second, "cookie before"), "\"visits=1\"");
         std::fs::remove_dir_all(&dir)?;
         Ok(())

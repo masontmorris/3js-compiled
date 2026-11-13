@@ -40,6 +40,13 @@ test('DOMPoint and DOMMatrix construct, combine and print as in Edge', () => {
   assert.throws(() => new DOMMatrix([1, 2]), { name: 'TypeError', message: "Failed to construct 'DOMMatrix': The sequence must contain 6 elements for a 2D matrix or 16 elements for a 3D matrix." });
 });
 
+test('a DOMMatrix with a NaN or Infinity value throws on serialization, as in Edge', () => {
+  assert.throws(() => new DOMMatrix([0, 0, 0, 0, 0, 0]).inverse().toString(), {
+    name: 'InvalidStateError',
+    message: "Failed to execute 'toString' on 'DOMMatrixReadOnly': DOMMatrix cannot be serialized with NaN or Infinity values.",
+  });
+});
+
 test('getBoundingClientRect returns a DOMRect', () => {
   const window = { addEventListener, dispatchEvent, innerWidth: 1280, innerHeight: 720 };
   const document = new Document(window);

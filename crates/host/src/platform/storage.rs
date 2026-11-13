@@ -224,6 +224,25 @@ mod tests {
     }
 
     #[test]
+    fn keys_keep_their_insertion_order_across_a_restart() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("threejsc-storage-order-{}", std::process::id()));
+        let path = dir.join("localStorage.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        let (store, entries) = Store::open(path.clone(), |_| {})?;
+        assert!(entries.is_empty());
+        for (key, value) in [("c", "3"), ("a", "1"), ("b", "2")] {
+            store.change(Change::Set(key.into(), value.into()));
+        }
+        drop(store);
+        let (store, entries) = Store::open(path.clone(), |_| {})?;
+        let keys: Vec<&str> = entries.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["c", "a", "b"], "the file keeps the order the keys were set");
+        drop(store);
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    #[test]
     fn a_corrupt_file_gives_an_empty_store() -> Result<()> {
         let dir = std::env::temp_dir().join(format!("threejsc-storage-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;

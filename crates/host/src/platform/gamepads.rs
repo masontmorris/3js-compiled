@@ -261,12 +261,15 @@ mod tests {
             }
             Ok(())
         };
-        pads.tilt(0, 0, 0.0)?;
+        // A trigger as the pad's first input exposes it with buttons[7] already pressed, as Edge does.
+        pads.tilt(0, 5, 1.0)?;
         poll(&mut pads)?;
-        let fact = pads.snapshot().expect("the pad connects");
-        assert_eq!(fact["pads"][0]["buttons"][7], 0.0);
+        let fact = pads.snapshot().expect("the trigger connects the pad");
+        assert_eq!(
+            fact["pads"][0]["buttons"][7], 1.0,
+            "the first snapshot of the pad carries the trigger: {fact}"
+        );
         pads.press(0, 0, true)?;
-        pads.press(0, 7, true)?;
         pads.tilt(0, 4, 0.5)?;
         pads.tilt(0, 1, -1.0)?;
         poll(&mut pads)?;

@@ -13,7 +13,9 @@ check('navigator', `${navigator.platform} ${/Edg\//.test(navigator.userAgent)} $
 const runs = Number(localStorage.getItem('runs') ?? 0) + 1;
 localStorage.setItem('runs', String(runs));
 localStorage.big = 'x'.repeat(1000);
+for (const key of ['c', 'a', 'b']) localStorage.setItem(key, key);
 check('localStorage runs', runs);
+check('key order', Object.keys(localStorage).filter(key => key.length === 1).join(','));
 check('cookie before', JSON.stringify(document.cookie));
 document.cookie = `visits=${runs}`;
 const random = crypto.getRandomValues(new Uint32Array(8));
