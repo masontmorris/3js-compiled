@@ -338,17 +338,13 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             } else {
                 // A character no font has draws as the missing glyph of the first font whose range holds it, as
                 // Edge does.
-                Some(
-                    charmaps[..chain.listed]
-                        .iter()
-                        .enumerate()
-                        .position(|(index, charmap)| {
-                            chain.allows(index, c) && charmap.map(c).is_some()
-                        })
-                        .or_else(|| chosen.get(&c).copied())
-                        .or_else(|| chain.first_allowing(c))
-                        .unwrap_or(0),
-                )
+                charmaps[..chain.listed]
+                    .iter()
+                    .enumerate()
+                    .position(|(index, charmap)| chain.allows(index, c) && charmap.map(c).is_some())
+                    .or_else(|| chosen.get(&c).copied())
+                    .or_else(|| chain.first_allowing(c))
+                    .or((!charmaps.is_empty()).then_some(0))
             };
             if index != current {
                 if let Some(index) = current {
