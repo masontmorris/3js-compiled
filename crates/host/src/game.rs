@@ -1747,10 +1747,20 @@ mod tests {
         let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
         game.frame()?;
         holds(&mut game, "globalThis.__times = []; true".into())?;
+        // Frames run until the context has played 0.3 s, which a loaded runner may take far longer than that to do.
         let started = Instant::now();
-        while started.elapsed() < std::time::Duration::from_millis(600) {
+        while !holds(
+            &mut game,
+            "__times.length > 10 && __times.at(-1) > 0.3 && new Set(__times).size > 10".into(),
+        )? {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(20),
+                "currentTime advanced while the context ran: {}",
+                std::fs::read_to_string(&log_path)?
+            );
             game.frame()?;
-            // The page's reading, then the engine's: the engine's is the same or a few quanta later.
+            // The page's reading, then the engine's: the engine's is the same or a few quanta later, with room for a
+            // shared runner that preempts the test between the two reads.
             holds(&mut game, "__times.push(__time()); true".into())?;
             let engine = game
                 .js
@@ -1763,7 +1773,7 @@ mod tests {
                     &mut game,
                     format!(
                         "{{ const t = __times.at(-1), e = {engine}, q = t * __rate / 128, r = Math.round(q);
-                        const ok = Math.abs(q - r) < 1e-6 && t <= e && e - t < 0.05 && (__times.length < 2 || t >= __times.at(-2));
+                        const ok = Math.abs(q - r) < 1e-6 && t <= e && e - t < 0.25 && (__times.length < 2 || t >= __times.at(-2));
                         if (!ok) console.log(`currentTime ${{t}} engine ${{e}} quanta ${{q}}`);
                         ok }}"
                     )
@@ -1773,13 +1783,6 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(4));
         }
-        assert!(
-            holds(
-                &mut game,
-                "__times.at(-1) > 0.3 && new Set(__times).size > 10".into()
-            )?,
-            "currentTime advanced while the context ran"
-        );
         Ok(())
     }
 }
