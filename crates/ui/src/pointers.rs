@@ -390,6 +390,19 @@ mod tests {
     }
 
     #[test]
+    fn a_release_with_no_press_goes_to_the_game() {
+        // The down went to the game before this UI existed, or before a device replacement
+        // started it again, so its up belongs to the game too.
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(2, 1160.0);
+        assert_eq!(
+            host.take(),
+            [Game(at(2, 1160.0))],
+            "the up lands on the button"
+        );
+    }
+
+    #[test]
     fn a_press_that_began_on_the_game_stays_with_the_game() {
         let mut host = Host::new(OLD, right_button(1280));
         host.resize(NEW);
