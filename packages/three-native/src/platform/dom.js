@@ -497,6 +497,7 @@ function setAttributeValue(element, namespace, prefix, localName, qualifiedName,
   const old = attributes.get(key);
   attributes.set(key, { namespace: namespace ?? null, prefix: prefix ?? null, localName, qualifiedName, value: String(value) });
   if (namespace === null && localName === 'style' && parseStyle) element.style[STYLE](value);
+  if (namespace === null && (localName === 'width' || localName === 'height')) element[CONTEXT_2D]?.[RESIZE]();
   queueAttribute(element, localName, namespace ?? null, old ? old.value : null);
 }
 function removeAttributeValue(element, namespace, localName) {
@@ -506,6 +507,7 @@ function removeAttributeValue(element, namespace, localName) {
   if (!old) return;
   attributes.delete(key);
   if (namespace === null && localName === 'style') element.style[STYLE]('');
+  if (namespace === null && (localName === 'width' || localName === 'height')) element[CONTEXT_2D]?.[RESIZE]();
   queueAttribute(element, localName, namespace ?? null, old.value);
 }
 // DOM's "validate and extract" for setAttributeNS, with Edge's NamespaceError for each invalid prefix.
@@ -745,11 +747,6 @@ const reflectSize = (name, fallback) => ({
 // Edge's data URL prefix for a canvas; the canvas does not encode its pixels here.
 const TRANSPARENT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 export class HTMLCanvasElement extends HTMLElement {
-  // Setting the width or height attribute resizes the canvas and resets its context, as the property does.
-  setAttribute(name, value) {
-    super.setAttribute(name, value);
-    if (String(name).toLowerCase() === 'width' || String(name).toLowerCase() === 'height') this[CONTEXT_2D]?.[RESIZE]();
-  }
   getContext(type) {
     if (type === '2d') return this[CONTEXT_2D] ??= new CanvasRenderingContext2D(this, this.ownerDocument?.fonts);
     logOnce(`DOM stand-in: HTMLCanvasElement.getContext('${type}') is not implemented and returns null`);

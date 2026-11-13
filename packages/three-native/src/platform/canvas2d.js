@@ -348,7 +348,7 @@ export class ImageData {
   constructor(dataOrWidth, widthOrHeight, height) {
     if (dataOrWidth instanceof Uint8ClampedArray) {
       const width = widthOrHeight >>> 0;
-      if (!width || dataOrWidth.length % (4 * width)) throw new DOMException("Failed to construct 'ImageData': The input data length is not a multiple of (4 * width).", 'IndexSizeError');
+      if (!width || !dataOrWidth.length || dataOrWidth.length % (4 * width) || (height !== undefined && height !== dataOrWidth.length / (4 * width))) throw new DOMException("Failed to construct 'ImageData': The input data length is not a multiple of (4 * width).", 'IndexSizeError');
       this.data = dataOrWidth;
       this.width = width;
       this.height = height ?? dataOrWidth.length / (4 * width);
