@@ -957,6 +957,35 @@ impl Ui {
         Ok(())
     }
 }
+/// One frame's HUD, which the render thread draws over the frame: the slot shown in that frame,
+/// what draws it, and the fence that tells ui-host when the GPU has finished with the slot.
+pub struct Composite {
+    device: wgpu::Device,
+    pipeline: wgpu::RenderPipeline,
+    slot: Option<wgpu::BindGroup>,
+    queue: ID3D12CommandQueue,
+    done: ID3D12Fence,
+    frame: u64,
+}
+impl Composite {
+    /// Draws the HUD over `view` with `encoder`, which `device` made. A HUD made on another
+    /// device, one the game has since replaced, draws nothing.
+    pub fn draw(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
+        let _ = (device, encoder, view);
+        todo!()
+    }
+    /// Tells ui-host that the GPU is done with the slots of this frame and earlier ones. Call it
+    /// after the queue submission that draws the frame.
+    pub fn signal(&self) -> Result<()> {
+        todo!()
+    }
+}
+
 impl Drop for Ui {
     fn drop(&mut self) {
         if let Connection::Running(link) =
@@ -989,6 +1018,154 @@ const COMPOSITE_WGSL: &str = r#"
 mod tests {
     use super::*;
     use std::fs::OpenOptions;
+
+    fn warp() -> wgpu::Adapter {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12,
+            flags: wgpu::InstanceFlags::default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::default(),
+            display: None,
+        });
+        pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            force_fallback_adapter: true,
+            ..Default::default()
+        }))
+        .expect("WARP adapter")
+    }
+
+    /// The pixel a 1x1 black target shows after `composite` draws over it with `device`.
+    fn composited(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        composite: &Composite,
+    ) -> Result<[u8; 4]> {
+        let extent = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = target.create_view(&Default::default());
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        composite.draw(device, &mut encoder, &view);
+        encoder.copy_texture_to_buffer(
+            target.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
+                    rows_per_image: None,
+                },
+            },
+            extent,
+        );
+        queue.submit([encoder.finish()]);
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            bail!("the composite raised a validation error: {error}");
+        }
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::PollType::wait_indefinitely())?;
+        let bytes = slice.get_mapped_range()?;
+        Ok([bytes[0], bytes[1], bytes[2], bytes[3]])
+    }
+
+    #[test]
+    fn a_composite_draws_on_its_own_device_only_and_signals_its_frame() -> Result<()> {
+        use wgpu::util::DeviceExt;
+        let adapter = warp();
+        let (device, queue) = pollster::block_on(adapter.request_device(&Default::default()))?;
+        let (other, other_queue) =
+            pollster::block_on(adapter.request_device(&Default::default()))?;
+        let d3d = D3d::new(&device, &queue)?;
+        let (layout, pipeline) = composite_pipeline(&device, wgpu::TextureFormat::Bgra8Unorm);
+        let slot = device.create_texture_with_data(
+            &queue,
+            &wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &[255, 0, 0, 255],
+        );
+        let slot = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&slot.create_view(&Default::default())),
+            }],
+        });
+        let composite = Composite {
+            device: device.clone(),
+            pipeline,
+            slot: Some(slot),
+            queue: d3d.queue.clone(),
+            done: d3d.done.clone(),
+            frame: 7,
+        };
+        assert_eq!(
+            composited(&device, &queue, &composite)?,
+            [0, 0, 255, 255],
+            "the slot's red over black, in BGRA"
+        );
+        assert_eq!(
+            composited(&other, &other_queue, &composite)?,
+            [0, 0, 0, 255],
+            "a HUD from another device leaves the frame as it was"
+        );
+        composite.signal()?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while unsafe { d3d.done.GetCompletedValue() } < 7 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(unsafe { d3d.done.GetCompletedValue() }, 7);
+        Ok(())
+    }
 
     fn name() -> String {
         let mut bytes = [0u8; 16];
