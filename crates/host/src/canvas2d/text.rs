@@ -644,6 +644,17 @@ mod tests {
         assert_eq!(layout.runs.len(), 1);
         assert_eq!(layout.runs[0].instance.face, nunito);
         assert!(layout.runs[0].glyphs.iter().all(|&(glyph, ..)| glyph == 0));
+        // A variation selector after it stays invisible, as it does after any glyph.
+        let selected = super::layout(&mut fonts, &mut chain, "\u{f8ff}\u{fe0f}", 32.0);
+        assert_eq!(selected.width, layout.width);
+        let visible = |layout: &Layout| {
+            layout
+                .runs
+                .iter()
+                .map(|run| run.glyphs.iter().filter(|&&(glyph, ..)| glyph == 0).count())
+                .sum::<usize>()
+        };
+        assert_eq!(visible(&selected), visible(&layout));
     }
 
     #[cfg(windows)]
