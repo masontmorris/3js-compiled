@@ -432,3 +432,39 @@ test('assigning unicodeRange changes which text a face matches', async () => {
     assert.equal(face.unicodeRange, 'U+400-4FF');
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('font sets report a loading cycle across shared and newly added faces', async () => {
+  const first = new FontFace('One', 'url(data:application/octet-stream;base64,AA==)');
+  const second = new FontFace('Two', 'url(data:application/octet-stream;base64,AA==)');
+  const a = new FontFaceSet();
+  const b = new FontFaceSet();
+  const events = [];
+  for (const [name, set] of [['a', a], ['b', b]]) {
+    set.onloading = event => events.push([name, event.type]);
+    set.onloadingdone = event => events.push([name, event.type, [...event.fontfaces]]);
+  }
+  a.add(first); b.add(first);
+  const p = first.load();
+  a.add(second);
+  const q = second.load();
+  await Promise.all([p, q]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events.filter(e => e[1] === 'loading').map(e => e[0]).sort(), ['a', 'b']);
+  assert.deepEqual(events.find(e => e[0] === 'a' && e[1] === 'loadingdone')[2], [first, second]);
+  assert.deepEqual(events.find(e => e[0] === 'b' && e[1] === 'loadingdone')[2], [first]);
+});
+
+test('font sets report failed faces after a load settles', async () => {
+  const set = new FontFaceSet();
+  const face = new FontFace('Bad', 'url(data:application/octet-stream;base64,AA==)');
+  set.add(face);
+  const events = [];
+  set.onloadingdone = e => events.push([e.type, [...e.fontfaces]]);
+  set.onloadingerror = e => events.push([e.type, [...e.fontfaces]]);
+  setCanvasHost({ fontLoad: () => { throw new Error('bad font'); } });
+  try {
+    await assert.rejects(face.load());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(events, [['loadingdone', []], ['loadingerror', [face]]]);
+  } finally { setCanvasHost({ fontLoad: () => 1 }); }
+});
