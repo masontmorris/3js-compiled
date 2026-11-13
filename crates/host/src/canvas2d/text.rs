@@ -639,36 +639,53 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_character_no_allowed_face_has_draws_the_missing_glyph() {
-        let mut fonts = Fonts::default();
-        let nunito = fonts.load(NUNITO).unwrap();
-        let spec = FontSpec {
-            families: vec![Family::Face(LoadedFace {
+        // Nunito maps the private-use U+F8FF and no Windows font does. With Nunito's range leaving it out, Edge 157
+        // shapes it with the first listed face whose range holds it, else Times New Roman, the standard font, and
+        // draws that face's missing glyph.
+        let missing = |rest: Vec<Family>, text: &str| {
+            let mut fonts = Fonts::default();
+            let nunito = fonts.load(NUNITO).unwrap();
+            let mut families = vec![Family::Face(LoadedFace {
                 id: nunito,
                 weight: [400.0, 400.0],
                 ranges: Some(vec![[0, 0xff]]),
-            })],
-            size: 32.0,
-            weight: 400.0,
-            italic: false,
-        };
-        let mut chain = chain(&mut fonts, &spec);
-        // Nunito maps the private-use U+F8FF and no Windows font does. Its range leaves it out, so Edge draws the
-        // first available font's missing glyph.
-        let layout = layout(&mut fonts, &mut chain, "\u{f8ff}", 32.0);
-        assert_eq!(layout.runs.len(), 1);
-        assert_eq!(layout.runs[0].instance.face, nunito);
-        assert!(layout.runs[0].glyphs.iter().all(|&(glyph, ..)| glyph == 0));
-        // A variation selector after it stays invisible, as it does after any glyph.
-        let selected = super::layout(&mut fonts, &mut chain, "\u{f8ff}\u{fe0f}", 32.0);
-        assert_eq!(selected.width, layout.width);
-        let visible = |layout: &Layout| {
-            layout
+            })];
+            families.extend(rest);
+            let spec = FontSpec {
+                families,
+                size: 32.0,
+                weight: 400.0,
+                italic: false,
+            };
+            let mut chain = chain(&mut fonts, &spec);
+            let layout = layout(&mut fonts, &mut chain, text, 32.0);
+            let standard = fonts.family(STANDARD, 400.0, false).unwrap();
+            let faces: Vec<FaceId> = layout.runs.iter().map(|run| run.instance.face).collect();
+            let glyphs: Vec<u32> = layout
                 .runs
                 .iter()
-                .map(|run| run.glyphs.iter().filter(|&&(glyph, ..)| glyph == 0).count())
-                .sum::<usize>()
+                .flat_map(|run| run.glyphs.iter().map(|g| g.0))
+                .collect();
+            (faces, glyphs, layout.width, nunito, standard, chain)
         };
-        assert_eq!(visible(&selected), visible(&layout));
+        let (faces, glyphs, width, nunito, standard, _) = missing(Vec::new(), "\u{f8ff}");
+        assert_eq!(faces, [standard]);
+        assert_ne!(faces[0], nunito);
+        assert_eq!(glyphs, [0]);
+        // A variation selector or a mark after it adds no box and no advance.
+        for tail in ["\u{fe0f}", "\u{200d}", "\u{301}"] {
+            let (_, glyphs, selected, ..) = missing(Vec::new(), &format!("\u{f8ff}{tail}"));
+            assert_eq!(selected, width, "{tail:?}");
+            assert_eq!(
+                glyphs.iter().filter(|&&glyph| glyph == 0).count(),
+                1,
+                "{tail:?}"
+            );
+        }
+        let (faces, glyphs, .., chain) =
+            missing(vec![Family::System("verdana".into())], "\u{f8ff}");
+        assert_eq!(faces, [chain.instances[1].face]);
+        assert_eq!(glyphs, [0]);
     }
 
     #[cfg(windows)]
