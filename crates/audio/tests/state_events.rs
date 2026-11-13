@@ -34,14 +34,6 @@ fn timed_out_suspend_emits_one_state_change() {
         ..Default::default()
     });
     wait(|| context.state() == AudioContextState::Running);
-    let (startup_tx, startup_rx) = std::sync::mpsc::channel();
-    context.set_onsinkchange(move |_| {
-        let _ = startup_tx.send(());
-    });
-    context.test_event_marker();
-    startup_rx
-        .recv_timeout(Duration::from_secs(10))
-        .expect("startup event barrier");
     let held = Arc::new(AtomicBool::new(false));
     let released = Arc::new(AtomicBool::new(false));
     let returned = Arc::new(AtomicBool::new(false));
@@ -51,6 +43,14 @@ fn timed_out_suspend_emits_one_state_change() {
         returned: returned.clone(),
     })));
     wait(|| held.load(Ordering::Acquire));
+    let (startup_tx, startup_rx) = std::sync::mpsc::channel();
+    context.set_onsinkchange(move |_| {
+        let _ = startup_tx.send(());
+    });
+    context.test_event_marker();
+    startup_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("startup event barrier");
     let events = Arc::new(AtomicUsize::new(0));
     let observed = events.clone();
     context.set_onstatechange(move |_| {

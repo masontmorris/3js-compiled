@@ -115,6 +115,12 @@ fn moving_a_running_graph_does_not_change_its_state() {
         assert!(Instant::now() < deadline, "context did not start");
         std::thread::yield_now();
     }
+    let (startup_send, startup_recv) = mpsc::channel();
+    context.set_render_observer(Some(Box::new(Callback(startup_send))));
+    startup_recv
+        .recv_timeout(Duration::from_secs(10))
+        .expect("startup callback");
+    context.set_render_observer(None);
     let (initial_send, initial_recv) = mpsc::channel();
     context.set_onsinkchange(move |_| {
         let _ = initial_send.send(());
