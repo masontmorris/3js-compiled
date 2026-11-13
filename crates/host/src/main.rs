@@ -710,7 +710,10 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                 gpu = replaced;
                 if let Some(page) = page.clone().filter(|_| ui.is_some() || ui_launch.is_some()) {
                     log(log_file, "UI restarts on the device the game requested")?;
-                    ui = None;
+                    // A patch the old UI already took is resent, unless the game sent a newer one.
+                    if let Some(old) = ui.take() {
+                        pending_patch = pending_patch.or_else(|| old.into_state());
+                    }
                     ui_launch = Some(launch_ui(&gpu, page, size));
                 }
             }

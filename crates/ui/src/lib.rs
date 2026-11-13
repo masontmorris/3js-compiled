@@ -12,7 +12,10 @@ use std::{
     io::{BufReader, Write},
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     process::{Child, Command, Stdio},
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 use threejsc_ipc::{self as proto, Msg, place, reply};
@@ -569,7 +572,6 @@ pub struct Ui {
     events: VecDeque<String>,
     dropped: u64,
     notes: Vec<String>,
-    launches: u32,
     last_failure: Option<String>,
     /// The game frame of the last `update`.
     frame: u64,
@@ -606,7 +608,6 @@ impl Ui {
             events: VecDeque::new(),
             dropped: 0,
             notes: Vec::new(),
-            launches: 0,
             last_failure: None,
             frame: 0,
         };
@@ -619,11 +620,13 @@ impl Ui {
         self.failures = self.failures.saturating_add(1);
         Connection::Backoff(Instant::now() + retry_delay(self.failures))
     }
-    /// Opens ui-host.log for the next ui-host: truncated for the first, appended to after,
-    /// so a relaunch keeps the earlier instances' records.
+    /// Opens ui-host.log for the next ui-host: truncated for the process's first, appended to
+    /// after, so a relaunch keeps the earlier instances' records. The count is the process's, not
+    /// this UI's, because a UI that replaces another on a new device writes to the same log.
     fn open_log(&mut self) -> Result<File> {
-        self.launches += 1;
-        if self.launches == 1 {
+        static LAUNCHES: AtomicU32 = AtomicU32::new(0);
+        let launches = LAUNCHES.fetch_add(1, Ordering::Relaxed) + 1;
+        if launches == 1 {
             return Ok(File::create("ui-host.log")?);
         }
         let mut log = OpenOptions::new()
@@ -633,8 +636,10 @@ impl Ui {
         writeln!(
             log,
             "[host] ui-host launch {} after: {}",
-            self.launches,
-            self.last_failure.as_deref().unwrap_or("unknown")
+            launches,
+            self.last_failure
+                .as_deref()
+                .unwrap_or("the GPU device was replaced")
         )?;
         Ok(log)
     }
@@ -665,6 +670,10 @@ impl Ui {
             }
         });
         self.connection = Connection::Launching(rx);
+    }
+    /// The game's latest state, for the UI that replaces this one on a new device.
+    pub fn into_state(mut self) -> Option<String> {
+        self.state.take()
     }
     pub fn update(
         &mut self,
