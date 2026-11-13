@@ -129,6 +129,22 @@ fn readbacks_and_errors_cross_the_response_channel() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_stream_submitted_at_the_top_level_runs_before_the_first_frames() {
+    let run = run(
+        "top-level-submit",
+        &test_entry("top-level-submit.js"),
+        serde_json::json!([{"type": "wait", "frames": 6}]),
+    );
+    assert!(
+        !run.log.contains("first frame submit failed"),
+        "{}",
+        run.log
+    );
+    assert_near(&run, (640, 360), [0, 255, 0]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_stream_cannot_destroy_the_surface() {
     let run = run(
         "destroy-surface",
