@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Waker};
 use std::time::{Duration, Instant};
 
 use threejsc_audio::web_audio_api::context::{
@@ -126,17 +126,20 @@ fn close_while_a_suspend_waits_for_the_render_thread_returns() {
 
 #[test]
 fn a_suspend_a_resume_overtook_leaves_the_stream_running() {
-    let context = context();
-    wait_for("running", || context.state() == AudioContextState::Running);
+    // The render thread is held until the suspend has started, or it could answer before the first poll, and the
+    // suspend would finish before the resume it is meant to be overtaken by.
+    let (context, released) = stalled();
     let mut suspend = pin!(context.suspend());
-    let mut cx = Context::from_waker(Waker::noop());
-    if suspend.as_mut().poll(&mut cx) == Poll::Pending {
-        wait_for("suspended", || {
-            context.state() == AudioContextState::Suspended
-        });
-        context.resume_sync();
-        finish(suspend);
-    }
+    assert!(
+        start(suspend.as_mut()),
+        "the suspend waits for the held render thread"
+    );
+    released.store(true, Ordering::Release);
+    wait_for("suspended", || {
+        context.state() == AudioContextState::Suspended
+    });
+    context.resume_sync();
+    finish(suspend);
     assert_eq!(context.state(), AudioContextState::Running);
     assert!(advances(&context), "the context renders after the resume");
     context.close_sync();
