@@ -250,6 +250,7 @@ test('the pixel check fails records that lack a size, coverage or mean', () => {
     assert.equal(pixelFailures([line]).length, 1, missing);
   }
   assert.equal(pixelFailures([{ ...good, size: '0x2', edgeSize: '0x2' }]).length, 1);
+  assert.equal(pixelFailures([{ ...good, mean: -0.5 }]).length, 1);
 });
 
 test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font covers, named Windows fonts', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
