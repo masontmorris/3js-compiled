@@ -10,3 +10,4 @@ examples/platform/platform-bundle.js
 examples/audio/audio-bundle.js
 examples/audio/stress-bundle.js
 examples/audio/howler-bundle.js
+examples/audio/lane9-bundle.js

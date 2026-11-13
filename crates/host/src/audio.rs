@@ -103,6 +103,13 @@ impl Audio {
             let sink = Arc::clone(&lines);
             let followed =
                 threejsc_audio::device::follow_default(Duration::from_millis(200), move |line| {
+                    eprintln!(
+                        "[{}] {line}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0)
+                    );
                     sink.lock().unwrap().push(line)
                 });
             let contexts = Arc::downgrade(&followed);
