@@ -1,7 +1,10 @@
 //! The `AudioContext` type and constructor options
 use std::error::Error;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::Duration;
 
 #[cfg(feature = "diagnostics")]
@@ -20,6 +23,33 @@ use crate::MediaElement;
 use crate::{is_valid_sample_rate, AudioPlaybackStats, AudioRenderCapacity, Event};
 
 use futures_channel::oneshot;
+
+/// How long the control thread waits for the render thread to answer. A stream that stopped after a device error runs no
+/// callback, and the render thread lives in that callback, so its answer never comes.
+const ANSWER_DEADLINE: Duration = Duration::from_secs(2);
+
+/// Waits for the render thread's answer for up to `ANSWER_DEADLINE`, and answers whether it came.
+async fn answered(mut answer: oneshot::Receiver<()>) -> bool {
+    // A timer thread starts only once the answer is not already there, and stops when this returns.
+    let mut deadline = None;
+    std::future::poll_fn(|cx| {
+        if let Poll::Ready(answer) = Pin::new(&mut answer).poll(cx) {
+            return Poll::Ready(answer.is_ok());
+        }
+        let (_cancel, expired) = deadline.get_or_insert_with(|| {
+            let (expire, expired) = oneshot::channel::<()>();
+            let (cancel, cancelled) = crossbeam_channel::bounded::<()>(0);
+            std::thread::spawn(move || {
+                if cancelled.recv_timeout(ANSWER_DEADLINE) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
+                    let _ = expire.send(());
+                }
+            });
+            (cancel, expired)
+        });
+        Pin::new(expired).poll(cx).map(|_| false)
+    })
+    .await
+}
 
 /// Check if the provided sink_id is available for playback
 ///
@@ -442,7 +472,7 @@ impl AudioContext {
             }
             // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
             // callback, so withdraw the request, leave the context as it was and report the error.
-            match graph_recv.recv_timeout(Duration::from_secs(2)) {
+            match graph_recv.recv_timeout(ANSWER_DEADLINE) {
                 Ok(recycled) => recycled,
                 Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
                     for msg in pending_msgs {
@@ -604,9 +634,9 @@ impl AudioContext {
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
         log::debug!("Suspending audio graph, waiting for signal..");
-        receiver.await.unwrap();
+        let answered = answered(receiver).await;
 
-        self.finish_suspend(&**self.backend_manager.lock().unwrap(), epoch);
+        self.finish_suspend(&**self.backend_manager.lock().unwrap(), epoch, answered);
     }
 
     /// Stages control messages and asks the render thread to suspend, under the backend manager lock. Answers the
@@ -630,9 +660,17 @@ impl AudioContext {
     }
 
     /// Suspends the stream once the render thread has suspended, unless a later suspend, a resume or close came first.
-    fn finish_suspend(&self, backend: &dyn AudioBackendManager, epoch: u64) {
+    /// When the render thread did not answer, its stream runs no callback, so the context suspends without it and leaves
+    /// the stream alone.
+    fn finish_suspend(&self, backend: &dyn AudioBackendManager, epoch: u64, answered: bool) {
         if self.closing.load(Ordering::Acquire) || self.lifecycle.load(Ordering::Acquire) != epoch {
             log::debug!("Suspended audio graph. A later lifecycle call owns the stream");
+            return;
+        }
+
+        if !answered {
+            log::warn!("Suspend: the render thread did not answer, so the output stream is not running");
+            self.base.set_state(AudioContextState::Suspended);
             return;
         }
 
@@ -670,7 +708,10 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
-        receiver.await.unwrap();
+        if !answered(receiver).await {
+            log::warn!("Resume: the render thread did not answer, so the output stream is not running");
+            return;
+        }
         log::debug!("Resumed audio graph");
     }
 
@@ -725,7 +766,10 @@ impl AudioContext {
             // Wait for the render thread to have processed the close message.
             // The AudioContextState will be updated by the render thread.
             log::debug!("Closing audio graph, waiting for signal..");
-            receiver.await.unwrap();
+            if !answered(receiver).await {
+                log::warn!("Close: the render thread did not answer, so the output stream is not running");
+                self.base.set_state(AudioContextState::Closed);
+            }
         }
 
         // Then ask the audio host to close the stream
@@ -790,9 +834,9 @@ impl AudioContext {
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
         log::debug!("Suspending audio graph, waiting for signal..");
-        receiver.recv().ok();
+        let answered = receiver.recv_timeout(ANSWER_DEADLINE).is_ok();
 
-        self.finish_suspend(&**backend_manager_guard, epoch);
+        self.finish_suspend(&**backend_manager_guard, epoch, answered);
     }
 
     /// Resumes the progression of time in an audio context that has previously been
@@ -819,7 +863,10 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
-        receiver.recv().ok();
+        if receiver.recv_timeout(ANSWER_DEADLINE).is_err() {
+            log::warn!("Resume: the render thread did not answer, so the output stream is not running");
+            return;
+        }
         log::debug!("Resumed audio graph");
     }
 
@@ -848,7 +895,10 @@ impl AudioContext {
             // Wait for the render thread to have processed the close message.
             // The AudioContextState will be updated by the render thread.
             log::debug!("Closing audio graph, waiting for signal..");
-            receiver.recv().ok();
+            if receiver.recv_timeout(ANSWER_DEADLINE).is_err() {
+                log::warn!("Close: the render thread did not answer, so the output stream is not running");
+                self.base.set_state(AudioContextState::Closed);
+            }
         }
 
         // Then ask the audio host to close the stream
