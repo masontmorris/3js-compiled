@@ -145,6 +145,23 @@ fn a_stream_submitted_at_the_top_level_runs_before_the_first_frames() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn an_error_names_the_frame_and_command_of_the_stream_that_raised_it() {
+    let run = run(
+        "carried-error",
+        &test_entry("carried-error.js"),
+        serde_json::json!([{"type": "wait", "frames": 6}]),
+    );
+    for expected in [
+        "GPU error: frame 7, command 1, label loading,",
+        "GPU error: frame 1, command 1, label frame,",
+    ] {
+        assert!(run.log.contains(expected), "{expected}
+{}", run.log);
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_stream_cannot_destroy_the_surface() {
     let run = run(
         "destroy-surface",
