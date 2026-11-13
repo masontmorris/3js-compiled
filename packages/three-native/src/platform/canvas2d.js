@@ -231,7 +231,13 @@ export class FontFaceSet extends EventTarget {
   // unchanged set return the same promise, as in Edge.
   get ready() {
     if (!this.#ready || this.#ready.generation !== loadGeneration) {
-      const promise = Promise.allSettled([...this.#faces].filter(face => face.status === 'loading').map(face => face.loaded)).then(() => this);
+      const promise = (async () => {
+        let loading;
+        while ((loading = [...this.#faces].filter(face => face.status === 'loading')).length) {
+          await Promise.allSettled(loading.map(face => face.loaded));
+        }
+        return this;
+      })();
       this.#ready = { generation: loadGeneration, promise };
     }
     return this.#ready.promise;
