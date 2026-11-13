@@ -28,6 +28,7 @@ globalThis.Element = class Element {
     this.parent.children.splice(this.parent.children.indexOf(this), 1);
     this.parent = null;
   }
+  get offsetWidth() { return this.box[2]; }
   get parentElement() { return this.parent; }
   get nextElementSibling() {
     const siblings = this.parent?.children ?? [];
@@ -43,6 +44,7 @@ globalThis.Element = class Element {
     return false;
   }
 };
+globalThis.HTMLElement = Element;
 let reads = 0, clock = 0, READ_MS = 0;
 globalThis.Node = { DOCUMENT_POSITION_FOLLOWING: 4 };
 globalThis.NodeFilter = { SHOW_ELEMENT: 1 };
@@ -484,5 +486,25 @@ const c = new Element("div#c", [1060, 20, 200, 80], body);
 ids(c);
 const sizes = Object.values(S).filter(v => v instanceof Map).map(map => map.size);
 same(sizes.every(size => size <= 1), true, `cache sizes ${sizes}`);
+"#);
+}
+
+#[test]
+fn offset_measured_rebuilt_elements_do_not_need_a_walk_past_unrelated_rows() {
+    run(r#"
+for (let i = 0; i < 2000; i++) new Element("row", [i, 600, 1, 1], body);
+let items = [];
+READ_MS = 0.001;
+for (let n = 0; n < 3; n++) {
+  for (const item of items) item.remove();
+  items = Array.from({ length: 200 }, (_, i) => new Element("button", [i * 5, 20, 4, 10], body));
+  const before = reads;
+  const [, , , got] = tick(() => JSON.stringify({ rects: items.map(item => {
+    same(item.offsetWidth, 4, "native offset width preserved");
+    return item.box;
+  }) }));
+  same(got.every(id => id > 0) && new Set(got).size === 200, true, "rebuilt offset-measured rects named");
+  same(reads - before < 450, true, `box reads ${reads - before} include no unrelated rows`);
+}
 "#);
 }
