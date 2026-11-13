@@ -459,7 +459,11 @@ impl AudioContext {
 
             let msg = pending_msgs.remove(0);
             match msg {
-                ControlMessage::Startup { graph, suspended } => (graph, suspended),
+                ControlMessage::Startup { graph, suspended } => {
+                    let suspend_pending = pending_msgs.iter().any(|msg| matches!(msg, ControlMessage::Suspend { .. }));
+                    let suspended = suspended || (suspend_pending && self.state() == AudioContextState::Suspended);
+                    (graph, suspended)
+                },
                 _ => unreachable!(),
             }
         } else {
