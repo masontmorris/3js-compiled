@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CanvasGradient, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
+import { CanvasGradient, FontFace, FontFaceSet, FontFaceSetLoadEvent, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
 import { Document } from '../src/platform/dom.js';
 import { DOMMatrix } from '../src/platform/geometry.js';
 
@@ -320,6 +320,23 @@ test('a face that failed to load makes fonts.load reject and fonts.check return 
     await assert.rejects(face.load(), { name: 'NetworkError' });
     await assert.rejects(set.load('16px Gone'), { name: 'NetworkError' });
     assert.equal(set.check('16px Gone'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a failed face beside a loaded face with the same descriptors makes fonts.check false and fonts.load reject in either order, as in Edge', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => (url.includes('gone') ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+  try {
+    for (const order of ['failed first', 'loaded first']) {
+      const set = new FontFaceSet();
+      const bad = new FontFace('Twin', 'url(https://example.test/gone)');
+      const good = new FontFace('Twin', 'url(https://example.test/twin)');
+      for (const face of order === 'failed first' ? [bad, good] : [good, bad]) set.add(face);
+      await Promise.allSettled([bad.load(), good.load()]);
+      assert.deepEqual([bad.status, good.status], ['error', 'loaded'], order);
+      assert.equal(set.check('16px Twin', 'a'), false, order);
+      await assert.rejects(set.load('16px Twin', 'a'), { name: 'NetworkError' }, order);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });
 
