@@ -9,6 +9,7 @@ import { cpus } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { withEdge, withTimeout } from './edge.mjs';
+import { parse } from './perf-log.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };
@@ -40,14 +41,6 @@ async function measured(body) {
   const elapsed = performance.now() - started;
   const other = (busy1 - busy0 - (dpc1 - dpc0) - (interrupt1 - interrupt0) - own) / elapsed / processors * 100;
   return { ...result, otherPercent: Number(other.toFixed(1)), ownCores: Number((own / elapsed).toFixed(2)) };
-}
-
-function parse(lines) {
-  const draws = lines.map(line => /perf load run=0 ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
-  const spans = lines.map(line => /perf loadspan ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
-  const firstFrames = lines.map(line => /perf frame1 ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => Number(m[1]));
-  const dynamic = lines.map(line => /dynamic frames=(\d+) draw median ms=([\d.]+) p95 ms=([\d.]+) max ms=([\d.]+) span median ms=([\d.]+) p95 ms=([\d.]+) max ms=([\d.]+)/.exec(line)).filter(Boolean).map(m => ({ frames: Number(m[1]), median: Number(m[2]), p95: Number(m[3]), max: Number(m[4]), spanMedian: Number(m[5]), spanP95: Number(m[6]), spanMax: Number(m[7]) }));
-  return { loads: spans, draws, firstFrames, dynamic };
 }
 
 async function edgePage(scene, waitFrames, ids) {
