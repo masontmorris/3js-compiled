@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>canvas pixel cases</title></head>
+<body><script type="module">
+import { drawAll, loadFonts } from './canvas2d-pixels.js';
+await loadFonts();
+globalThis.__result = drawAll().map(({ name, canvas }) => ({ name, png: canvas.toDataURL('image/png') }));
+</script></body>
+</html>

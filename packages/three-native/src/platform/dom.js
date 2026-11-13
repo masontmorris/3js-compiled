@@ -5,6 +5,7 @@ import { DOM_METHODS, EVENT_HANDLERS, CSS_PROPERTIES } from './dom-methods.js';
 import { DOMRect } from './geometry.js';
 import { platformError } from './errors.js';
 import { queueAttribute, queueCharacterData, queueChildList } from './observers.js';
+import { CanvasRenderingContext2D, CONTEXT_2D, FontFaceSet, RESIZE } from './canvas2d.js';
 
 const ATTRIBUTES = Symbol('attributes');
 const CHILDREN = Symbol('children');
@@ -496,6 +497,7 @@ function setAttributeValue(element, namespace, prefix, localName, qualifiedName,
   const old = attributes.get(key);
   attributes.set(key, { namespace: namespace ?? null, prefix: prefix ?? null, localName, qualifiedName, value: String(value) });
   if (namespace === null && localName === 'style' && parseStyle) element.style[STYLE](value);
+  if (namespace === null && (localName === 'width' || localName === 'height')) element[CONTEXT_2D]?.[RESIZE]();
   queueAttribute(element, localName, namespace ?? null, old ? old.value : null);
 }
 function removeAttributeValue(element, namespace, localName) {
@@ -505,6 +507,7 @@ function removeAttributeValue(element, namespace, localName) {
   if (!old) return;
   attributes.delete(key);
   if (namespace === null && localName === 'style') element.style[STYLE]('');
+  if (namespace === null && (localName === 'width' || localName === 'height')) element[CONTEXT_2D]?.[RESIZE]();
   queueAttribute(element, localName, namespace ?? null, old.value);
 }
 // DOM's "validate and extract" for setAttributeNS, with Edge's NamespaceError for each invalid prefix.
@@ -741,11 +744,19 @@ const reflectSize = (name, fallback) => ({
   configurable: true,
   enumerable: true,
 });
+// Edge's data URL prefix for a canvas; the canvas does not encode its pixels here.
+const TRANSPARENT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 export class HTMLCanvasElement extends HTMLElement {
   getContext(type) {
+    if (type === '2d') return this[CONTEXT_2D] ??= new CanvasRenderingContext2D(this, this.ownerDocument?.fonts);
     logOnce(`DOM stand-in: HTMLCanvasElement.getContext('${type}') is not implemented and returns null`);
     return null;
   }
+  toDataURL() {
+    logOnce('HTMLCanvasElement.toDataURL is not implemented; it returns a transparent 1x1 PNG');
+    return TRANSPARENT_PNG;
+  }
+  get [Symbol.for('threejsc.pixels')]() { return this[CONTEXT_2D]?.[Symbol.for('threejsc.pixels')]; }
 }
 Object.defineProperties(HTMLCanvasElement.prototype, { width: reflectSize('width', 300), height: reflectSize('height', 150) });
 
@@ -762,6 +773,7 @@ export class Document extends Node {
     this.ownerDocument = null;
     this.defaultView = window;
     this.readyState = 'complete';
+    this.fonts = new FontFaceSet();
     this.visibilityState = 'visible';
     this.hidden = false;
     this.characterSet = 'UTF-8';

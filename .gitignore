@@ -11,3 +11,4 @@ examples/audio/audio-bundle.js
 examples/audio/stress-bundle.js
 examples/audio/howler-bundle.js
 examples/audio/lane9-bundle.js
+examples/canvas2d/canvas2d-bundle.js

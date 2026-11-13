@@ -375,44 +375,44 @@ Checks that need no GPU run on Modal in parallel. Modal containers are Linux, an
 
 **Files.**
 
-- [ ] Create `packages/three-native/src/platform/canvas2d.js`.
-- [ ] Create `crates/host/src/canvas2d/`.
-- [ ] Create `examples/canvas2d/` with copies of folio's label drawing code.
+- [x] Create `packages/three-native/src/platform/canvas2d.js`.
+- [x] Create `crates/host/src/canvas2d/`.
+- [x] Create `examples/canvas2d/` with copies of folio's label drawing code.
 
 **Build.**
 
-- [ ] Prototype two rasterizers on folio's label canvases and diff each against Edge. Keep the closer one and record the result in Appendix A.
-- [ ] Implement the 2D context calls folio uses, listed in `spikes/folio-2025-assessment.md`.
-- [ ] Add `FontFace` and `document.fonts.add` for bundled TTF and WOFF2 files.
-- [ ] Upload canvases through `CanvasTexture`.
+- [x] Prototype two rasterizers on folio's label canvases and diff each against Edge. Keep the closer one and record the result in Appendix A.
+- [x] Implement the 2D context calls folio uses, listed in `spikes/folio-2025-assessment.md`.
+- [x] Add `FontFace` and `document.fonts.add` for bundled TTF and WOFF2 files.
+- [x] Upload canvases through `CanvasTexture`.
 
 **You see.**
 
-- [ ] `host --entry examples/canvas2d/index.js` shows folio's labels in Pally, Amatic SC, and Nunito.
+- [x] `host --entry examples/canvas2d/index.js` shows folio's labels in Pally, Amatic SC, and Nunito.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/three-native/test/canvas2d.test.js` checks `measureText` widths against recorded Edge values. Run `npm test -w packages/three-native`.
+- [x] `packages/three-native/test/canvas2d.test.js` checks `measureText` widths against recorded Edge values. Run `npm test -w packages/three-native`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `opencode:opencode-go/deepseek-v4.1-flash max` at the PR head, run one after another per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. Run the E5 platform example at trunk and head. Save `e6-regression.png`. Pass when both captures match.
-- [ ] Lane 2. Draw text in Pally. Save `e6-pally.png`. Pass when the difference against Edge is 3 percent or less.
-- [ ] Lane 3. Draw text in Amatic SC. Save `e6-amatic.png`. Pass when the difference against Edge is 3 percent or less.
-- [ ] Lane 4. Draw text in Nunito at 12, 24, and 64 px. Save `e6-sizes.png`. Pass when the difference against Edge is 3 percent or less.
-- [ ] Lane 5. Draw every `textAlign` and `textBaseline` value. Save `e6-align.png`. Pass when glyph boxes sit within 1 px of Edge.
-- [ ] Lane 6. Draw text with an emoji. Save `e6-emoji.png`. Pass when the emoji draws from a fallback font with no missing-glyph box.
-- [ ] Lane 7. Draw an image with `drawImage` under text. Save `e6-image.png`. Pass when the difference against Edge is 2 percent or less.
-- [ ] Lane 8. Fill shapes with gradients and `globalAlpha`. Save `e6-fills.png`. Pass when the difference against Edge is 2 percent or less.
-- [ ] Lane 9. Resize a canvas and redraw. Save `e6-resize.png`. Pass when the texture size matches and no stale pixels remain.
-- [ ] Lane 10. Update a `CanvasTexture` every frame. Save `e6-dynamic.png`. Pass when the texture shows the current frame number.
+- [x] Lane 1. Regression lane against trunk. Run the E5 platform example at trunk and head. Save `e6-regression.png`. Pass when both captures match.
+- [x] Lane 2. Draw text in Pally. Save `e6-pally.png`. Pass when the difference against Edge is 3 percent or less.
+- [x] Lane 3. Draw text in Amatic SC. Save `e6-amatic.png`. Pass when the difference against Edge is 3 percent or less.
+- [x] Lane 4. Draw text in Nunito at 12, 24, and 64 px. Save `e6-sizes.png`. Pass when the difference against Edge is 3 percent or less.
+- [x] Lane 5. Draw every `textAlign` and `textBaseline` value. Save `e6-align.png`. Pass when glyph boxes sit within 1 px of Edge.
+- [x] Lane 6. Draw text with an emoji. Save `e6-emoji.png`. Pass when the emoji draws from a fallback font with no missing-glyph box.
+- [x] Lane 7. Draw an image with `drawImage` under text. Save `e6-image.png`. Pass when the difference against Edge is 2 percent or less.
+- [x] Lane 8. Fill shapes with gradients and `globalAlpha`. Save `e6-fills.png`. Pass when the difference against Edge is 2 percent or less.
+- [x] Lane 9. Resize a canvas and redraw. Save `e6-resize.png`. Pass when the texture size matches and no stale pixels remain.
+- [x] Lane 10. Update a `CanvasTexture` every frame. Save `e6-dynamic.png`. Pass when the texture shows the current frame number.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. Time to draw folio's 10 label canvases at load, and per-frame time for one dynamic canvas.
-- [ ] Probe. Run `examples/canvas2d` in Edge and in the host, interleaved, three runs each.
-- [ ] Baseline. Trunk has no canvas 2D. Record that, then record Edge's times first.
-- [ ] Rule. E6 fails when the load time exceeds 50 ms or the dynamic canvas takes more than 1 ms per frame.
+- [x] Metric. Time to draw folio's 10 label canvases at load, and per-frame time for one dynamic canvas.
+- [x] Probe. Run `examples/canvas2d` in Edge and in the host, interleaved, three runs each.
+- [x] Baseline. Trunk has no canvas 2D. Record that, then record Edge's times first.
+- [x] Rule. E6 fails when the load time exceeds 50 ms or the dynamic canvas takes more than 1 ms per frame.
 
 **Review gate.** None. E6 is not review-gated.
 
@@ -803,6 +803,7 @@ The spikes live in `spikes/` at commit `896e785` of the engine repo. Each folder
 - `spikes/host` shows that V8 and Servo in one executable need a V8 pin and a linker override, so that layout can't ship.
 - `spikes/xproc` shows Servo in its own process. The game pays about 0.03 ms per frame, a round trip takes 1 frame, and state reaches HUD pixels in about 4 frames at vsync.
 - `spikes/folio-2025-assessment.md` lists folio's renderer needs, platform gaps, and UI coupling.
+- `spikes/canvas2d` compares two canvas 2D pipelines on folio's canvases against Edge 157. Both shape with harfrust 0.12.0, the Rust port of HarfBuzz. vello_cpu 0.2.0 drawing glyphs through glifo 0.3.0, hinted, differs from Edge's software canvas by 0.44% mean over folio's twelve text canvases, and skrifa 0.44.0 outlines filled by tiny-skia 0.11.4 by 0.52%. Both need Skia's glyph mask gamma (2.3) for that, and differ by 0.80% and 0.83% without it. E6 keeps vello_cpu with glifo.
 - A Modal probe on a T4, run twice, found that the NVIDIA Vulkan driver fails at `vkCreateInstance`. The only working Vulkan device there is Mesa llvmpipe, so Modal lanes check correctness and never GPU parity or perf.
 
 - The Azure for Students subscription allows 5 regions (Canada Central, Sweden Central, Norway East, Spain Central, Denmark East) and 6 vCPUs per region. Checked on 2026-11-09 with `az vm list-usage`. The only GPU families with quota are retired sizes and NVSv4 at 2 vCPUs, so no GPU VM can start until a quota request is approved. The smallest usable sizes are `Standard_NV6ads_A10_v5` at $0.821 per hour on Windows in Canada Central and `Standard_NG8ads_V620_v1` at $1.194 per hour on Windows in Sweden Central.
@@ -815,7 +816,6 @@ The spikes live in `spikes/` at commit `896e785` of the engine repo. Each folder
 These questions stay unproven:
 
 - Whether an Azure NGads V620 VM can cover the AMD path that `spikes/xproc` never tested.
-- Which canvas 2D rasterizer matches Edge closely enough. E6 settles it with its first box.
 - Whether web-audio-api-rs matches Edge's Web Audio closely enough. E7 settles it with its second box.
 - Servo on AMD and Intel GPUs, on two-GPU laptops, and at other DPI scales.
 - Pointer forwarding into a Servo page. E2 lanes 5 and 6 settle it.
