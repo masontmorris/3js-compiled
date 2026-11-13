@@ -52,11 +52,19 @@ fn timed_out_suspend_emits_one_state_change() {
     wait(|| events.load(Ordering::Acquire) == 1);
     released.store(true, Ordering::Release);
     wait(|| returned.load(Ordering::Acquire));
-    std::thread::sleep(Duration::from_millis(300));
+    context.resume_sync();
+    let (marker_tx, marker_rx) = std::sync::mpsc::channel();
+    context.set_onsinkchange(move |_| {
+        let _ = marker_tx.send(());
+    });
+    context.test_event_marker();
+    marker_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("event queue barrier");
     assert_eq!(
         events.load(Ordering::Acquire),
-        1,
-        "late suspend must not emit a duplicate state change"
+        2,
+        "suspend and resume must each emit one state change"
     );
     context.close_sync();
 }
