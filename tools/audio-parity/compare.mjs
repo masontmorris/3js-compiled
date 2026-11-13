@@ -60,9 +60,10 @@ export function align(a, b, maxLag) {
 }
 
 export function compare(reference, capture, { maxLagSeconds = 1 } = {}) {
-  const a = mono(reference);
-  const b = mono(capture);
-  const lag = align(a, b, Math.round(maxLagSeconds * reference.sampleRate));
+  // The loudest channel aligns, since a mix of opposite channels such as [x, -x] is silence.
+  const energy = c => c.reduce((sum, v) => sum + v * v, 0);
+  const channel = reference.channels.reduce((best, c, i) => (energy(c) > energy(reference.channels[best]) ? i : best), 0);
+  const lag = align(reference.channels[channel], capture.channels[Math.min(channel, capture.channels.length - 1)], Math.round(maxLagSeconds * reference.sampleRate));
   let sum = 0;
   let count = 0;
   for (let c = 0; c < reference.channels.length; c++) {
@@ -74,7 +75,8 @@ export function compare(reference, capture, { maxLagSeconds = 1 } = {}) {
       count++;
     }
   }
-  const rms = Math.sqrt(sum / Math.max(count, 1));
+  if (!count) throw new Error('No overlapping samples');
+  const rms = Math.sqrt(sum / count);
   return { lag, lagMs: (lag / reference.sampleRate) * 1000, overlapFrames: count / reference.channels.length, diffDb: 20 * Math.log10(Math.max(rms, 1e-12)) };
 }
 

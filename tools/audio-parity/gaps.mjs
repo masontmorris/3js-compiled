@@ -21,14 +21,14 @@ export function findGaps(expected, captured, { blockMs = 10, searchMs = 250, win
   const search = Math.round((rate * searchMs) / 1000);
   const window = Math.round((rate * windowMs) / 1000);
   const power = (x, from, n) => { let s = 0; for (let i = from; i < from + n; i++) s += x[i] * x[i]; return s / n; };
-  const quiet = from => power(e, from, block) < 1e-8;
+  const quiet = (from, n = block) => power(e, from, n) < 1e-8;
   // The residual of `capture` against gain * `expected`, over n frames at `lag`, relative to the expected signal.
   const residual = (from, n, lag, gain) => {
     let diff = 0;
     let ref = 0;
     for (let i = from; i < from + n; i++) {
       const want = gain * e[i];
-      const d = c[i + lag] - want;
+      const d = (c[i + lag] ?? 0) - want;
       diff += d * d;
       ref += want * want;
     }
@@ -54,7 +54,7 @@ export function findGaps(expected, captured, { blockMs = 10, searchMs = 250, win
   // The long alignment places the recording; the first 200 ms of sound fix the lag, from there or nearby, so a
   // discontinuity later in the recording cannot move where the walk starts.
   // The recording starts at most 30 s before the engine's output does.
-  const span = Math.min(e.length - start, rate * 20);
+  const span = Math.min(e.length - start, c.length, rate * 20);
   const reach = Math.min(c.length, start + span + rate * 30);
   const coarse = fit(start, span, Math.round(reach / 2) - start, Math.ceil(reach / 2));
   if (!coarse) return { aligned: false, start };
@@ -73,15 +73,16 @@ export function findGaps(expected, captured, { blockMs = 10, searchMs = 250, win
     missed = null;
   };
   let k = start;
-  while (k + window <= e.length && k + lag + window <= c.length) {
-    if (quiet(k)) { skippedQuiet++; k += block; continue; }
-    checked++;
-    if (residual(k, block, lag, gain) <= missDb) {
+  while (k < e.length) {
+    const n = Math.min(block, e.length - k);
+    if (quiet(k, n)) { skippedQuiet += n / block; k += n; continue; }
+    checked += n / block;
+    if (residual(k, n, lag, gain) <= missDb) {
       if (missed !== null) mismatch(k);
-      k += block;
+      k += n;
       continue;
     }
-    const next = fit(k, window, lag, search);
+    const next = k + window <= e.length ? fit(k, window, lag, search) : null;
     if (next && next.residualDb <= missDb && next.lag !== lag) {
       const shift = next.lag - lag;
       events.push({ kind: shift > 0 ? 'gap' : 'skip', atSeconds: (missed ?? k) / rate, shiftMs: (1000 * shift) / rate });
@@ -90,7 +91,7 @@ export function findGaps(expected, captured, { blockMs = 10, searchMs = 250, win
       continue;
     }
     missed ??= k;
-    k += block;
+    k += n;
   }
   if (missed !== null) mismatch(k);
   return {

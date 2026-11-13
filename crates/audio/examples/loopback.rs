@@ -1,8 +1,11 @@
 //! Records what an output device plays, through WASAPI loopback, as a 32-bit float WAV. It never plays anything.
 //! `cargo run -p threejsc-audio --features output --example loopback -- "<device name>" <seconds> <out.wav>`
+//! A `stop` line on stdin ends the recording early.
 
+use std::io::BufRead;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -44,7 +47,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     )?;
     stream.play()?;
-    std::thread::sleep(Duration::from_secs_f64(seconds.parse()?));
+    let duration = Duration::from_secs_f64(seconds.parse()?);
+    let deadline = Instant::now() + duration;
+    let (stop, stopped) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            if line.is_ok_and(|line| line.trim() == "stop") {
+                stop.send(()).ok();
+                return;
+            }
+        }
+    });
+    // Stdin closing without a stop line, as an ignored stdin does at once, leaves the full duration.
+    if stopped.recv_timeout(duration) == Err(RecvTimeoutError::Disconnected) {
+        std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+    }
     drop(stream);
     if let Some(writer) = writer.lock().unwrap().take() {
         writer.finalize()?;

@@ -61,9 +61,11 @@ for (const [i, mode] of order.entries()) {
   })();
   // The loopback starts first and runs past the host, so it holds everything the device played.
   mkdirSync(dir, { recursive: true });
-  const loopback = mode === 'on' ? spawn(loopbackExe, [device, String(seconds + 20), join(dir, 'loopback.wav')], { stdio: 'inherit' }) : null;
+  // Its duration outlasts the host's timeout, and a stop line ends it a short tail after the host exits.
+  const loopback = mode === 'on' ? spawn(loopbackExe, [device, String(seconds + 125), join(dir, 'loopback.wav')], { stdio: ['pipe', 'inherit', 'inherit'] }) : null;
   const recorded = loopback && new Promise(r => loopback.on('exit', r));
   await runHost('examples/audio/stress.js', mode === 'off' ? 'audio=off' : '', dir, { frames: seconds * fps, audioOut: mode === 'on', timeoutMs: (seconds + 120) * 1000 });
+  if (loopback) setTimeout(() => loopback.stdin.end('stop\n'), 2000);
   running = false;
   await watch;
   const elapsed = performance.now() - started;

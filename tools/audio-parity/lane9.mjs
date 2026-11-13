@@ -41,6 +41,7 @@ let switchAfter = null;
 let defaultAfterSwitch = null;
 let hostExit = null;
 let loopbackExit = null;
+let timer;
 try {
   await wait(switchAfterMs);
   switchBefore = clock();
@@ -48,10 +49,12 @@ try {
   switchAfter = clock();
   defaultAfterSwitch = audioDevice('(Get-AudioDevice -Playback).ID');
   switched = switchAfter;
-  hostExit = await hostDone;
-  loopbackExit = await loopbackDone;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Child process timeout')), Math.max(captureSeconds * 1000, switchAfterMs) + 30000); });
+  [hostExit, loopbackExit] = await Promise.race([Promise.all([hostDone, loopbackDone]), timeout]);
 } finally {
+  clearTimeout(timer);
   if (host.exitCode === null) host.kill();
+  if (loopback.exitCode === null) loopback.kill();
   setDefault(restoreId);
 }
 
@@ -80,7 +83,7 @@ try {
   verdict.captureDelayMs = onset ? (onset.at - switched) * 1000 : null;
   verdict.preSwitchPeakDb = levels.filter(entry => entry.at < switched).reduce((peak, entry) => Math.max(peak, entry.db), null);
   verdict.loopbackSeconds = duration;
-  const moveLine = readFileSync(join(out, 'host.err.log'), 'utf8').split(/\r?\n/).find(line => line.includes('audio: moved a context to the new default output'));
+  const moveLine = readFileSync(join(out, 'host.err.log'), 'utf8').split(/\r?\n/).find(line => /audio: moved a context to the new default output "[^"]+"\s*$/.test(line));
   const movedAtMs = moveLine?.match(/^\[(\d+)\]/)?.[1];
   verdict.moveLine = moveLine ?? null;
   verdict.moveAt = movedAtMs ? Number(movedAtMs) / 1000 : null;
@@ -92,10 +95,11 @@ try {
     for (let c = 0; c < Math.min(2, engine.channels.length); c++) for (let j = i; j < i + block; j++) sum += engine.channels[c][j] ** 2;
     if (db(Math.sqrt(sum / (2 * block))) <= -50) verdict.engineSilentBlocks.push(i / engine.sampleRate);
   }
-  // The lane's rule: the new device has the sound within 1 s of the switch, and no frame interval over 50 ms. The
-  // follower's move timestamp is the move itself; the capture's first sample proves the tone reached the new device,
-  // but an idle endpoint's WAV has no samples for the silent time before it, so the capture cannot time the move.
-  verdict.pass = onset !== null && verdict.moveDelayMs !== null && verdict.moveDelayMs >= 0 && verdict.moveDelayMs <= 1000
+  // The lane's rule: the follower logs a successful move within 1 s, the capture's first sound comes within 1 s of
+  // the switch, and no frame interval is over 50 ms. An idle endpoint's WAV has no samples for the silent time before
+  // the move, so the capture's onset bounds the sound, and the log line times the move.
+  verdict.pass = onset !== null && onset.at >= switchBefore && onset.at - switchBefore <= 1 && verdict.moveLine !== null
+    && verdict.moveDelayMs !== null && verdict.moveDelayMs >= 0 && verdict.moveDelayMs <= 1000
     && verdict.maxFrameIntervalMs <= 50 && defaultAfterSwitch === switchId;
 } catch (error) {
   verdict.pass = false;

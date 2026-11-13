@@ -110,10 +110,10 @@ function lane5() {
   const capture = readWav(at('lane5', 'out.wav'));
   const results = records.filter(r => r.name).map(r => {
     const start = wavFrame(rows, r.startFrame);
-    const offline = readWav(at('graphs', `${r.name}.wav`)).channels[0];
+    const offline = readWav(at('graphs', `${r.name}.wav`)).channels;
     let sum = 0;
-    for (let i = 0; i < r.length; i++) sum += (capture.channels[0][start + i] - offline[i]) ** 2;
-    return { name: r.name, wavStart: start, diffDb: db(Math.sqrt(sum / r.length)) };
+    for (let c = 0; c < offline.length; c++) for (let i = 0; i < r.length; i++) sum += ((capture.channels[c]?.[start + i] ?? NaN) - offline[c][i]) ** 2;
+    return { name: r.name, wavStart: start, diffDb: db(Math.sqrt(sum / (r.length * offline.length))) };
   });
   // The capture has no gap when every running callback continues the WAV where the one before left it.
   const ctx = rows.filter(r => r.quantum === 0);

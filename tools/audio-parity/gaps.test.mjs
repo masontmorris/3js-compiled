@@ -45,3 +45,10 @@ test('a stretch that matches nothing is a mismatch', () => {
   assert.ok(events.length >= 1 && events.every(e => e.kind === 'mismatch'), JSON.stringify(events));
   assert.ok(Math.abs(events[0].atSeconds - 1.5) < 0.02);
 });
+
+test('a truncated tail is a mismatch', () => {
+  const expected = noise(3);
+  const result = findGaps(stereo(expected), stereo(expected.subarray(0, ms(2900))));
+  assert.equal(result.aligned, true);
+  assert.ok(result.events.some(e => e.kind === 'mismatch' && e.atSeconds >= 2.89));
+});
