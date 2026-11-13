@@ -572,6 +572,29 @@ mod tests {
     fn a_face_alone_does_not_draw_a_character_outside_its_range() {
         let (mut fonts, mut chain, nunito) = cyrillic_nunito_then(Vec::new());
         let layout = layout(&mut fonts, &mut chain, "a", 32.0);
+        assert!(!layout.runs.is_empty());
+        assert!(layout.runs.iter().all(|run| run.instance.face != nunito));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_mark_that_starts_a_segment_skips_a_face_whose_range_excludes_it() {
+        let mut fonts = Fonts::default();
+        let nunito = fonts.load(NUNITO).unwrap();
+        let spec = FontSpec {
+            families: vec![Family::Face(LoadedFace {
+                id: nunito,
+                weight: [400.0, 400.0],
+                ranges: Some(vec![[0, 0xff]]),
+            })],
+            size: 32.0,
+            weight: 400.0,
+            italic: false,
+        };
+        let mut chain = chain(&mut fonts, &spec);
+        // Nunito maps U+0301, but its range leaves it out, so the acute comes from a fallback face, as in Edge.
+        let layout = layout(&mut fonts, &mut chain, "\u{301}", 32.0);
+        assert!(!layout.runs.is_empty());
         assert!(layout.runs.iter().all(|run| run.instance.face != nunito));
     }
 
