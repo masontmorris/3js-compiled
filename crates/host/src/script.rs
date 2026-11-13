@@ -60,3 +60,16 @@ pub enum PointerAction {
 pub fn parse(input: &str) -> Result<Vec<Step>, serde_json::Error> {
     serde_json::from_str(input)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_a_bounded_condition_wait() {
+        assert_eq!(
+            parse(r#"[{"type":"wait_for","expression":"globalThis.ready","timeout_frames":12}]"#).unwrap(),
+            vec![Step::WaitFor { expression: "globalThis.ready".into(), timeout_frames: 12 }]
+        );
+    }
+}
