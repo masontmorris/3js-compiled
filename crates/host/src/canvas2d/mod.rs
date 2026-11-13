@@ -332,4 +332,38 @@ mod boundary_tests {
           if (!(error instanceof TypeError)) throw new Error('expected a TypeError');
         "#).unwrap();
     }
+
+    /// Fills "Hi" in 32 px Arial at `x` on a 100x60 canvas and returns the canvas's summed alpha.
+    #[cfg(windows)]
+    fn text_alpha(x: f64) -> u64 {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![super::extension::init()],
+            ..Default::default()
+        });
+        let script = format!(
+            r#"
+          const pixels = new Uint8Array(100 * 60 * 4);
+          Deno.core.ops.op_canvas2d_text(pixels, 100, 60, {{text: 'Hi', x: {x}, y: 40, align: 'start',
+            baseline: 'alphabetic', maxWidth: null, stroke: null,
+            font: {{families: [{{system: 'Arial'}}], size: 32, weight: 400, italic: false}},
+            style: {{paint: {{kind: 'color', rgba: [0, 0, 0, 1]}}, alpha: 1, transform: [1, 0, 0, 1, 0, 0]}}}});
+          let alpha = 0;
+          for (let i = 3; i < pixels.length; i += 4) alpha += pixels[i];
+          alpha;
+        "#
+        );
+        let value = runtime.execute_script("text", script).unwrap();
+        deno_core::scope!(scope, runtime);
+        deno_core::v8::Local::new(scope, value)
+            .integer_value(scope)
+            .unwrap() as u64
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn text_far_off_the_canvas_draws_nothing() {
+        assert!(text_alpha(10.0) > 0);
+        assert_eq!(text_alpha(1e12), 0);
+        assert_eq!(text_alpha(-1e12), 0);
+    }
 }
