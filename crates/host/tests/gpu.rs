@@ -785,6 +785,8 @@ const TRANSPARENT: [u8; 4] = [0, 0, 0, 0];
 const YELLOW: [u8; 4] = [255, 255, 0, 255];
 const GREEN: [u8; 4] = [0, 255, 0, 255];
 const BLUE: [u8; 4] = [0, 0, 255, 255];
+const MAGENTA: [u8; 4] = [255, 0, 255, 255];
+const RED: [u8; 4] = [255, 0, 0, 255];
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
@@ -880,6 +882,52 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
             "{mode}"
         );
     }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() {
+    // hud-replace.js sends its only HUD patch, magenta, before frame 30 and replaces the device at
+    // frame 600. The UI on the new device must show that patch rather than the page's initial blue,
+    // and the relaunched ui-host must append to ui-host.log, as docs/testing.md says.
+    let host_exe = PathBuf::from(env!("CARGO_BIN_EXE_host"));
+    assert!(
+        host_exe.with_file_name("ui-host.exe").exists(),
+        "build ui-host.exe beside {}",
+        host_exe.display()
+    );
+    let dir = workdir("hud-replace");
+    std::fs::copy(
+        Path::new(ROOT).join("crates/host/tests/fixtures/hud-replace.html"),
+        dir.join("hud-replace.html"),
+    )
+    .unwrap();
+    let (before, after) = (dir.join("before.png"), dir.join("after.png"));
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 560},
+        {"type": "capture", "path": before},
+        {"type": "wait", "frames": 360},
+        {"type": "capture", "path": after},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-replace"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    assert!(
+        log.contains("UI restarts on the device the game requested")
+            && log.contains("frame 900: 0 uncaptured errors so far"),
+        "{log}"
+    );
+    let pixels = |path: &Path| {
+        let image = image::open(path).unwrap().to_rgba8();
+        [image.get_pixel(60, 60).0, image.get_pixel(640, 360).0]
+    };
+    assert_eq!(pixels(&before), [MAGENTA, RED], "before the replacement");
+    assert_eq!(pixels(&after), [MAGENTA, GREEN], "after the replacement");
+    let ui_log = std::fs::read_to_string(dir.join("ui-host.log")).unwrap();
+    assert!(
+        ui_log.contains("[host] ui-host launch 2 after: the GPU device was replaced"),
+        "{ui_log}"
+    );
 }
 
 #[test]
