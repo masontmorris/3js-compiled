@@ -268,3 +268,26 @@ test('removing or setting a canvas dimension via namespace resets its context', 
   assert.equal(canvas.height, 20);
   assert.equal(ctx.font, '10px sans-serif');
 });
+
+test('a pending fonts.ready waits for faces that begin loading later', async () => {
+  const originalFetch = globalThis.fetch;
+  const pending = new Map();
+  globalThis.fetch = url => new Promise(resolve => pending.set(url, resolve));
+  try {
+    const first = new FontFace('First', 'url(https://example.test/first)');
+    const second = new FontFace('Second', 'url(https://example.test/second)');
+    const set = new FontFaceSet();
+    set.add(first); set.add(second);
+    first.load();
+    let resolved = false;
+    const ready = set.ready.then(() => { resolved = true; });
+    second.load();
+    pending.get('https://example.test/first')({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+    await first.loaded;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(resolved, false);
+    pending.get('https://example.test/second')({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+    await ready;
+    assert.equal(second.status, 'loaded');
+  } finally { globalThis.fetch = originalFetch; }
+});
