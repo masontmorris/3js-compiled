@@ -10,7 +10,7 @@ import { cpus } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { withEdge, withTimeout } from './edge.mjs';
-import { parse } from './perf-log.mjs';
+import { nativeSteps, parse } from './perf-log.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };
@@ -62,7 +62,7 @@ async function edgePage(scene, waitFrames, ids) {
 async function nativePage(scene, waitFrames, ids, dir) {
   await mkdir(dir, { recursive: true });
   const script = join(dir, 'steps.json');
-  await writeFile(script, JSON.stringify([{ type: 'wait', frames: waitFrames }, { type: 'close' }]));
+  await writeFile(script, JSON.stringify(nativeSteps(waitFrames)));
   const child = spawn(host, ['--entry', resolve('examples/canvas2d/index.js'), '--scene', scene, '--script', script], { cwd: dir, stdio: 'ignore' });
   // Listen before the first await, or a host that exits during it is never seen.
   const exited = new Promise((done, fail) => { child.on('exit', done); child.on('error', fail); });

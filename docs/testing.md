@@ -2,10 +2,11 @@
 
 `npm test` runs every JavaScript test suite: `packages/three-native` and the `node --test` suites in `tools/perf`. `npm run check` runs the WGSL gate, `tools/wgsl-gate/gate.mjs`, which needs `naga` and `dxc` on the path or named by `NAGA` and `DXC`. On Windows, the SDK's `dxc.exe` works, for example `C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe`. `modal run tools/modal/lanes.py::wgsl_gate` runs the same gate on Linux.
 
-The host reads a JSON array with `--script <path>`. It processes steps in order before a frame. `wait` renders the given number of frames before the next step. `capture` saves the next rendered frame and then continues with the following step. `close` exits with code 0.
+The host reads a JSON array with `--script <path>`. It processes steps in order before a frame. `wait` renders the given number of frames before the next step. `capture` saves the next rendered frame and then continues with the following step. `wait_for` evaluates its `expression` in the page before each frame, at most `timeout_frames` times, and continues with the following step once the result is truthy. It fails the run with code 1 when the expression throws, or when all `timeout_frames` evaluations are false. `close` exits with code 0.
 
 ```json
 [
+  {"type":"wait_for","expression":"globalThis.__sceneReady","timeout_frames":600},
   {"type":"wait","frames":2},
   {"type":"key","code":"KeyW","down":true},
   {"type":"key","code":"KeyW","down":true,"repeat":true},
@@ -61,7 +62,7 @@ python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted
 
 ## GPU command responses
 
-An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it on the render thread against the game texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
+An entry module can call `submitGpuCommands(bytes)` once in a frame's callbacks, and once outside them between two frames, at its top level or from a timer. A stream submitted outside the callbacks runs at the start of the next frame's stream, as a browser's queue runs a page's work in the order the page submits it. The host copies the `Uint8Array`, replays it on the render thread against the game texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
 
 - `{type: "validation", request}` reports that a shader or render pipeline created with a nonzero request ID compiled.
 - `{type: "readback", request, bytes}` carries a buffer or texture readback. `bytes` is an `ArrayBuffer` that crosses from Rust as one binary buffer.

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CanvasGradient, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
+import { CanvasGradient, FontFace, FontFaceSet, FontFaceSetLoadEvent, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
 import { Document } from '../src/platform/dom.js';
 import { DOMMatrix } from '../src/platform/geometry.js';
 
@@ -15,7 +15,7 @@ const cases = kind => edge.lines.filter(line => line.kind === kind);
 // A host that records each draw and fills whole-pixel rectangles with the fill color, enough to see what the
 // context sends and what its pixels hold.
 const calls = [];
-setCanvasHost({
+const canvasHost = {
   fontLoad: () => 1,
   fillRect: (pixels, width, height, draw) => {
     calls.push(['fillRect', draw]);
@@ -30,7 +30,8 @@ setCanvasHost({
   text: (...args) => calls.push(['text', args[3]]),
   measure: request => ({ width: request.text.length }),
   unpremultiply: (from, to) => to.set(from),
-});
+};
+setCanvasHost(canvasHost);
 const context = () => new Document({}).createElement('canvas').getContext('2d');
 
 test('fillStyle keeps and serializes colors as Edge does', () => {
@@ -239,7 +240,7 @@ test('measureText matches Edge for folio\'s fonts, Windows fonts and every align
 // The pixel records that differ from Edge or lack a measurement: no size or another size, coverage more than 2% off,
 // or a mean difference over 2%.
 const pixelFailures = lines => lines.filter(line => !/^[1-9]\d*x[1-9]\d*$/.test(line.size) || line.size !== line.edgeSize
-  || !Number.isFinite(line.coverage) || !Number.isFinite(line.mean) || Math.abs(line.coverage - 1) > 0.02 || line.mean > 0.02)
+  || !Number.isFinite(line.coverage) || !Number.isFinite(line.mean) || Math.abs(line.coverage - 1) > 0.02 || Math.abs(line.mean) > 0.02)
   .map(line => `${line.name}: ${line.size} vs Edge ${line.edgeSize}, coverage ${Number(line.coverage).toFixed(4)} of Edge's, mean difference ${(Number(line.mean) * 100).toFixed(3)}%`);
 
 test('the pixel check fails records that lack a size, coverage or mean', () => {
@@ -250,6 +251,7 @@ test('the pixel check fails records that lack a size, coverage or mean', () => {
     assert.equal(pixelFailures([line]).length, 1, missing);
   }
   assert.equal(pixelFailures([{ ...good, size: '0x2', edgeSize: '0x2' }]).length, 1);
+  assert.equal(pixelFailures([{ ...good, mean: -0.5 }]).length, 1);
 });
 
 test('canvases match Edge\'s pixels: folio\'s labels, scripts no requested font covers, named Windows fonts', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
@@ -318,6 +320,23 @@ test('a face that failed to load makes fonts.load reject and fonts.check return 
     await assert.rejects(face.load(), { name: 'NetworkError' });
     await assert.rejects(set.load('16px Gone'), { name: 'NetworkError' });
     assert.equal(set.check('16px Gone'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a failed face beside a loaded face with the same descriptors makes fonts.check false and fonts.load reject in either order, as in Edge', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => (url.includes('gone') ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+  try {
+    for (const order of ['failed first', 'loaded first']) {
+      const set = new FontFaceSet();
+      const bad = new FontFace('Twin', 'url(https://example.test/gone)');
+      const good = new FontFace('Twin', 'url(https://example.test/twin)');
+      for (const face of order === 'failed first' ? [bad, good] : [good, bad]) set.add(face);
+      await Promise.allSettled([bad.load(), good.load()]);
+      assert.deepEqual([bad.status, good.status], ['error', 'loaded'], order);
+      assert.equal(set.check('16px Twin', 'a'), false, order);
+      await assert.rejects(set.load('16px Twin', 'a'), { name: 'NetworkError' }, order);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -429,5 +448,112 @@ test('assigning unicodeRange changes which text a face matches', async () => {
     assert.deepEqual(await set.load('16px Moved', 'Ж'), [face]);
     assert.throws(() => { face.unicodeRange = 'nonsense'; }, { name: 'SyntaxError' });
     assert.equal(face.unicodeRange, 'U+400-4FF');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('font sets report a loading cycle across shared and newly added faces', async () => {
+  const first = new FontFace('One', 'url(data:application/octet-stream;base64,AA==)');
+  const second = new FontFace('Two', 'url(data:application/octet-stream;base64,AA==)');
+  const a = new FontFaceSet();
+  const b = new FontFaceSet();
+  const events = [];
+  for (const [name, set] of [['a', a], ['b', b]]) {
+    set.onloading = event => events.push([name, event.type]);
+    set.onloadingdone = event => events.push([name, event.type, [...event.fontfaces]]);
+  }
+  a.add(first); b.add(first);
+  const p = first.load();
+  a.add(second);
+  const q = second.load();
+  await Promise.all([p, q]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events.filter(e => e[1] === 'loading').map(e => e[0]).sort(), ['a', 'b']);
+  assert.deepEqual(events.find(e => e[0] === 'a' && e[1] === 'loadingdone')[2], [first, second]);
+  assert.deepEqual(events.find(e => e[0] === 'b' && e[1] === 'loadingdone')[2], [first]);
+});
+
+test('font sets report failed faces after a load settles', async () => {
+  const set = new FontFaceSet();
+  const face = new FontFace('Bad', 'url(data:application/octet-stream;base64,AA==)');
+  set.add(face);
+  const events = [];
+  set.onloadingdone = e => events.push([e.type, [...e.fontfaces]]);
+  set.onloadingerror = e => events.push([e.type, [...e.fontfaces]]);
+  setCanvasHost({ fontLoad: () => { throw new Error('bad font'); } });
+  try {
+    await assert.rejects(face.load());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(events, [['loadingdone', []], ['loadingerror', [face]]]);
+  } finally { setCanvasHost(canvasHost); }
+});
+
+test('document.fonts reports one loading cycle for a face added mid-load and none for a face it lacks, as in Edge', async () => {
+  const fonts = new Document({}).fonts;
+  for (const type of ['loading', 'loadingdone', 'loadingerror']) assert.ok(`on${type}` in fonts, type);
+  const events = [];
+  for (const type of ['loading', 'loadingdone', 'loadingerror']) {
+    fonts.addEventListener(type, event => events.push([type, event instanceof FontFaceSetLoadEvent, event.fontfaces.map(face => face.family)]));
+  }
+  const source = 'url(data:application/octet-stream;base64,AA==)';
+  await new FontFace('Loose', source).load();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, []);
+  const first = new FontFace('Mid1', source);
+  fonts.add(first);
+  const p = first.load();
+  const second = new FontFace('Mid2', source);
+  fonts.add(second);
+  await Promise.all([p, second.load()]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, [['loading', true, []], ['loadingdone', true, ['Mid1', 'Mid2']]]);
+});
+
+test('a face deleted while it loads leaves the cycle without failing it', async () => {
+  const set = new FontFaceSet();
+  const kept = new FontFace('Kept', 'url(data:application/octet-stream;base64,AA==)');
+  const dropped = new FontFace('Dropped', 'url(data:application/octet-stream;base64,AA==)');
+  set.add(kept); set.add(dropped);
+  const events = [];
+  set.onloadingdone = event => events.push([event.type, [...event.fontfaces]]);
+  set.onloadingerror = event => events.push([event.type, [...event.fontfaces]]);
+  const loads = [kept.load(), dropped.load()];
+  set.delete(dropped);
+  await Promise.all(loads);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, [['loadingdone', [kept]]]);
+});
+
+test('a failed face the page deletes before its cycle reports leaves no empty loadingerror', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const when of ['while another face loads', 'after the cycle ends']) {
+      let release;
+      const slow = new Promise(resolve => { release = resolve; });
+      globalThis.fetch = async url => {
+        if (url.includes('gone')) return { ok: false, status: 404 };
+        await slow;
+        return { ok: true, arrayBuffer: async () => new ArrayBuffer(4) };
+      };
+      const set = new FontFaceSet();
+      const bad = new FontFace('Bad', 'url(https://example.test/gone)');
+      const good = new FontFace('Good', 'url(https://example.test/good)');
+      set.add(bad); set.add(good);
+      const events = [];
+      set.onloadingdone = event => events.push([event.type, [...event.fontfaces]]);
+      set.onloadingerror = event => events.push([event.type, [...event.fontfaces]]);
+      const loads = [bad.load(), good.load()];
+      if (when === 'while another face loads') {
+        await assert.rejects(loads[0]);
+        set.delete(bad);
+        release();
+        await Promise.allSettled(loads);
+      } else {
+        release();
+        await Promise.allSettled(loads);
+        set.delete(bad);
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.deepEqual(events, [['loadingdone', [good]]], when);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });

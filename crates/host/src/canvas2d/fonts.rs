@@ -67,6 +67,9 @@ pub struct Fonts {
     fallbacks: HashMap<(char, u16, bool), Option<FaceId>>,
     #[cfg(windows)]
     system: Option<super::dwrite::System>,
+    /// For tests of a machine with no installed fonts.
+    #[cfg(test)]
+    pub none_installed: bool,
 }
 
 impl Fonts {
@@ -133,6 +136,10 @@ impl Fonts {
         if let Some(id) = self.families.get(&key) {
             return *id;
         }
+        #[cfg(test)]
+        if self.none_installed {
+            return None;
+        }
         let found = self
             .lookup(name, weight, italic)
             .or_else(|| alias(name).and_then(|other| self.lookup(other, weight, italic)));
@@ -145,6 +152,10 @@ impl Fonts {
         let key = (c, weight.round() as u16, italic);
         if let Some(id) = self.fallbacks.get(&key) {
             return *id;
+        }
+        #[cfg(test)]
+        if self.none_installed {
+            return None;
         }
         #[cfg(windows)]
         let found = self

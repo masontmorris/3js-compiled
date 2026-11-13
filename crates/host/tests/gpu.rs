@@ -129,6 +129,38 @@ fn readbacks_and_errors_cross_the_response_channel() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_stream_submitted_at_the_top_level_runs_before_the_first_frames() {
+    let run = run(
+        "top-level-submit",
+        &test_entry("top-level-submit.js"),
+        serde_json::json!([{"type": "wait", "frames": 6}]),
+    );
+    assert!(
+        !run.log.contains("first frame submit failed"),
+        "{}",
+        run.log
+    );
+    assert_near(&run, (640, 360), [0, 255, 0]);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn an_error_names_the_frame_and_command_of_the_stream_that_raised_it() {
+    let run = run(
+        "carried-error",
+        &test_entry("carried-error.js"),
+        serde_json::json!([{"type": "wait", "frames": 6}]),
+    );
+    for expected in [
+        "GPU error: frame 7, command 1, label loading,",
+        "GPU error: frame 1, command 1, label frame,",
+    ] {
+        assert!(run.log.contains(expected), "{expected}\n{}", run.log);
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn a_stream_cannot_destroy_the_surface() {
     let run = run(
         "destroy-surface",
@@ -485,6 +517,61 @@ fn captures_and_recordings_hold_the_frame_javascript_produced() {
     assert_eq!(red(&dir.join("resized.png")), (3, (800, 600)));
     let rows = std::fs::read_to_string(dir.join("frames.csv")).unwrap();
     assert_eq!(rows.lines().count(), 7, "{rows}");
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_wait_holds_later_steps_until_the_page_is_ready() {
+    let dir = workdir("wait-for");
+    // The page sets `ready` in its 21st frame, so the 22nd evaluation, the last this step allows, is the first true.
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 22},
+        {"type": "capture", "path": "ready.png"},
+        {"type": "wait", "frames": 5},
+        {"type": "capture", "path": "later.png"},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    assert_eq!(red(&dir.join("ready.png")).0, 21);
+    assert_eq!(red(&dir.join("later.png")).0, 27);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_wait_fails_the_run_when_it_times_out() {
+    let dir = workdir("wait-for-timeout");
+    // One evaluation short of the one that sees `ready`.
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 21},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert_eq!(status.code(), Some(1), "{log}");
+    assert!(
+        log.contains("host failed: condition still false after 21 evaluations: globalThis.ready"),
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_that_throws_fails_the_run_with_its_error() {
+    let dir = workdir("wait-for-error");
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "(() => { if (globalThis.ready) throw new Error('scene failed'); return false; })()", "timeout_frames": 100},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert_eq!(status.code(), Some(1), "{log}");
+    assert!(
+        log.contains("host failed: ") && log.contains("Error: scene failed"),
+        "{log}"
+    );
 }
 
 #[test]

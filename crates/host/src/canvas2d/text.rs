@@ -338,17 +338,13 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             } else {
                 // A character no font has draws as the missing glyph of the first font whose range holds it, as
                 // Edge does.
-                Some(
-                    charmaps[..chain.listed]
-                        .iter()
-                        .enumerate()
-                        .position(|(index, charmap)| {
-                            chain.allows(index, c) && charmap.map(c).is_some()
-                        })
-                        .or_else(|| chosen.get(&c).copied())
-                        .or_else(|| chain.first_allowing(c))
-                        .unwrap_or(0),
-                )
+                charmaps[..chain.listed]
+                    .iter()
+                    .enumerate()
+                    .position(|(index, charmap)| chain.allows(index, c) && charmap.map(c).is_some())
+                    .or_else(|| chosen.get(&c).copied())
+                    .or_else(|| chain.first_allowing(c))
+                    .or((!charmaps.is_empty()).then_some(0))
             };
             if index != current {
                 if let Some(index) = current {
@@ -642,12 +638,15 @@ mod tests {
                 .iter()
                 .flat_map(|run| run.glyphs.iter().map(|g| g.0))
                 .collect();
-            (faces, glyphs, layout.width, nunito, standard, chain)
+            let acute = fonts.get(standard).font().charmap().map('\u{301}');
+            (faces, glyphs, layout.width, nunito, standard, chain, acute)
         };
-        let (faces, glyphs, width, nunito, standard, _) = missing(Vec::new(), "\u{f8ff}");
+        let (faces, glyphs, width, nunito, standard, _, acute) = missing(Vec::new(), "\u{f8ff}");
         assert_eq!(faces, [standard]);
         assert_ne!(faces[0], nunito);
         assert_eq!(glyphs, [0]);
+        // Edge advances Times New Roman's missing glyph 49.78125 px at 64 px.
+        assert_eq!(width, 49.78125 / 2.0);
         // A variation selector or a mark after it adds no box and no advance.
         for tail in ["\u{fe0f}", "\u{200d}", "\u{301}"] {
             let (_, glyphs, selected, ..) = missing(Vec::new(), &format!("\u{f8ff}{tail}"));
@@ -658,10 +657,32 @@ mod tests {
                 "{tail:?}"
             );
         }
-        let (faces, glyphs, .., chain) =
+        // The standard font draws the mark too, with its own glyph for it.
+        let (faces, glyphs, ..) = missing(Vec::new(), "\u{f8ff}\u{301}");
+        assert!(faces.iter().all(|&face| face == standard), "{faces:?}");
+        assert_eq!(glyphs, [0, acute.unwrap().to_u32()]);
+        let (faces, glyphs, .., chain, _) =
             missing(vec![Family::System("verdana".into())], "\u{f8ff}");
         assert_eq!(faces, [chain.instances[1].face]);
         assert_eq!(glyphs, [0]);
+    }
+
+    #[test]
+    fn a_chain_with_no_face_draws_nothing() {
+        // No listed family is available and no font is installed, not even the standard font.
+        let mut fonts = Fonts::default();
+        fonts.none_installed = true;
+        let spec = FontSpec {
+            families: vec![Family::System("verdana".into())],
+            size: 32.0,
+            weight: 400.0,
+            italic: false,
+        };
+        let mut chain = chain(&mut fonts, &spec);
+        assert!(chain.instances.is_empty());
+        let layout = layout(&mut fonts, &mut chain, "a\u{3001}\u{3001}", 32.0);
+        assert!(layout.runs.is_empty());
+        assert_eq!(layout.width, 0.0);
     }
 
     #[cfg(windows)]
