@@ -73,8 +73,12 @@ def check_pacing(case):
 
 
 failed = 0
+checked = 0
 for case in sorted(p.name for p in out.iterdir() if p.is_dir()):
     for claim, ok in check(case):
+        checked += 1
         failed += not ok
         print(f'{case:9} {"pass" if ok else "FAIL"}  {claim}')
-sys.exit(1 if failed else 0)
+if not checked:
+    print('no recognized checks ran')
+sys.exit(1 if failed or not checked else 0)
