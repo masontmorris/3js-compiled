@@ -7,7 +7,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const hostPath = [process.env.THREEJSC_HOST ?? join(root, 'target/release/host.exe')].find(path => existsSync(path));
+const hostPath = [resolve(root, process.env.THREEJSC_HOST ?? 'target/release/host.exe')].find(path => existsSync(path));
 
 test('a headless page can submit a command stream on every frame', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-headless-'));

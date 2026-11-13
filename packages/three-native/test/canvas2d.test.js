@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CanvasGradient, FontFace, FontFaceSet, ImageData, OffscreenCanvas, Path2D, parseColor, parseFont, serializeColor, serializeFont, setCanvasHost } from '../src/platform/canvas2d.js';
 import { Document } from '../src/platform/dom.js';
@@ -192,7 +192,7 @@ test('gradients reject offsets outside 0 to 1 and colors that do not parse', () 
 // measureText runs in the host, whose ops shape and measure the text, headless so it needs no GPU. Set
 // THREEJSC_HOST to the host executable; the test is skipped when none is built.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const hostPath = [process.env.THREEJSC_HOST ?? join(root, 'target/release/host.exe')].find(path => existsSync(path));
+const hostPath = [resolve(root, process.env.THREEJSC_HOST ?? 'target/release/host.exe')].find(path => existsSync(path));
 
 test('measureText matches Edge for folio\'s fonts, Windows fonts and every alignment and baseline', { skip: !hostPath && 'no host executable; set THREEJSC_HOST' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'threejsc-canvas2d-'));
