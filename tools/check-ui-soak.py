@@ -50,12 +50,14 @@ for proc in ('host', 'ui-host'):
             at = [r for r in series if (r.get('window') or 'any size') == window]
             if len(at) < 18:
                 print(f'{proc:8} {key:16} {window:9} {len(at):3} samples, not judged')
+                unjudged |= ruled
                 continue
             judged += 1
             third = len(at) // 3
             early = quartiles(sorted(float(r[key]) for r in at[:third]))
             late = quartiles(sorted(float(r[key]) for r in at[-third:]))
-            growth = [(b - a) / a * 100.0 for a, b in zip(early, late)]
+            growth = [(b - a) / a * 100.0 if a else (float('inf') if b > 0 else 0.0)
+                      for a, b in zip(early, late)]
             ok = max(growth) < limit or not ruled
             failed |= not ok
             print(f'{proc:8} {key:16} {window:9} {len(at):3} samples, {at[0]["elapsed_s"]}-{at[-1]["elapsed_s"]} s:'
