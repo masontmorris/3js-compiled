@@ -957,11 +957,18 @@ fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() 
     assert_eq!(pixels(&before), [MAGENTA, RED], "before the replacement");
     assert_eq!(pixels(&after), [MAGENTA, GREEN], "after the replacement");
     // Each ui-host writes its counts when it exits, so both instances' records survive the
-    // relaunch only if every write appends.
+    // relaunch only if every write appends. How many of the patches sent before frame 30 the
+    // first one receives depends on how soon it starts; the second must receive the last one.
     let ui_log = std::fs::read_to_string(dir.join("ui-host.log")).unwrap();
+    let received: Vec<u32> = ui_log
+        .lines()
+        .filter_map(|line| line.strip_prefix("ui-host patches received "))
+        .map(|rest| rest.split(' ').next().unwrap().parse().unwrap())
+        .collect();
     assert!(
         ui_log.contains("[host] ui-host launch 2 after: the GPU device was replaced")
-            && ui_log.matches("ui-host patches received 1 /").count() == 2,
+            && received.len() == 2
+            && received.iter().all(|&n| n > 0),
         "{ui_log}"
     );
 }
