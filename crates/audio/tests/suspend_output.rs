@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use threejsc_audio::web_audio_api::context::{
@@ -71,5 +71,69 @@ fn timed_out_suspend_silences_the_in_flight_callback() {
     assert!(
         !held.audible.load(Ordering::Acquire),
         "callback emitted audio after suspend returned"
+    );
+}
+
+struct ResumeObserver {
+    held: AtomicBool,
+    release: AtomicBool,
+    callbacks: AtomicUsize,
+    first_audible: AtomicBool,
+    later_audible: AtomicBool,
+}
+
+struct ResumeProbe(Arc<ResumeObserver>);
+
+impl RenderObserver for ResumeProbe {
+    fn frame(&self, _: u64) {
+        self.0.held.store(true, Ordering::Release);
+        while !self.0.release.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+    }
+
+    fn rendered(&self, report: &RenderReport<'_>) {
+        let audible = report.samples.iter().any(|sample| *sample != 0.0);
+        if self.0.callbacks.load(Ordering::Relaxed) == 0 {
+            self.0.first_audible.store(audible, Ordering::Relaxed);
+        } else if audible {
+            self.0.later_audible.store(true, Ordering::Release);
+        }
+        self.0.callbacks.fetch_add(1, Ordering::Release);
+    }
+}
+
+#[test]
+fn resume_after_a_timed_out_suspend_discards_old_output_and_plays_new_output() {
+    let context = AudioContext::new(AudioContextOptions {
+        sink_id: "none".into(),
+        ..Default::default()
+    });
+    wait_for(|| context.state() == AudioContextState::Running);
+    let mut source = context.create_constant_source();
+    source.connect(&context.destination());
+    source.start();
+    let start = context.current_time();
+    wait_for(|| context.current_time() > start + 0.1);
+
+    let probe = Arc::new(ResumeObserver {
+        held: AtomicBool::new(false),
+        release: AtomicBool::new(false),
+        callbacks: AtomicUsize::new(0),
+        first_audible: AtomicBool::new(false),
+        later_audible: AtomicBool::new(false),
+    });
+    context.set_render_observer(Some(Box::new(ResumeProbe(Arc::clone(&probe)))));
+    wait_for(|| probe.held.load(Ordering::Acquire));
+    context.suspend_sync();
+    context.resume_sync();
+    probe.release.store(true, Ordering::Release);
+    wait_for(|| probe.callbacks.load(Ordering::Acquire) > 0);
+    wait_for(|| probe.later_audible.load(Ordering::Acquire));
+    context.set_render_observer(None);
+    context.close_sync();
+    assert!(
+        !probe.first_audible.load(Ordering::Acquire),
+        "the old callback emitted audio after resume"
     );
 }
