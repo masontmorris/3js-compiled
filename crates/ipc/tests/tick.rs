@@ -508,3 +508,30 @@ for (let n = 0; n < 3; n++) {
 }
 "#);
 }
+
+#[test]
+fn offset_reads_rotate_when_the_budget_expires() {
+    run(r#"
+const items = Array.from({ length: 8 }, (_, i) => new Element('button', [i * 10, 20, 5, 5], body));
+READ_MS = 0.6;
+const seen = new Set();
+for (let n = 0; n < 4; n++) {
+  const got = tick(() => JSON.stringify({ rects: items.map(item => { void item.offsetWidth; return item.box; }) }))[3];
+  got.forEach((id, i) => { if (id) seen.add(i); });
+}
+same(seen.size, 8, 'all offset elements eventually measured');
+"#);
+}
+
+#[test]
+fn detached_measured_element_is_not_named() {
+    run(r#"
+const item = new Element('button', [10, 20, 5, 5], body);
+const got = tick(() => {
+  item.getBoundingClientRect();
+  item.remove();
+  return JSON.stringify({ rects: [[10, 20, 5, 5]] });
+})[3];
+same(got, [0], 'detached measured element');
+"#);
+}
