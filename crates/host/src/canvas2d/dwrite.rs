@@ -141,6 +141,9 @@ pub struct Rasterizer {
     factory: Option<ComPtr<IDWriteFactory2>>,
     faces: HashMap<(FaceId, Option<u32>, bool), Option<dwrote::FontFace>>,
     masks: HashMap<MaskKey, Option<Mask>>,
+    /// Makes every face fail to open, as for a font DirectWrite rejects.
+    #[cfg(test)]
+    pub refuse_faces: bool,
 }
 
 impl Default for Rasterizer {
@@ -158,6 +161,8 @@ impl Default for Rasterizer {
             factory,
             faces: HashMap::new(),
             masks: HashMap::new(),
+            #[cfg(test)]
+            refuse_faces: false,
         }
     }
 }
@@ -174,6 +179,10 @@ impl Rasterizer {
         weight: Option<f32>,
         bold: bool,
     ) -> Option<&dwrote::FontFace> {
+        #[cfg(test)]
+        if self.refuse_faces {
+            return None;
+        }
         self.faces
             .entry((id, weight.map(f32::to_bits), bold))
             .or_insert_with(|| {

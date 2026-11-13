@@ -405,13 +405,22 @@ mod boundary_tests {
         );
     }
 
-    /// Fills "Hi" in 32 px Arial at `x` on a 100x60 canvas and returns the canvas's summed alpha.
+    /// Fills "Hi" in 32 px Arial at `x` on a 100x60 canvas and returns the canvas's summed alpha. With
+    /// `refuse_directwrite`, DirectWrite fails to open every face.
     #[cfg(windows)]
-    fn text_alpha(x: f64) -> u64 {
+    fn text_alpha(x: f64, refuse_directwrite: bool) -> u64 {
         let mut runtime = JsRuntime::new(RuntimeOptions {
             extensions: vec![super::extension::init()],
             ..Default::default()
         });
+        if refuse_directwrite {
+            let state = runtime.op_state();
+            let mut state = state.borrow_mut();
+            state
+                .borrow_mut::<super::Canvas2d>()
+                .painter
+                .refuse_directwrite_faces();
+        }
         let script = format!(
             r#"
           const pixels = new Uint8Array(100 * 60 * 4);
@@ -434,8 +443,14 @@ mod boundary_tests {
     #[cfg(windows)]
     #[test]
     fn text_far_off_the_canvas_draws_nothing() {
-        assert!(text_alpha(10.0) > 0);
-        assert_eq!(text_alpha(1e12), 0);
-        assert_eq!(text_alpha(-1e12), 0);
+        assert!(text_alpha(10.0, false) > 0);
+        assert_eq!(text_alpha(1e12, false), 0);
+        assert_eq!(text_alpha(-1e12, false), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn text_draws_when_directwrite_cannot_open_its_face() {
+        assert!(text_alpha(10.0, true) > 0);
     }
 }

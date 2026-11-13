@@ -222,6 +222,11 @@ fn div255(v: u32) -> u32 {
 }
 
 impl Painter {
+    #[cfg(all(test, windows))]
+    pub fn refuse_directwrite_faces(&mut self) {
+        self.glyphs.refuse_faces = true;
+    }
+
     fn begin(&mut self, width: u16, height: u16) {
         self.context.reset_and_resize(width, height);
     }
