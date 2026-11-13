@@ -200,13 +200,13 @@ fn the_blocking_calls_return_on_a_stopped_stream() {
 #[test]
 #[cfg_attr(feature = "output", ignore = "moves a context to the default output device; run under the GPU lease")]
 fn a_suspend_answered_before_a_device_change_holds_on_the_new_stream() {
-    let context = context();
-    wait_for("running", || context.state() == AudioContextState::Running);
+    let (context, released) = stalled();
     let mut suspend = pin!(context.suspend());
     assert!(
         start(suspend.as_mut()),
         "the suspend waits for the render thread"
     );
+    released.store(true, Ordering::Release);
     wait_for("suspended", || {
         context.state() == AudioContextState::Suspended
     });
