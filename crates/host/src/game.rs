@@ -22,6 +22,9 @@ pub type Log = Rc<RefCell<File>>;
 struct State {
     color: [f64; 4],
     commands: Option<Vec<u8>>,
+    // A stream the page submitted outside a frame's callbacks, at its top level, from an event or from a timer, which
+    // runs before the frame's own stream, as a browser's queue runs a page's work in the order the page submits it.
+    carried: Option<Vec<u8>>,
     readbacks: HashMap<u32, Vec<u8>>,
     start: Instant,
     log: Log,
@@ -230,6 +233,12 @@ fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     state.commands = Some(bytes.to_vec());
     true
 }
+/// Moves the stream submitted since the last frame, before its callbacks, ahead of the stream they submit.
+#[op2(fast)]
+fn op_gpu_carry(state: &mut OpState) {
+    let state = state.borrow_mut::<State>();
+    state.carried = state.commands.take();
+}
 #[op2(fast)]
 fn op_gpu_submitted(state: &mut OpState) -> bool {
     state.borrow::<State>().commands.is_some()
@@ -290,6 +299,7 @@ extension!(
     ops = [
         op_clear,
         op_gpu_submit,
+        op_gpu_carry,
         op_gpu_submitted,
         op_frame_due,
         op_refreshed,
@@ -402,6 +412,7 @@ impl<'a> Game<'a> {
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,
+            carried: None,
             readbacks: HashMap::new(),
             start: Instant::now(),
             log,
@@ -522,6 +533,12 @@ impl<'a> Game<'a> {
     pub fn clock_origin(&mut self) -> Instant {
         self.js.op_state().borrow().borrow::<State>().start
     }
+    pub fn condition(&mut self, expression: &str) -> Result<bool> {
+        let result = self
+            .js
+            .execute_script("host:condition", format!("Boolean(({expression}))"))?;
+        Ok(result.open(self.js.v8_isolate()).is_true())
+    }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
@@ -566,13 +583,17 @@ impl<'a> Game<'a> {
             .execute_script("host:ui-events", "__hostUiEvents()")?;
         self.tick()
     }
-    pub fn take_commands(&mut self) -> Option<Vec<u8>> {
-        self.js
-            .op_state()
-            .borrow_mut()
-            .borrow_mut::<State>()
-            .commands
+    /// The streams the page submitted for this frame, in the order it submitted them.
+    pub fn take_commands(&mut self) -> Vec<Vec<u8>> {
+        let state = self.js.op_state();
+        let mut state = state.borrow_mut();
+        let state = state.borrow_mut::<State>();
+        state
+            .carried
             .take()
+            .into_iter()
+            .chain(state.commands.take())
+            .collect()
     }
     fn tick(&mut self) -> Result<()> {
         self.runtime.block_on(async {
@@ -1432,6 +1453,35 @@ mod tests {
     }
 
     #[test]
+    fn a_timer_due_at_a_frame_and_its_callbacks_each_submit_a_stream() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-timer-submit-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-submit.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        let mut frames = Vec::new();
+        for _ in 0..6 {
+            game.frame()?;
+            let streams: Vec<u32> = game
+                .take_commands()
+                .iter()
+                .map(|stream| threejsc_gpu::decode(stream).unwrap().frame)
+                .collect();
+            if !streams.is_empty() {
+                frames.push(streams);
+            }
+        }
+        let output = std::fs::read_to_string(&log_path)?;
+        assert_eq!(frames, [vec![1, 2], vec![3, 4]], "{output}");
+        assert!(!output.contains("failed"), "{output}");
+        Ok(())
+    }
+
+    #[test]
     fn bootstrap_provides_window_size_self_and_utf8_decoding() -> Result<()> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1504,7 +1554,7 @@ mod tests {
             let mut submitted = 0;
             for _ in 0..4 {
                 game.frame()?;
-                submitted += usize::from(game.take_commands().is_some());
+                submitted += usize::from(!game.take_commands().is_empty());
             }
             let output = std::fs::read_to_string(&log_path)?;
             assert_eq!(submitted, 4, "{scene}: {output}");

@@ -586,72 +586,80 @@ impl Executor {
         frame: &[u8],
         canvas: Option<&mut wgpu::Texture>,
     ) -> Result<Vec<Response>, crate::DecodeError> {
-        self.replay_then(frame, canvas, None)
+        self.replay_then(&[frame], canvas, None)
     }
 
-    /// Replays one frame like `replay`. When the frame ends with `SUBMIT` and the canvas needs no
-    /// clear after it, `trailer`'s commands go to the queue in that submission, which saves the
-    /// host a submission per frame. `trailed` says whether they reached the queue.
+    /// Replays one frame like `replay`, from the streams the page submitted in it, in order. An
+    /// error names its own stream's frame and the command's index in that stream. When the last
+    /// stream ends with `SUBMIT` and the canvas needs no clear after it, `trailer`'s commands go to
+    /// the queue in that submission, which saves the host a submission per frame. `trailed` says
+    /// whether they reached the queue.
     pub fn replay_then(
         &mut self,
-        frame: &[u8],
+        streams: &[&[u8]],
         canvas: Option<&mut wgpu::Texture>,
         mut trailer: Option<Trailer<'_>>,
     ) -> Result<Vec<Response>, crate::DecodeError> {
         self.trailed = false;
         self.new_device = false;
-        let stream = decode(frame)?;
-        let records = stream.records;
-        self.frame = stream.frame;
+        let streams = streams
+            .iter()
+            .map(|stream| decode(stream))
+            .collect::<Result<Vec<_>, _>>()?;
         self.shown = canvas.as_deref().cloned();
         self.surface = None;
         self.next = None;
         self.surface_used = false;
         let mut responses = Vec::new();
-        for (command, record) in records.iter().enumerate() {
-            let subject = self.subject(record.opcode, record.payload);
-            let before = self.label(subject);
-            let result = if record.opcode == 26 && command + 1 == records.len() {
-                self.submit(record.payload, trailer.take())
-            } else {
-                self.execute(record.opcode, record.payload)
-            };
-            let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
-            let (response, error) = match result {
-                Ok(response) => (response, None),
-                Err(error) => (None, Some((wgpu::ErrorFilter::Validation, error))),
-            };
-            responses.extend(response);
-            let label = self.label(subject).or(before);
-            // A readback's errors reject its request. A map's reject its request and raise a
-            // validation error too, as `mapAsync()` does.
-            let request = (matches!(record.opcode, 27 | 28 | 56) && record.payload.len() >= 4)
-                .then(|| u32_at(record.payload, 0));
-            for (filter, message) in error.into_iter().chain(uncaptured) {
-                if record.opcode == 56 {
-                    self.raise(
-                        &mut responses,
-                        command,
-                        label.clone(),
-                        filter,
-                        message.clone(),
-                    );
+        for (index, stream) in streams.iter().enumerate() {
+            let records = &stream.records;
+            let last = index + 1 == streams.len();
+            self.frame = stream.frame;
+            for (command, record) in records.iter().enumerate() {
+                let subject = self.subject(record.opcode, record.payload);
+                let before = self.label(subject);
+                let result = if record.opcode == 26 && last && command + 1 == records.len() {
+                    self.submit(record.payload, trailer.take())
+                } else {
+                    self.execute(record.opcode, record.payload)
+                };
+                let uncaptured = std::mem::take(&mut *self.uncaptured.lock().unwrap());
+                let (response, error) = match result {
+                    Ok(response) => (response, None),
+                    Err(error) => (None, Some((wgpu::ErrorFilter::Validation, error))),
+                };
+                responses.extend(response);
+                let label = self.label(subject).or(before);
+                // A readback's errors reject its request. A map's reject its request and raise a
+                // validation error too, as `mapAsync()` does.
+                let request = (matches!(record.opcode, 27 | 28 | 56) && record.payload.len() >= 4)
+                    .then(|| u32_at(record.payload, 0));
+                for (filter, message) in error.into_iter().chain(uncaptured) {
+                    if record.opcode == 56 {
+                        self.raise(
+                            &mut responses,
+                            command,
+                            label.clone(),
+                            filter,
+                            message.clone(),
+                        );
+                    }
+                    match request {
+                        Some(_) => responses.push(Response::Error {
+                            frame: self.frame,
+                            command,
+                            request,
+                            label: label.clone(),
+                            filter,
+                            message,
+                        }),
+                        None => self.raise(&mut responses, command, label.clone(), filter, message),
+                    }
                 }
-                match request {
-                    Some(_) => responses.push(Response::Error {
-                        frame: self.frame,
-                        command,
-                        request,
-                        label: label.clone(),
-                        filter,
-                        message,
-                    }),
-                    None => self.raise(&mut responses, command, label.clone(), filter, message),
+                // A create keeps its label for its error and drops it when the create left no resource.
+                if let Some(handle) = subject.filter(|handle| !self.handle_used(*handle)) {
+                    self.labels.remove(&handle);
                 }
-            }
-            // A create keeps its label for its error and drops it when the create left no resource.
-            if let Some(handle) = subject.filter(|handle| !self.handle_used(*handle)) {
-                self.labels.remove(&handle);
             }
         }
         self.clear_unwritten_surface();
@@ -665,7 +673,7 @@ impl Executor {
             self.encoder = None;
             self.raise(
                 &mut responses,
-                records.len(),
+                streams.last().map_or(0, |stream| stream.records.len()),
                 None,
                 wgpu::ErrorFilter::Validation,
                 "incomplete command submission".into(),

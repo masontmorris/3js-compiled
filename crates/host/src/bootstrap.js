@@ -213,8 +213,8 @@ let shareLeft = 3.3;
 // it falls due, until the render thread has caught up, as a browser runs its tasks while it waits to render.
 globalThis.__hostIdle = () => runTimers(Infinity, -Infinity, -Infinity, false);
 // Runs the due timers and then the frame's callbacks, each with its promise jobs after it, as HTML does. At the end
-// of a frame in which the page submits no command stream, NativeBackend hands the host the recorded work that the
-// page awaits a response to.
+// of a frame whose callbacks submit no command stream, NativeBackend hands the host the recorded work that the page
+// awaits a response to.
 globalThis.__hostFrame = () => {
   const start = performance.now();
   const interval = globalThis.__displayInterval;
@@ -224,6 +224,8 @@ globalThis.__hostFrame = () => {
   // A turn that ran past its share takes the overrun out of the next one's, so timers average the share of each frame
   // rather than the share plus the timer running when it ends.
   shareLeft = Math.max(0, Math.min(share, shareLeft + share - (performance.now() - start)));
+  // The callbacks may submit a stream of their own after one the page submitted since the last frame.
+  ops.op_gpu_carry();
   framesBegan = performance.now();
   running = new Map(callbacks);
   callbacks.clear();

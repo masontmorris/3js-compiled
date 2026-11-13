@@ -12,3 +12,9 @@ export function parse(lines, scene) {
   const failed = lines.some(line => line.includes('scene error'));
   return { loads: spans, draws, firstFrames, dynamic, missing, failed };
 }
+
+// The host's script for a native perf page: wait until the scene is ready or failed, as the Edge page does, then
+// `waitFrames` frames, then close. A failed scene logs its error, which parse() reports and which voids the run.
+export function nativeSteps(waitFrames) {
+  return [{ type: 'wait_for', expression: '!!(globalThis.__sceneReady || globalThis.__sceneError)', timeout_frames: 6000 }, { type: 'wait', frames: waitFrames }, { type: 'close' }];
+}
