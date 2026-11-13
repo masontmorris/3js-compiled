@@ -3,7 +3,7 @@ mod renderer;
 
 use anyhow::{Context, Result, bail};
 use game::{Game, Log, Page, RenderProgress};
-use renderer::{Frame, Rendered, Renderer, Target};
+use renderer::{Frame, Gpu, Rendered, Renderer, Target};
 use sdl3::event::Event;
 use serde_json::{Value, json};
 use std::{
@@ -13,7 +13,7 @@ use std::{
     io::{BufWriter, Write},
     path::{Path, PathBuf},
     rc::Rc,
-    sync::{Arc, atomic::Ordering},
+    sync::{Arc, atomic::Ordering, mpsc},
     time::{Duration, Instant},
 };
 use threejsc_host::{
@@ -21,6 +21,7 @@ use threejsc_host::{
     script::{PointerAction, Step},
     worker::Worker,
 };
+use threejsc_ui as ui;
 
 /// The refresh interval in ms of the display the window is on, or 0 when SDL reports no rate.
 fn display_interval(window: &sdl3::video::Window) -> f64 {
@@ -42,6 +43,7 @@ struct Options {
     audio_out: Option<PathBuf>,
     /// Runs the entry module with no window or GPU until its top level finishes, then this many frames.
     headless: Option<u32>,
+    no_ui: bool,
 }
 fn options() -> Result<Options> {
     let mut args = std::env::args().skip(1);
@@ -55,6 +57,7 @@ fn options() -> Result<Options> {
     let mut audio_device = None;
     let mut audio_out = None;
     let mut headless = None;
+    let mut no_ui = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" => entry = Some(args.next().context("--entry needs a path")?),
@@ -71,6 +74,7 @@ fn options() -> Result<Options> {
                 }
             }
             "--novsync" => vsync = false,
+            "--no-ui" => no_ui = true,
             "--audio-device" => {
                 audio_device = Some(args.next().context("--audio-device needs a device name")?);
             }
@@ -104,6 +108,7 @@ fn options() -> Result<Options> {
         audio_device,
         audio_out,
         headless,
+        no_ui,
     })
 }
 fn log(log: &Log, message: &str) -> Result<()> {
@@ -146,6 +151,25 @@ fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
         wgpu::ErrorFilter::OutOfMemory => "out-of-memory",
         wgpu::ErrorFilter::Internal => "internal",
     }
+}
+/// Whether the HUD takes the pointer input at window pixel (`x`, `y`). The game gets the input
+/// otherwise.
+fn hud_takes(ui: Option<&mut ui::Ui>, action: PointerAction, x: f64, y: f64, button: i16) -> bool {
+    let code = match action {
+        PointerAction::Move => 0,
+        PointerAction::Down => 1,
+        PointerAction::Up => 2,
+    };
+    ui.is_some_and(|ui| ui.pointer(code, x, y, button))
+}
+/// Starts the UI for `page` on `gpu` off the game thread, since it opens a pipe and starts ui-host.
+fn launch_ui(gpu: &Gpu, page: String, size: (u32, u32)) -> mpsc::Receiver<Result<ui::Ui>> {
+    let gpu = gpu.clone();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(ui::Ui::new(&gpu.device, &gpu.queue, gpu.format, page, size));
+    });
+    rx
 }
 /// Sends the coalesced pointer motion and wheel facts.
 fn flush(game: &mut Game<'_>, moved: &mut Option<Value>, wheel: &mut Option<Value>) -> Result<()> {
@@ -307,6 +331,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         .build()?;
     let (target, adapter) = pollster::block_on(Target::new(&window, options.vsync))?;
     log(log_file, &adapter)?;
+    let mut gpu = target.gpu();
     let (width, height) = window.size_in_pixels();
     let mut size = (width.max(1), height.max(1));
     let (mut ratio, css) = css_size(&window);
@@ -338,6 +363,17 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         Some((&target.adapter_limits(), target.adapter_features())),
         &page,
     )?;
+    let page = if options.no_ui {
+        None
+    } else {
+        game.page()
+            .map(std::fs::canonicalize)
+            .transpose()?
+            .map(|path| path.to_string_lossy().into_owned())
+    };
+    let mut ui = None;
+    let mut ui_launch: Option<mpsc::Receiver<Result<ui::Ui>>> = None;
+    let mut pending_patch = None;
     let mut gamepads = Gamepads::new(
         sdl.gamepad().map_err(anyhow::Error::msg)?,
         sdl.joystick().map_err(anyhow::Error::msg)?,
@@ -386,6 +422,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     let mut row = None;
     'running: loop {
         let started = Instant::now();
+        let density = f64::from(window.pixel_density());
         let scale = css_scale(window.pixel_density(), ratio);
         let keyboard = sdl.keyboard();
         // Motion and wheel events coalesce within a poll, as Edge aligns them to frames, and go out before any
@@ -448,14 +485,23 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     keymod,
                 ))?,
                 Event::MouseMotion { x, y, .. } => {
-                    moved = Some(pointer(
+                    let (x, y) = (f64::from(x), f64::from(y));
+                    if !hud_takes(
+                        ui.as_mut(),
                         PointerAction::Move,
-                        f64::from(x) * scale,
-                        f64::from(y) * scale,
+                        x * density,
+                        y * density,
                         0,
-                        0,
-                        &modifiers,
-                    ));
+                    ) {
+                        moved = Some(pointer(
+                            PointerAction::Move,
+                            x * scale,
+                            y * scale,
+                            0,
+                            0,
+                            &modifiers,
+                        ));
+                    }
                 }
                 Event::MouseButtonDown {
                     x,
@@ -463,28 +509,52 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     mouse_btn,
                     clicks,
                     ..
-                } => game.event(&pointer(
-                    PointerAction::Down,
-                    f64::from(x) * scale,
-                    f64::from(y) * scale,
-                    input::mouse_button(mouse_btn),
-                    clicks,
-                    &modifiers,
-                ))?,
+                } => {
+                    let (x, y) = (f64::from(x), f64::from(y));
+                    let button = input::mouse_button(mouse_btn);
+                    if !hud_takes(
+                        ui.as_mut(),
+                        PointerAction::Down,
+                        x * density,
+                        y * density,
+                        button,
+                    ) {
+                        game.event(&pointer(
+                            PointerAction::Down,
+                            x * scale,
+                            y * scale,
+                            button,
+                            clicks,
+                            &modifiers,
+                        ))?
+                    }
+                }
                 Event::MouseButtonUp {
                     x,
                     y,
                     mouse_btn,
                     clicks,
                     ..
-                } => game.event(&pointer(
-                    PointerAction::Up,
-                    f64::from(x) * scale,
-                    f64::from(y) * scale,
-                    input::mouse_button(mouse_btn),
-                    clicks,
-                    &modifiers,
-                ))?,
+                } => {
+                    let (x, y) = (f64::from(x), f64::from(y));
+                    let button = input::mouse_button(mouse_btn);
+                    if !hud_takes(
+                        ui.as_mut(),
+                        PointerAction::Up,
+                        x * density,
+                        y * density,
+                        button,
+                    ) {
+                        game.event(&pointer(
+                            PointerAction::Up,
+                            x * scale,
+                            y * scale,
+                            button,
+                            clicks,
+                            &modifiers,
+                        ))?
+                    }
+                }
                 Event::MouseWheel {
                     x,
                     y,
@@ -530,7 +600,12 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                         y,
                         button,
                     } => {
-                        game.event(&pointer(*action, *x, *y, i16::from(*button), 1, &modifiers))?
+                        // The HUD page lays out at a device pixel ratio of 1, so a step's CSS
+                        // pixels are the page's as well as the game's.
+                        let button = i16::from(*button);
+                        if !hud_takes(ui.as_mut(), *action, *x, *y, button) {
+                            game.event(&pointer(*action, *x, *y, button, 1, &modifiers))?
+                        }
                     }
                     Step::Wheel { x, y } => {
                         let mut fact = json!({"type":"wheel", "deltaX":x, "deltaY":y});
@@ -573,6 +648,35 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             game.event(&json!({"type": "resize", "width": css_width, "height": css_height, "ratio": ratio}))?;
         }
         let clear = game.frame()?;
+        if let Some(patch) = game.patch() {
+            pending_patch = Some(patch);
+        }
+        if let Some(rx) = &ui_launch {
+            match rx.try_recv() {
+                Ok(result) => {
+                    ui = Some(result?);
+                    ui_launch = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => bail!("UI initialization thread stopped"),
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        let hud = match &mut ui {
+            Some(ui) => {
+                let delivery = ui.update(frame + 1, size, pending_patch.take())?;
+                for note in &delivery.notes {
+                    log(log_file, note)?;
+                }
+                if delivery.events.is_some() || delivery.dropped > 0 {
+                    game.ui_events(
+                        delivery.events.unwrap_or_else(|| "[]".into()),
+                        delivery.dropped,
+                    )?;
+                }
+                Some(ui.composite())
+            }
+            None => None,
+        };
         let captures = capture
             .into_iter()
             .chain(
@@ -594,13 +698,29 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
             clear,
             commands,
             captures,
+            ui: hud,
         })?;
         let handed = Instant::now();
         progress.submitted.fetch_add(1, Ordering::Release);
         let render_wait = submitted.elapsed();
-        if let Some(rendered) = rendered {
+        if let Some(mut rendered) = rendered {
+            // The UI's textures and fences belong to the device the window drew with, so a UI on
+            // a device the game replaced starts again on the new one.
+            if let Some(replaced) = rendered.device.take() {
+                gpu = replaced;
+                if let Some(page) = page.clone().filter(|_| ui.is_some() || ui_launch.is_some()) {
+                    log(log_file, "UI restarts on the device the game requested")?;
+                    ui = None;
+                    ui_launch = Some(launch_ui(&gpu, page, size));
+                }
+            }
             let row = row.take().expect("a rendered frame has a game-thread row");
             finish(&mut game, log_file, &mut csv, row, rendered, clock)?;
+        }
+        if frame == 0
+            && let Some(page) = page.clone()
+        {
+            ui_launch = Some(launch_ui(&gpu, page, size));
         }
         row = Some(Row {
             cpu: started.elapsed() - render_wait,

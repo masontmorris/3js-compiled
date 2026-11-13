@@ -571,6 +571,8 @@ pub struct Ui {
     notes: Vec<String>,
     launches: u32,
     last_failure: Option<String>,
+    /// The game frame of the last `update`.
+    frame: u64,
 }
 impl Ui {
     pub fn new(
@@ -606,6 +608,7 @@ impl Ui {
             notes: Vec::new(),
             launches: 0,
             last_failure: None,
+            frame: 0,
         };
         ui.start();
         Ok(ui)
@@ -669,6 +672,7 @@ impl Ui {
         size: (u32, u32),
         patch: Option<String>,
     ) -> Result<Delivery> {
+        self.frame = frame;
         if let Some(patch) = patch {
             self.state = Some(patch);
             self.state_sent = false;
@@ -925,36 +929,21 @@ impl Ui {
             pointers::Route::Neither => true,
         }
     }
-    pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        if let Connection::Running(link) = &self.connection
-            && let Some(slot) = link.rings.shown()
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ui composite"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &slot.bind_group, &[]);
-            pass.draw(0..3, 0..1);
+    /// The HUD for the frame of the last `update`, which the render thread draws: the frame
+    /// shown then, or nothing while no frame is shown.
+    pub fn composite(&self) -> Composite {
+        let slot = match &self.connection {
+            Connection::Running(link) => link.rings.shown().map(|slot| slot.bind_group.clone()),
+            _ => None,
+        };
+        Composite {
+            device: self.importer.device.clone(),
+            pipeline: self.pipeline.clone(),
+            slot,
+            queue: self.d3d.queue.clone(),
+            done: self.d3d.done.clone(),
+            frame: self.frame,
         }
-    }
-    pub fn signal(&self, frame: u64) -> Result<()> {
-        unsafe {
-            self.d3d.queue.Signal(&self.d3d.done, frame)?;
-        }
-        Ok(())
     }
 }
 /// One frame's HUD, which the render thread draws over the frame: the slot shown in that frame,
@@ -976,13 +965,36 @@ impl Composite {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
-        let _ = (device, encoder, view);
-        todo!()
+        let Some(slot) = self.slot.as_ref().filter(|_| *device == self.device) else {
+            return;
+        };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ui composite"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, slot, &[]);
+        pass.draw(0..3, 0..1);
     }
     /// Tells ui-host that the GPU is done with the slots of this frame and earlier ones. Call it
     /// after the queue submission that draws the frame.
     pub fn signal(&self) -> Result<()> {
-        todo!()
+        unsafe {
+            self.queue.Signal(&self.done, self.frame)?;
+        }
+        Ok(())
     }
 }
 
@@ -1109,8 +1121,7 @@ mod tests {
         use wgpu::util::DeviceExt;
         let adapter = warp();
         let (device, queue) = pollster::block_on(adapter.request_device(&Default::default()))?;
-        let (other, other_queue) =
-            pollster::block_on(adapter.request_device(&Default::default()))?;
+        let (other, other_queue) = pollster::block_on(adapter.request_device(&Default::default()))?;
         let d3d = D3d::new(&device, &queue)?;
         let (layout, pipeline) = composite_pipeline(&device, wgpu::TextureFormat::Bgra8Unorm);
         let slot = device.create_texture_with_data(
@@ -1137,7 +1148,9 @@ mod tests {
             layout: &layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&slot.create_view(&Default::default())),
+                resource: wgpu::BindingResource::TextureView(
+                    &slot.create_view(&Default::default()),
+                ),
             }],
         });
         let composite = Composite {
