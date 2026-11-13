@@ -489,6 +489,59 @@ fn captures_and_recordings_hold_the_frame_javascript_produced() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_wait_holds_later_steps_until_the_page_is_ready() {
+    let dir = workdir("wait-for");
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 100},
+        {"type": "capture", "path": "ready.png"},
+        {"type": "wait", "frames": 5},
+        {"type": "capture", "path": "later.png"},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    assert_eq!(red(&dir.join("ready.png")).0, 21);
+    assert_eq!(red(&dir.join("later.png")).0, 27);
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_wait_fails_the_run_when_it_times_out() {
+    let dir = workdir("wait-for-timeout");
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "globalThis.ready", "timeout_frames": 10},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert_eq!(status.code(), Some(1), "{log}");
+    assert!(
+        log.contains("host failed: condition timed out after 10 frames: globalThis.ready"),
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_condition_that_throws_fails_the_run_with_its_error() {
+    let dir = workdir("wait-for-error");
+    let steps = serde_json::json!([
+        {"type": "wait_for", "expression": "(() => { if (globalThis.ready) throw new Error('scene failed'); return false; })()", "timeout_frames": 100},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &test_entry("ready.js"), &steps, &[]);
+    assert_eq!(status.code(), Some(1), "{log}");
+    assert!(
+        log.contains("host failed: ") && log.contains("Error: scene failed"),
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn repeated_runs_capture_identical_frames() {
     let bundle = bundle("resize");
     let steps = serde_json::json!([
