@@ -236,7 +236,9 @@ fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<ch
     let covers =
         |fonts: &Fonts, face: FaceId, c: char| fonts.get(face).font().charmap().map(c).is_some();
     let mut chosen = HashMap::new();
-    for c in text.chars().filter(|c| !continues_cluster(*c)) {
+    // Marks get a face too: layout keeps a mark with its base, so the face here draws only a mark that starts a
+    // segment.
+    for c in text.chars() {
         if chosen.contains_key(&c)
             || chain.instances[..chain.listed]
                 .iter()
