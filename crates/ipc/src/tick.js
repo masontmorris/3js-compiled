@@ -10,7 +10,8 @@
 //
 // A rect's candidates are the elements whose border box it is (to within 1 px) when the tick
 // returns: those the page measured with that box during the tick (by their last
-// `getBoundingClientRect`, or a viewport box read after an `offsetWidth` read), else those the same box, then the rect at the same index, named in the
+// `getBoundingClientRect`, or a viewport box read after an `offsetWidth` read), else those the
+// same box, then the rect at the same index, named in the
 // last reply, else those a document scan finds; with each, its ancestors, descendants and next
 // siblings of the same box. The rect names the topmost hit-testable candidate, the last in
 // document order whose `pointer-events` is not `none`, or the topmost candidate when none is
