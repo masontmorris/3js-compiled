@@ -21,6 +21,9 @@ pub type Log = Rc<RefCell<File>>;
 struct State {
     color: [f64; 4],
     commands: Option<Vec<u8>>,
+    // A stream the page submitted outside a frame's callbacks, at its top level or from a timer, which starts the
+    // next frame's stream, as a browser's queue runs a page's work in the order the page submits it.
+    carried: Option<Vec<u8>>,
     readbacks: HashMap<u32, Vec<u8>>,
     start: Instant,
     log: Log,
@@ -216,6 +219,12 @@ fn op_wait(state: &mut OpState, until: f64, render: bool) -> bool {
 fn op_clear(state: &mut OpState, r: f64, g: f64, b: f64, a: f64) {
     state.borrow_mut::<State>().color = [r, g, b, a];
 }
+fn join(first: Option<Vec<u8>>, second: Option<Vec<u8>>) -> Option<Vec<u8>> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(threejsc_gpu::join(&first, &second)),
+        (first, second) => first.or(second),
+    }
+}
 #[op2(fast)]
 fn op_gpu_submit(state: &mut OpState, #[buffer] bytes: &[u8]) -> bool {
     let state = state.borrow_mut::<State>();
@@ -367,6 +376,7 @@ impl<'a> Game<'a> {
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,
+            carried: None,
             readbacks: HashMap::new(),
             start: Instant::now(),
             log,
@@ -490,6 +500,12 @@ impl<'a> Game<'a> {
         Ok(result.open(self.js.v8_isolate()).is_true())
     }
     pub fn frame(&mut self) -> Result<[f64; 4]> {
+        {
+            let state = self.js.op_state();
+            let mut state = state.borrow_mut();
+            let state = state.borrow_mut::<State>();
+            state.carried = join(state.carried.take(), state.commands.take());
+        }
         self.js.execute_script("host:frame", "__hostFrame()")?;
         self.tick()?;
         Ok(self.js.op_state().borrow().borrow::<State>().color)
@@ -505,12 +521,10 @@ impl<'a> Game<'a> {
         self.tick()
     }
     pub fn take_commands(&mut self) -> Option<Vec<u8>> {
-        self.js
-            .op_state()
-            .borrow_mut()
-            .borrow_mut::<State>()
-            .commands
-            .take()
+        let state = self.js.op_state();
+        let mut state = state.borrow_mut();
+        let state = state.borrow_mut::<State>();
+        join(state.carried.take(), state.commands.take())
     }
     fn tick(&mut self) -> Result<()> {
         self.runtime.block_on(async {

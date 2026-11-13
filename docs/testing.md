@@ -61,7 +61,7 @@ python C:\Users\mason\.gpu\gpu_lease.py run --holder 3jsc-e1 --purpose "scripted
 
 ## GPU command responses
 
-An entry module can call `submitGpuCommands(bytes)` once between host frames. The host copies the `Uint8Array`, replays it on the render thread against the game texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
+An entry module can call `submitGpuCommands(bytes)` once in a frame's callbacks, and once outside them between two frames, at its top level or from a timer. A stream submitted outside the callbacks runs at the start of the next frame's stream, as a browser's queue runs a page's work in the order the page submits it. The host copies the `Uint8Array`, replays it on the render thread against the game texture, and dispatches one `gpu-response` event when the replay produced responses. The event for frame N arrives after JavaScript's frame N+1 callbacks run and before its frame N+2 callbacks. The event's `responses` array holds three kinds of object:
 
 - `{type: "validation", request}` reports that a shader or render pipeline created with a nonzero request ID compiled.
 - `{type: "readback", request, bytes}` carries a buffer or texture readback. `bytes` is an `ArrayBuffer` that crosses from Rust as one binary buffer.

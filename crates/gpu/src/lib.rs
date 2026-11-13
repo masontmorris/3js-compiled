@@ -102,6 +102,23 @@ pub fn decode(bytes: &[u8]) -> Result<Stream<'_>, DecodeError> {
     }
     Ok(Stream { frame, records })
 }
+/// One stream with `first`'s records and then `second`'s, under `second`'s frame, as one recorder would have
+/// encoded both. A stream that does not decode is returned alone, so its replay reports the error.
+pub fn join(first: &[u8], second: &[u8]) -> Vec<u8> {
+    let (first_count, second_count) = match (decode(first), decode(second)) {
+        (Ok(a), Ok(b)) => (a.records.len(), b.records.len()),
+        (Err(_), _) => return first.to_vec(),
+        (_, Err(_)) => return second.to_vec(),
+    };
+    let mut joined = second[..HEADER_LEN].to_vec();
+    joined.extend_from_slice(&first[HEADER_LEN..]);
+    joined.extend_from_slice(&second[HEADER_LEN..]);
+    let len = joined.len() as u32;
+    joined[8..12].copy_from_slice(&len.to_le_bytes());
+    joined[16..20].copy_from_slice(&((first_count + second_count) as u32).to_le_bytes());
+    joined
+}
+
 mod executor;
 mod pipeline;
 pub use executor::{Executor, Response, Trailer};
