@@ -179,7 +179,11 @@ impl Gamepads {
                 return Err(anyhow!("attach a virtual gamepad: {}", sdl3::get_error()));
             }
             let joystick = self.joysticks.open(id.into())?;
-            let axes = vec![0; sys::gamepad::SDL_GAMEPAD_AXIS_COUNT.0 as usize];
+            // A stick sits at 0 when centered, but a released trigger is at the bottom of its axis, which
+            // -32768 is; 0 would report half travel when the pad opens.
+            let mut axes = vec![0; sys::gamepad::SDL_GAMEPAD_AXIS_COUNT.0 as usize];
+            axes[4] = i16::MIN;
+            axes[5] = i16::MIN;
             self.virtuals.insert(
                 index,
                 Virtual {
@@ -314,7 +318,9 @@ mod tests {
         // A trigger as a second pad's first input exposes it with buttons[7] already pressed, as Edge does.
         pads.tilt(1, 5, 1.0)?;
         poll(&mut pads)?;
-        let fact = pads.snapshot().expect("the trigger connects the second pad");
+        let fact = pads
+            .snapshot()
+            .expect("the trigger connects the second pad");
         let triggered = &fact["pads"][1];
         assert_eq!(
             triggered["buttons"][7], 1.0,
