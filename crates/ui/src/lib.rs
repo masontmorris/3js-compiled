@@ -460,6 +460,98 @@ fn retire(mut link: Link, kill: bool) {
     });
 }
 
+impl D3d {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
+        unsafe {
+            let raw = device
+                .as_hal::<wgpu::wgc::api::Dx12>()
+                .context("DX12 device")?
+                .raw_device()
+                .clone();
+            let q = queue
+                .as_hal::<wgpu::wgc::api::Dx12>()
+                .context("DX12 queue")?
+                .as_raw()
+                .clone();
+            let ready = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
+            let done = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
+            let ready_handle = OwnedHandle::from_raw_handle(
+                raw.CreateSharedHandle(&ready, None, GENERIC_ALL.0, PCWSTR::null())?
+                    .0,
+            );
+            let done_handle = OwnedHandle::from_raw_handle(
+                raw.CreateSharedHandle(&done, None, GENERIC_ALL.0, PCWSTR::null())?
+                    .0,
+            );
+            let luid = raw.GetAdapterLuid();
+            Ok(D3d {
+                device: raw,
+                queue: q,
+                ready,
+                done,
+                ready_handle,
+                done_handle,
+                luid: (luid.HighPart, luid.LowPart),
+            })
+        }
+    }
+}
+
+/// The pipeline that composites a HUD slot over a `format` target, and its bind group layout.
+fn composite_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> (wgpu::BindGroupLayout, wgpu::RenderPipeline) {
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("ui layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("ui composite"),
+        source: wgpu::ShaderSource::Wgsl(COMPOSITE_WGSL.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("ui pipeline"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ui composite"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    (layout, pipeline)
+}
+
 pub struct Ui {
     d3d: D3d,
     connection: Connection,
@@ -488,85 +580,8 @@ impl Ui {
         page: String,
         size: (u32, u32),
     ) -> Result<Self> {
-        let d3d = unsafe {
-            let raw = device
-                .as_hal::<wgpu::wgc::api::Dx12>()
-                .context("DX12 device")?
-                .raw_device()
-                .clone();
-            let q = queue
-                .as_hal::<wgpu::wgc::api::Dx12>()
-                .context("DX12 queue")?
-                .as_raw()
-                .clone();
-            let ready = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
-            let done = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
-            let ready_handle = OwnedHandle::from_raw_handle(
-                raw.CreateSharedHandle(&ready, None, GENERIC_ALL.0, PCWSTR::null())?
-                    .0,
-            );
-            let done_handle = OwnedHandle::from_raw_handle(
-                raw.CreateSharedHandle(&done, None, GENERIC_ALL.0, PCWSTR::null())?
-                    .0,
-            );
-            let luid = raw.GetAdapterLuid();
-            D3d {
-                device: raw,
-                queue: q,
-                ready,
-                done,
-                ready_handle,
-                done_handle,
-                luid: (luid.HighPart, luid.LowPart),
-            }
-        };
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ui layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        });
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ui composite"),
-            source: wgpu::ShaderSource::Wgsl(COMPOSITE_WGSL.into()),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ui pipeline"),
-            bind_group_layouts: &[Some(&layout)],
-            immediate_size: 0,
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ui composite"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let d3d = D3d::new(device, queue)?;
+        let (layout, pipeline) = composite_pipeline(device, format);
         warm_up(device, queue, &pipeline, &layout, format);
         let importer = Importer {
             d3d: d3d.device.clone(),
