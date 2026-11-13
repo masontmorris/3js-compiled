@@ -2,7 +2,7 @@
 
 `npm test` runs every JavaScript test suite: `packages/three-native` and the `node --test` suites in `tools/perf`. `npm run check` runs the WGSL gate, `tools/wgsl-gate/gate.mjs`, which needs `naga` and `dxc` on the path or named by `NAGA` and `DXC`. On Windows, the SDK's `dxc.exe` works, for example `C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe`. `modal run tools/modal/lanes.py::wgsl_gate` runs the same gate on Linux.
 
-The host reads a JSON array with `--script <path>`. It processes steps in order before a frame. `wait` renders the given number of frames before the next step. `capture` saves the next rendered frame and then continues with the following step. `wait_for` evaluates its `expression` in the page before each frame and continues with the following step once the result is truthy. It fails the run with code 1 when the expression throws, or when it stays false for `timeout_frames` frames. `close` exits with code 0.
+The host reads a JSON array with `--script <path>`. It processes steps in order before a frame. `wait` renders the given number of frames before the next step. `capture` saves the next rendered frame and then continues with the following step. `wait_for` evaluates its `expression` in the page before each frame, at most `timeout_frames` times, and continues with the following step once the result is truthy. It fails the run with code 1 when the expression throws, or when all `timeout_frames` evaluations are false. `close` exits with code 0.
 
 ```json
 [
