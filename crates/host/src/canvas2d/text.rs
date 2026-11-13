@@ -123,8 +123,11 @@ pub struct Chain {
 impl Chain {
     /// CSS's first available font, whose metrics the text uses: the first listed font whose range holds a space.
     pub fn primary(&self) -> Option<&Instance> {
-        let index = (0..self.listed).find(|&index| self.allows(index, ' '))?;
-        self.instances.get(index)
+        self.instances.get(self.primary_index()?)
+    }
+
+    fn primary_index(&self) -> Option<usize> {
+        (0..self.listed).find(|&index| self.allows(index, ' '))
     }
 
     /// Whether the instance at `index` may draw `c`: its `unicode-range` holds it, or it has none.
@@ -314,19 +317,20 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
         .iter()
         .map(|instance| fonts.get(instance.face).font().charmap())
         .collect();
-    let mut pieces: Vec<(usize, &str)> = Vec::new();
+    // Each piece's face, and whether it draws missing glyphs.
+    let mut pieces: Vec<((usize, bool), &str)> = Vec::new();
     for segment in visual_segments(text) {
         let mut start = 0;
         let mut current = None;
         for (at, c) in segment.char_indices() {
-            let keeps = current.is_some_and(|index: usize| {
+            let keeps = current.is_some_and(|(index, _): (usize, bool)| {
                 continues_cluster(c)
                     || common_cjk(c) && index >= chain.listed && charmaps[index].map(c).is_some()
             });
             let index = if keeps {
                 current
             } else {
-                // A character no font has draws as the first font's missing glyph, as Edge does.
+                // A character no font may draw draws as the first available font's missing glyph, as Edge does.
                 Some(
                     charmaps[..chain.listed]
                         .iter()
@@ -335,7 +339,19 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
                             chain.allows(index, c) && charmap.map(c).is_some()
                         })
                         .or_else(|| chosen.get(&c).copied())
-                        .unwrap_or(0),
+                        .map_or_else(
+                            || {
+                                // Only a face that maps the character outside its range needs it swapped out;
+                                // otherwise shaping the character itself gives the missing glyph, or nothing for
+                                // a default-ignorable one, as before.
+                                let first = chain.primary_index().unwrap_or(0);
+                                (
+                                    first,
+                                    !chain.allows(first, c) && charmaps[first].map(c).is_some(),
+                                )
+                            },
+                            |index| (index, false),
+                        ),
                 )
             };
             if index != current {
@@ -352,7 +368,7 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
     }
     let mut pen = 0.0;
     let mut runs = Vec::new();
-    for (index, piece) in pieces {
+    for ((index, missing), piece) in pieces {
         let Some(instance) = chain.instances.get(index) else {
             continue;
         };
@@ -375,7 +391,13 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             .instance(Some(&shaper_instance))
             .build();
         let mut buffer = UnicodeBuffer::new();
-        buffer.push_str(piece);
+        if missing {
+            // No font maps U+10FFFF, so each character shapes as the face's missing glyph even when the face maps
+            // it outside its range.
+            buffer.push_str(&piece.chars().map(|_| '\u{10ffff}').collect::<String>());
+        } else {
+            buffer.push_str(piece);
+        }
         // A right-to-left script shapes right to left, and its glyphs come out in visual order.
         buffer.guess_segment_properties();
         // Blink shapes at 16.16 fixed point, so advances keep their fractions.
