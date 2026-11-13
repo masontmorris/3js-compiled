@@ -123,11 +123,12 @@ pub struct Chain {
 impl Chain {
     /// CSS's first available font, whose metrics the text uses: the first listed font whose range holds a space.
     pub fn primary(&self) -> Option<&Instance> {
-        self.instances.get(self.primary_index()?)
+        self.instances.get(self.first_allowing(' ')?)
     }
 
-    fn primary_index(&self) -> Option<usize> {
-        (0..self.listed).find(|&index| self.allows(index, ' '))
+    /// The first listed font whose range holds `c`.
+    fn first_allowing(&self, c: char) -> Option<usize> {
+        (0..self.listed).find(|&index| self.allows(index, c))
     }
 
     /// Whether the instance at `index` may draw `c`: its `unicode-range` holds it, or it has none.
@@ -259,7 +260,13 @@ fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<ch
                 break;
             }
         }
-        let Some(face) = found.or_else(|| fonts.fallback(c, weight, italic)) else {
+        let found = found.or_else(|| fonts.fallback(c, weight, italic));
+        // A character no font has and no listed range holds takes the standard font's missing glyph, as in Edge.
+        let found = match found {
+            None if chain.first_allowing(c).is_none() => fonts.family(STANDARD, weight, italic),
+            found => found,
+        };
+        let Some(face) = found else {
             continue;
         };
         let index = match chain.instances.iter().position(|known| known.face == face) {
@@ -272,11 +279,6 @@ fn add_fallbacks(fonts: &mut Fonts, chain: &mut Chain, text: &str) -> HashMap<ch
         chosen.insert(c, index);
     }
     chosen
-}
-
-/// Unicode's default-ignorable code points, which the shaper hides.
-fn default_ignorable(c: char) -> bool {
-    matches!(c as u32, 0xAD | 0x34F | 0x61C | 0x115F..=0x1160 | 0x17B4..=0x17B5 | 0x180B..=0x180F | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x206F | 0x3164 | 0xFE00..=0xFE0F | 0xFEFF | 0xFFA0 | 0xFFF0..=0xFFF8 | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A | 0xE0000..=0xE0FFF)
 }
 
 /// CJK and fullwidth punctuation, which takes the font of the text around it.
@@ -322,20 +324,20 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
         .iter()
         .map(|instance| fonts.get(instance.face).font().charmap())
         .collect();
-    // Each piece's face, and whether it draws missing glyphs.
-    let mut pieces: Vec<((usize, bool), &str)> = Vec::new();
+    let mut pieces: Vec<(usize, &str)> = Vec::new();
     for segment in visual_segments(text) {
         let mut start = 0;
         let mut current = None;
         for (at, c) in segment.char_indices() {
-            let keeps = current.is_some_and(|(index, _): (usize, bool)| {
+            let keeps = current.is_some_and(|index: usize| {
                 continues_cluster(c)
                     || common_cjk(c) && index >= chain.listed && charmaps[index].map(c).is_some()
             });
             let index = if keeps {
                 current
             } else {
-                // A character no font may draw draws as the first available font's missing glyph, as Edge does.
+                // A character no font has draws as the missing glyph of the first font whose range holds it, as
+                // Edge does.
                 Some(
                     charmaps[..chain.listed]
                         .iter()
@@ -344,19 +346,8 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
                             chain.allows(index, c) && charmap.map(c).is_some()
                         })
                         .or_else(|| chosen.get(&c).copied())
-                        .map_or_else(
-                            || {
-                                // Only a face that maps the character outside its range needs it swapped out;
-                                // otherwise shaping the character itself gives the missing glyph, or nothing for
-                                // a default-ignorable one, as before.
-                                let first = chain.primary_index().unwrap_or(0);
-                                (
-                                    first,
-                                    !chain.allows(first, c) && charmaps[first].map(c).is_some(),
-                                )
-                            },
-                            |index| (index, false),
-                        ),
+                        .or_else(|| chain.first_allowing(c))
+                        .unwrap_or(0),
                 )
             };
             if index != current {
@@ -373,7 +364,7 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
     }
     let mut pen = 0.0;
     let mut runs = Vec::new();
-    for ((index, missing), piece) in pieces {
+    for (index, piece) in pieces {
         let Some(instance) = chain.instances.get(index) else {
             continue;
         };
@@ -396,22 +387,7 @@ pub fn layout(fonts: &mut Fonts, chain: &mut Chain, text: &str, size: f32) -> La
             .instance(Some(&shaper_instance))
             .build();
         let mut buffer = UnicodeBuffer::new();
-        if missing {
-            // No font maps U+10FFFF, so a character the face maps outside its range shapes as the missing glyph.
-            // The rest, such as a variation selector, shape as themselves.
-            let swapped: String = piece
-                .chars()
-                .map(|c| {
-                    let excluded = !default_ignorable(c)
-                        && !chain.allows(index, c)
-                        && charmaps[index].map(c).is_some();
-                    if excluded { '\u{10ffff}' } else { c }
-                })
-                .collect();
-            buffer.push_str(&swapped);
-        } else {
-            buffer.push_str(piece);
-        }
+        buffer.push_str(piece);
         // A right-to-left script shapes right to left, and its glyphs come out in visual order.
         buffer.guess_segment_properties();
         // Blink shapes at 16.16 fixed point, so advances keep their fractions.
