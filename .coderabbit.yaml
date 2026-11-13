@@ -12,3 +12,10 @@ reviews:
       - "^main$"
     labels:
       - "review-ready"
+  # The vendored Servo crates are crates.io sources plus the edits in
+  # crates/ui-host/vendor/*.patch, which tools/check-servo-vendor.py checks,
+  # so reviews read the patches, not the 1,000 copied files.
+  path_filters:
+    - "!crates/ui-host/vendor/servo-fonts/**"
+    - "!crates/ui-host/vendor/servo-layout/**"
+    - "!crates/ui-host/vendor/servo-script/**"
