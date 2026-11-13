@@ -16,7 +16,7 @@ use crate::message::ControlMessage;
 use crate::stats::AudioStats;
 use crate::RENDER_QUANTUM_SIZE;
 
-mod none;
+pub(crate) mod none;
 pub(crate) use none::NoneBackend;
 
 #[cfg(feature = "cpal")]

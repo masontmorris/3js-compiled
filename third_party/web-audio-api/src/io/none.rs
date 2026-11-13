@@ -1,4 +1,12 @@
 use std::thread;
+#[cfg(feature = "test-control")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(feature = "test-control")]
+static PAUSE_NEXT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "test-control")]
+pub(crate) fn pause_next() { PAUSE_NEXT.store(true, Ordering::Release); }
 use std::time::{Duration, Instant};
 
 use super::{
@@ -118,6 +126,9 @@ impl AudioBackendManager for NoneBackend {
             render_thread,
             receiver,
             sample_rate,
+            #[cfg(feature = "test-control")]
+            running: !PAUSE_NEXT.swap(false, Ordering::AcqRel),
+            #[cfg(not(feature = "test-control"))]
             running: true,
         };
 

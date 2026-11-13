@@ -1,0 +1,85 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 7c17b4a..ab300fe 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -60,6 +60,7 @@ default = ["cpal"]
+ 
+ # Expose structured runtime diagnostics for AudioContext and the render graph.
+ diagnostics = []
++test-control = []
+ 
+ # Make AudioWorklet inputs follow the Web Audio spec for inactive inputs:
+ # inputs[n] is an empty slice when no connected source is actively processing.
+diff --git a/src/context/online.rs b/src/context/online.rs
+index d669dc9..f2610e4 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -409,6 +409,10 @@ impl AudioContext {
+         self.playback_stats.clone()
+     }
+ 
++    #[cfg(feature = "test-control")]
++    /// Queue a marker for tests waiting for previously queued events.
++    pub fn test_event_marker(&self) { let _ = self.base.send_event(EventDispatch::sink_change()); }
++
+     /// Update the current audio output device.
+     ///
+     /// The provided `sink_id` string must match a device name `enumerate_devices_sync`.
+diff --git a/src/io/mod.rs b/src/io/mod.rs
+index e6ddfa9..8b04b1f 100644
+--- a/src/io/mod.rs
++++ b/src/io/mod.rs
+@@ -16,7 +16,7 @@ use crate::message::ControlMessage;
+ use crate::stats::AudioStats;
+ use crate::RENDER_QUANTUM_SIZE;
+ 
+-mod none;
++pub(crate) mod none;
+ pub(crate) use none::NoneBackend;
+ 
+ #[cfg(feature = "cpal")]
+diff --git a/src/io/none.rs b/src/io/none.rs
+index 2c1b8d0..5240d1f 100644
+--- a/src/io/none.rs
++++ b/src/io/none.rs
+@@ -1,4 +1,12 @@
+ use std::thread;
++#[cfg(feature = "test-control")]
++use std::sync::atomic::{AtomicBool, Ordering};
++
++#[cfg(feature = "test-control")]
++static PAUSE_NEXT: AtomicBool = AtomicBool::new(false);
++
++#[cfg(feature = "test-control")]
++pub(crate) fn pause_next() { PAUSE_NEXT.store(true, Ordering::Release); }
+ use std::time::{Duration, Instant};
+ 
+ use super::{
+@@ -118,6 +126,9 @@ impl AudioBackendManager for NoneBackend {
+             render_thread,
+             receiver,
+             sample_rate,
++            #[cfg(feature = "test-control")]
++            running: !PAUSE_NEXT.swap(false, Ordering::AcqRel),
++            #[cfg(not(feature = "test-control"))]
+             running: true,
+         };
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index d534d14..3c87f61 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -59,6 +59,13 @@ pub use spatial::AudioListener;
+ 
+ mod io;
+ 
++#[cfg(feature = "test-control")]
++/// Controls for deterministic backend tests.
++pub mod test_control {
++    /// Pause the next none backend before its first callback.
++    pub fn pause_next_none_backend() { crate::io::none::pause_next(); }
++}
++
+ mod analysis;
+ mod message;
+ 

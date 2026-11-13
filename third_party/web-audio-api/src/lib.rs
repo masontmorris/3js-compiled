@@ -59,6 +59,13 @@ pub use spatial::AudioListener;
 
 mod io;
 
+#[cfg(feature = "test-control")]
+/// Controls for deterministic backend tests.
+pub mod test_control {
+    /// Pause the next none backend before its first callback.
+    pub fn pause_next_none_backend() { crate::io::none::pause_next(); }
+}
+
 mod analysis;
 mod message;
 

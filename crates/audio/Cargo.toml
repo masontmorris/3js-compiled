@@ -13,6 +13,9 @@ rtrb = "0.3"
 serde_json = "1"
 cpal = { version = "0.18", optional = true }
 
+[dev-dependencies]
+web-audio-api = { git = "https://github.com/orottier/web-audio-api-rs", rev = "40402e22c8c45381afed2773e181e04ede2f5627", default-features = false, features = ["test-control"] }
+
 [features]
 # Plays through the system's audio devices with cpal, which is WASAPI on Windows.
 output = ["web-audio-api/cpal", "dep:cpal"]

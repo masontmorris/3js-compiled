@@ -409,6 +409,10 @@ impl AudioContext {
         self.playback_stats.clone()
     }
 
+    #[cfg(feature = "test-control")]
+    /// Queue a marker for tests waiting for previously queued events.
+    pub fn test_event_marker(&self) { let _ = self.base.send_event(EventDispatch::sink_change()); }
+
     /// Update the current audio output device.
     ///
     /// The provided `sink_id` string must match a device name `enumerate_devices_sync`.
