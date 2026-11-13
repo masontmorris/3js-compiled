@@ -1370,6 +1370,21 @@ mod tests {
         assert_eq!(samples.0.front(), Some(&8976.0));
     }
 
+    #[test]
+    fn tick_source_is_retained_only_after_a_successful_evaluation() {
+        let mut script = TickScript::default();
+        assert!(script.next("1").contains(proto::TICK));
+        script.finished(false);
+        assert!(script.next("2").contains(proto::TICK));
+        script.finished(true);
+        let cached = script.next("3");
+        assert!(!cached.contains(proto::TICK));
+        assert!(cached.contains("__bridge.tick(3)"));
+        script.finished(false);
+        assert!(script.next("4").contains(proto::TICK));
+        assert!(TickScript::default().next("5").contains(proto::TICK));
+    }
+
     fn tick(seq: u64, state: &str) -> Option<(u64, String)> {
         Some((seq, tick_script(state)))
     }
