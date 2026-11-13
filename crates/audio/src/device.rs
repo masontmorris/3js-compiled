@@ -50,38 +50,60 @@ fn default_output() -> Option<String> {
 pub type Followed = Arc<Mutex<Vec<Weak<AudioContext>>>>;
 
 /// Polls the default output device every `period` and moves every followed context to a new default. `log` gets one
-/// line per move.
+/// line per move, and one per failure until the default changes again. A default whose move failed for any context is
+/// retried each poll for the contexts not yet on it.
 pub fn follow_default(period: Duration, log: impl Fn(String) + Send + 'static) -> Followed {
     let followed: Followed = Arc::default();
     let contexts = Arc::downgrade(&followed);
     std::thread::Builder::new()
         .name("audio-default-device".into())
         .spawn(move || {
-            let mut current = default_output();
+            let mut applied = default_output();
+            let mut reported = None;
             loop {
                 std::thread::sleep(period);
                 let Some(contexts) = contexts.upgrade() else {
                     return;
                 };
                 let next = default_output();
-                if next == current || next.is_none() {
+                if next == applied || next.is_none() {
                     continue;
                 }
-                current = next;
-                let label = current.clone().unwrap_or_default();
+                let report = reported != next;
+                reported.clone_from(&next);
+                let label = next.clone().unwrap_or_default();
                 let Ok(sink) = sink_for(&label) else {
-                    log(format!(
-                        "audio: the default output changed to {label:?}, which has no sink id"
-                    ));
+                    if report {
+                        log(format!(
+                            "audio: the default output changed to {label:?}, which has no sink id"
+                        ));
+                    }
                     continue;
                 };
-                let mut contexts = contexts.lock().unwrap();
-                contexts.retain(|c| c.strong_count() > 0);
-                for context in contexts.iter().filter_map(Weak::upgrade) {
-                    let result = context.set_sink_id_sync(sink.clone());
-                    log(format!(
-                        "audio: moved a context to the new default output {label:?}: {result:?}"
-                    ));
+                // A move can wait seconds on a stopped stream, so the list is not held while contexts register.
+                let targets: Vec<_> = {
+                    let mut contexts = contexts.lock().unwrap();
+                    contexts.retain(|c| c.strong_count() > 0);
+                    contexts.iter().filter_map(Weak::upgrade).collect()
+                };
+                let mut moved = true;
+                for context in targets.iter().filter(|c| c.sink_id() != sink) {
+                    match context.set_sink_id_sync(sink.clone()) {
+                        Ok(()) => log(format!(
+                            "audio: moved a context to the new default output {label:?}"
+                        )),
+                        Err(e) => {
+                            moved = false;
+                            if report {
+                                log(format!(
+                                    "audio: could not move a context to the new default output {label:?}: {e}"
+                                ));
+                            }
+                        }
+                    }
+                }
+                if moved {
+                    applied = next;
                 }
             }
         })
