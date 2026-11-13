@@ -282,15 +282,19 @@ export class FontFaceSet extends EventTarget {
     this.#pending.add(face);
   }
   faceSettled(face) {
-    if (!this.#pending.delete(face)) return;
+    if (!this.#pending.has(face)) return;
     (face.status === 'loaded' ? this.#succeeded : this.#failed).push(face);
-    if (!this.#pending.size) {
-      const succeeded = this.#succeeded.splice(0), failed = this.#failed.splice(0);
-      setTimeout(() => {
-        this.#emit('loadingdone', succeeded);
-        if (failed.length) this.#emit('loadingerror', failed);
-      }, 0);
-    }
+    this.#leave(face);
+  }
+  // A face leaves the cycle when it settles or the page deletes it; the cycle ends with the last one.
+  #leave(face) {
+    this.#pending.delete(face);
+    if (this.#pending.size) return;
+    const succeeded = this.#succeeded.splice(0), failed = this.#failed.splice(0);
+    setTimeout(() => {
+      this.#emit('loadingdone', succeeded);
+      if (failed.length) this.#emit('loadingerror', failed);
+    }, 0);
   }
   get size() { return this.#faces.size; }
   get status() { return [...this.#faces].some(face => face.status === 'loading') ? 'loading' : 'loaded'; }
@@ -317,7 +321,7 @@ export class FontFaceSet extends EventTarget {
     this.#ready = null;
     return this;
   }
-  delete(face) { const deleted = this.#faces.delete(face); if (deleted) { face[SETS].delete(this); if (this.#pending.has(face)) this.faceSettled(face); this.#ready = null; } return deleted; }
+  delete(face) { const deleted = this.#faces.delete(face); if (deleted) { face[SETS].delete(this); if (this.#pending.has(face)) this.#leave(face); this.#ready = null; } return deleted; }
   has(face) { return this.#faces.has(face); }
   clear() { for (const face of this.#faces) this.delete(face); }
   forEach(callback, thisArg) { for (const face of this.#faces) callback.call(thisArg, face, face, this); }
