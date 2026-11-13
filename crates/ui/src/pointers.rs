@@ -121,9 +121,11 @@ impl Pointers {
             }
             owner
         } else {
+            // An up with no press open ends a press whose down went to the game before this UI
+            // existed, so it goes to the game wherever it lands.
             let owner = match hit {
-                Some((ids, corner)) => Owner::Page { ids, corner },
-                None => Owner::Game,
+                Some((ids, corner)) if pointer.action != 2 => Owner::Page { ids, corner },
+                _ => Owner::Game,
             };
             if pointer.action == 1 {
                 self.press = Some(Press {
