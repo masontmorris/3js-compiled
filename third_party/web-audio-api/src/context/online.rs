@@ -183,7 +183,7 @@ pub struct AudioContext {
     /// true from the moment close starts
     closing: AtomicBool,
     /// Counts suspends and resumes, so a suspend that a later one overtook leaves the stream alone
-    lifecycle: AtomicU64,
+    lifecycle: Arc<AtomicU64>,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
     /// Render statistics shared with the render thread, which also carry the render observer
@@ -342,7 +342,7 @@ impl AudioContext {
             startup_pending,
             paused: AtomicBool::new(false),
             closing: AtomicBool::new(false),
-            lifecycle: AtomicU64::new(0),
+            lifecycle: Arc::clone(&render_thread_init.lifecycle),
             render_thread_init,
             stats,
         })
@@ -790,6 +790,7 @@ impl AudioContext {
             log::debug!("Close no-op - context is already closed");
             return None;
         }
+        self.lifecycle.fetch_add(1, Ordering::AcqRel);
 
         // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
         self.render_capacity.stop();
