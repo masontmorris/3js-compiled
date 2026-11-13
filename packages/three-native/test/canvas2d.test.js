@@ -349,3 +349,53 @@ test('getImageData and putImageData truncate their arguments toward zero', () =>
   ctx.putImageData(blue, -0.5, 0, -0.5, 0, 1.5, 1);
   assert.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [0, 0, 255, 255]);
 });
+
+test('drawImage keeps a fractional source rectangle', () => {
+  const ctx = context();
+  const image = { localName: 'img', [Symbol.for('threejsc.pixels')]: { width: 10, height: 10, data: new Uint8Array(400), premultiplied: false } };
+  calls.length = 0;
+  ctx.drawImage(image, 0.5, 0.25, 1, 2, 0, 0, 4, 4);
+  assert.deepEqual(calls[0][1].source, [0.5, 0.25, 1, 2]);
+  assert.deepEqual(calls[0][1].dest, [0, 0, 4, 4]);
+  ctx.drawImage(image, -0.5, 9.5, 2, 2, 0, 0, 4, 4);
+  assert.deepEqual(calls[1][1].source, [0, 9.5, 1.5, 0.5]);
+  assert.deepEqual(calls[1][1].dest, [1, 0, 3, 1]);
+});
+
+test('fonts.load and fonts.check pick the unicode-range subsets the text needs', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) });
+  try {
+    const set = new FontFaceSet();
+    const latin = new FontFace('Game', 'url(https://example.test/latin)', { unicodeRange: 'U+0-FF' });
+    const cyrillic = new FontFace('Game', 'url(https://example.test/cyrillic)', { unicodeRange: 'U+400-4FF' });
+    set.add(latin);
+    set.add(cyrillic);
+    assert.equal(set.check('16px Game', 'Ж'), false);
+    assert.deepEqual(await set.load('16px Game', 'Ж'), [cyrillic]);
+    assert.equal(latin.status, 'unloaded');
+    assert.equal(set.check('16px Game', 'Ж'), true);
+    assert.equal(set.check('16px Game', 'a'), false);
+    assert.deepEqual(await set.load('16px Game'), [latin]);
+    assert.equal(set.check('16px Game', 'aЖ'), true);
+    assert.deepEqual(await set.load('16px Game', '一'), []);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('text draws send every unicode-range subset with its ranges, and load only the subsets the text needs', () => {
+  const doc = new Document({});
+  const ctx = doc.createElement('canvas').getContext('2d');
+  const latin = new FontFace('Game', new Uint8Array(4), { unicodeRange: 'U+0-FF, U+2000-206F' });
+  const greek = new FontFace('Game', 'url(https://example.test/greek)', { unicodeRange: 'U+37?' });
+  const cyrillic = new FontFace('Game', 'url(https://example.test/cyrillic)', { unicodeRange: 'U+400-4FF' });
+  for (const face of [latin, greek, cyrillic]) doc.fonts.add(face);
+  calls.length = 0;
+  ctx.font = '16px Game';
+  ctx.fillText('aЖ', 0, 0);
+  assert.equal(greek.status, 'unloaded');
+  assert.equal(cyrillic.status, 'loading');
+  assert.deepEqual(calls[0][1].font.families, [
+    { face: { id: 1, weight: [400, 400], ranges: [[0, 0xff], [0x2000, 0x206f]] } },
+    { system: 'game' },
+  ]);
+});

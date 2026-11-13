@@ -17,6 +17,9 @@ use std::collections::HashMap;
 pub struct LoadedFace {
     pub id: FaceId,
     pub weight: [f32; 2],
+    /// The code point ranges of its `unicode-range` descriptor, inclusive; none means every character.
+    #[serde(default)]
+    pub ranges: Option<Vec<[u32; 2]>>,
 }
 
 /// One family of a CSS font list, as the page's script resolved it.
@@ -463,4 +466,44 @@ pub fn ink_bounds(fonts: &Fonts, layout: &Layout, size: f32) -> Option<[f64; 4]>
         }
     }
     bounds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NUNITO: &[u8] = include_bytes!("../../../../examples/canvas2d/fonts/Nunito-wght.ttf");
+
+    /// The face that draws "a" when the font list is a loaded Nunito face with `ranges`, then Courier New.
+    fn face_for_a(ranges: Option<Vec<[u32; 2]>>) -> (FaceId, FaceId) {
+        let mut fonts = Fonts::default();
+        let nunito = fonts.load(NUNITO).unwrap();
+        let spec = FontSpec {
+            families: vec![
+                Family::Face(LoadedFace {
+                    id: nunito,
+                    weight: [400.0, 400.0],
+                    ranges,
+                }),
+                Family::System("courier new".into()),
+            ],
+            size: 32.0,
+            weight: 400.0,
+            italic: false,
+        };
+        let mut chain = chain(&mut fonts, &spec);
+        let layout = layout(&mut fonts, &mut chain, "a", 32.0);
+        (layout.runs[0].instance.face, nunito)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_loaded_face_draws_only_the_characters_in_its_unicode_range() {
+        let (face, nunito) = face_for_a(None);
+        assert_eq!(face, nunito);
+        let (face, nunito) = face_for_a(Some(vec![[0x400, 0x4ff]]));
+        assert_ne!(face, nunito);
+        let (face, nunito) = face_for_a(Some(vec![[0x20, 0x7e], [0x400, 0x4ff]]));
+        assert_eq!(face, nunito);
+    }
 }

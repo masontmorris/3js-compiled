@@ -448,6 +448,32 @@ mod boundary_tests {
         assert_eq!(text_alpha(-1e12, false), 0);
     }
 
+    #[test]
+    fn a_fractional_source_rectangle_samples_inside_its_bounds() {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
+            extensions: vec![super::extension::init()],
+            ..Default::default()
+        });
+        // A red and a blue pixel. The source starts three quarters into the red one, so a 4 px wide copy of a
+        // 1 px source takes red for its first pixel only.
+        let value = runtime
+            .execute_script(
+                "image",
+                r#"
+          const pixels = new Uint8Array(4 * 4);
+          const image = new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]);
+          Deno.core.ops.op_canvas2d_draw_image(pixels, 4, 1, image, {width: 2, height: 1, premultiplied: true,
+            source: [0.75, 0, 1, 1], dest: [0, 0, 4, 1], smoothing: false,
+            style: {paint: {kind: 'color', rgba: [0, 0, 0, 1]}, alpha: 1, transform: [1, 0, 0, 1, 0, 0]}});
+          [0, 1, 2, 3].map(i => pixels[i * 4] ? 'r' : pixels[i * 4 + 2] ? 'b' : '-').join('');
+        "#,
+            )
+            .unwrap();
+        deno_core::scope!(scope, runtime);
+        let colors = deno_core::v8::Local::new(scope, value).to_rust_string_lossy(scope);
+        assert_eq!(colors, "rbbb");
+    }
+
     #[cfg(windows)]
     #[test]
     fn text_draws_when_directwrite_cannot_open_its_face() {
