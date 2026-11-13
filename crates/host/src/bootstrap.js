@@ -248,6 +248,7 @@ globalThis.__nativeBridge = {
   },
   onEvent: callback => { uiListeners.add(callback); return () => uiListeners.delete(callback); },
 };
+// Each page event is its own task, as a message event is in Edge, so its promise jobs run before the next event.
 globalThis.__hostUiEvents = () => {
   const events = JSON.parse(ops.op_ui_events());
   const dropped = ops.op_ui_dropped();
@@ -256,5 +257,6 @@ globalThis.__hostUiEvents = () => {
     for (const callback of uiListeners) {
       try { callback(event); } catch (error) { report(error); }
     }
+    ops.op_run_microtasks();
   }
 };
