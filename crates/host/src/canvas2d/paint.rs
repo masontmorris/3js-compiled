@@ -520,7 +520,16 @@ impl Painter {
             style.transform
         };
         #[cfg(windows)]
-        if !face.color && stroke.is_none() && self.glyphs.available() {
+        if !face.color
+            && stroke.is_none()
+            && self.glyphs.available()
+            && self.glyphs.opens(
+                run.instance.face,
+                face,
+                run.instance.weight,
+                run.instance.synthetic_bold,
+            )
+        {
             let placed: Vec<(f64, f64)> = glyphs.iter().map(|g| (g.x as f64, g.y as f64)).collect();
             if let Some((area, coverage)) = self.dwrite_coverage(
                 surface,

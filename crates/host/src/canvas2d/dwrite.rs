@@ -172,6 +172,11 @@ impl Rasterizer {
         self.factory.is_some()
     }
 
+    /// Whether DirectWrite can open `face`, so text in it can be drawn here instead of falling back to vello.
+    pub fn opens(&mut self, id: FaceId, face: &Face, weight: Option<f32>, bold: bool) -> bool {
+        self.face(id, face, weight, bold).is_some()
+    }
+
     fn face(
         &mut self,
         id: FaceId,
