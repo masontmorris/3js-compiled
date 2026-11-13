@@ -13,9 +13,9 @@ intervals = [float(row['interval_ms']) for row in rows]
 elapsed = 0.0
 over = []
 for frame, interval in enumerate(intervals[1:], start=1):
-    elapsed += interval
     if elapsed > 1000:
         break
+    elapsed += interval
     if interval > limit:
         over.append((frame, round(interval, 3)))
 text = f'over={len(over)}: first-second intervals over {limit:.3f} ms {over}'
