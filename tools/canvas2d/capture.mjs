@@ -38,7 +38,7 @@ async function runNative() {
   const dir = join(out, `native-${scene}`);
   await mkdir(dir, { recursive: true });
   const script = join(dir, 'steps.json');
-  await writeFile(script, JSON.stringify([{ type: 'wait_for', expression: "(() => { if (globalThis.__sceneError) throw new Error(String(globalThis.__sceneError)); return !!globalThis.__sceneReady; })()", timeoutFrames: 1800 }, { type: 'wait', frames }, { type: 'capture', path: join(out, `native-${scene}.png`) }, { type: 'wait', frames: 2 }, { type: 'close' }]));
+  await writeFile(script, JSON.stringify([{ type: 'wait_for', expression: "(() => { if (globalThis.__sceneError) throw new Error(String(globalThis.__sceneError)); return !!globalThis.__sceneReady; })()", timeout_frames: 6000 }, { type: 'wait', frames }, { type: 'capture', path: join(out, `native-${scene}.png`) }, { type: 'wait', frames: 2 }, { type: 'close' }]));
   const child = spawn(host, ['--entry', resolve('examples/canvas2d/index.js'), '--scene', scene, '--hash', `pally=${pallyNative}`, '--script', script], { cwd: dir, stdio: 'inherit' });
   const timer = setTimeout(() => child.kill(), 300_000);
   const code = await new Promise(done => child.on('exit', done));

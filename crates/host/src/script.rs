@@ -9,7 +9,6 @@ pub enum Step {
     },
     WaitFor {
         expression: String,
-        #[serde(rename = "timeoutFrames", alias = "timeout_frames")]
         timeout_frames: u64,
     },
     Key {
