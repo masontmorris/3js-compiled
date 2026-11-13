@@ -398,6 +398,11 @@ impl Convolver {
                 for (bin, k) in self.spectrum.iter_mut().zip(&kernel.bins) {
                     *bin *= k;
                 }
+                // A real signal's DC and Nyquist bins are real. A non-finite sample leaves NaN in their imaginary
+                // parts, which the inverse rejects with an error.
+                let last = self.spectrum.len() - 1;
+                self.spectrum[0].im = 0.;
+                self.spectrum[last].im = 0.;
                 self.inverse
                     .process(&mut self.spectrum, &mut self.output)
                     .unwrap();

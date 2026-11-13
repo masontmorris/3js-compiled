@@ -1,4 +1,4 @@
-use crossbeam_channel::Sender;
+use crossbeam_channel::{RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -106,7 +106,8 @@ impl AudioRenderCapacity {
         let mut previous = stats.snapshot();
         stats.take_peak_load();
         std::thread::spawn(move || loop {
-            if stop_recv.recv_timeout(update_interval).is_ok() {
+            // A dropped sender stops the worker too, or it would spin once callbacks stop.
+            if stop_recv.recv_timeout(update_interval) != Err(RecvTimeoutError::Timeout) {
                 return;
             }
 

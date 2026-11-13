@@ -284,9 +284,27 @@ impl ConcreteBaseAudioContext {
         }
     }
 
+    /// Send a control message past the staging a pending or active suspension sets up
+    pub(crate) fn send_control_msg_unstaged(&self, msg: ControlMessage) {
+        let sender = self.inner.render_channel.read().unwrap();
+        if sender.send(msg).is_err() {
+            log::warn!("Discarding control message - render thread is closed");
+        }
+    }
+
+    /// Whether a suspension is pending or active, so control messages are staged
+    pub(crate) fn suspend_staged(&self) -> bool {
+        self.inner.suspended_messages.lock().unwrap().is_some()
+    }
+
     pub(crate) fn suspend_control_msgs(&self, msg: ControlMessage) {
         let sender = self.inner.render_channel.read().unwrap();
-        *self.inner.suspended_messages.lock().unwrap() = Some(Vec::new());
+        // A second suspend while one is pending keeps the messages the first one staged.
+        self.inner
+            .suspended_messages
+            .lock()
+            .unwrap()
+            .get_or_insert_with(Vec::new);
         if sender.send(msg).is_err() {
             log::warn!("Discarding control message - render thread is closed");
         }
@@ -294,15 +312,10 @@ impl ConcreteBaseAudioContext {
 
     pub(crate) fn resume_control_msgs(&self, msg: ControlMessage) {
         let sender = self.inner.render_channel.read().unwrap();
-        let messages = self
-            .inner
-            .suspended_messages
-            .lock()
-            .unwrap()
-            .take()
-            .unwrap_or_default();
-
-        for msg in messages {
+        // Hold the staging lock until the replay and the Resume are queued, so a message sent meanwhile cannot pass
+        // the staged ones, such as a ConnectNode ahead of its RegisterNode.
+        let mut staged = self.inner.suspended_messages.lock().unwrap();
+        for msg in staged.take().unwrap_or_default() {
             if sender.send(msg).is_err() {
                 log::warn!("Discarding control message - render thread is closed");
                 return;
@@ -312,6 +325,7 @@ impl ConcreteBaseAudioContext {
         if sender.send(msg).is_err() {
             log::warn!("Discarding control message - render thread is closed");
         }
+        drop(staged);
     }
 
     pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
