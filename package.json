@@ -8,7 +8,7 @@
     "postinstall": "node tools/install/patch-three.mjs",
     "build:scenes": "node tools/scenes/build.mjs",
     "build:platform": "node tools/platform/build.mjs",
-    "test": "npm test -w packages/three-native && node --test tools/perf/load.test.mjs tools/perf/presentmon.test.mjs",
+    "test": "npm test -w packages/three-native && node --test tools/perf/*.test.mjs",
     "check": "node tools/wgsl-gate/gate.mjs"
   },
   "devDependencies": {
