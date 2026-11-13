@@ -1384,6 +1384,35 @@ mod tests {
     }
 
     #[test]
+    fn a_timer_due_at_a_frame_and_its_callbacks_each_submit_a_stream() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-timer-submit-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/timer-submit.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        let mut frames = Vec::new();
+        for _ in 0..6 {
+            game.frame()?;
+            let streams: Vec<u32> = game
+                .take_commands()
+                .iter()
+                .map(|stream| threejsc_gpu::decode(stream).unwrap().frame)
+                .collect();
+            if !streams.is_empty() {
+                frames.push(streams);
+            }
+        }
+        let output = std::fs::read_to_string(&log_path)?;
+        assert_eq!(frames, [vec![1, 2], vec![3, 4]], "{output}");
+        assert!(!output.contains("failed"), "{output}");
+        Ok(())
+    }
+
+    #[test]
     fn bootstrap_provides_window_size_self_and_utf8_decoding() -> Result<()> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
