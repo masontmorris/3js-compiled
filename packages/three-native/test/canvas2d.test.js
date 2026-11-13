@@ -486,3 +486,39 @@ test('font sets report failed faces after a load settles', async () => {
     assert.deepEqual(events, [['loadingdone', []], ['loadingerror', [face]]]);
   } finally { setCanvasHost(canvasHost); }
 });
+
+test('document.fonts reports one loading cycle for a face added mid-load and none for a face it lacks, as in Edge', async () => {
+  const fonts = new Document({}).fonts;
+  for (const type of ['loading', 'loadingdone', 'loadingerror']) assert.ok(`on${type}` in fonts, type);
+  const events = [];
+  for (const type of ['loading', 'loadingdone', 'loadingerror']) {
+    fonts.addEventListener(type, event => events.push([type, event instanceof FontFaceSetLoadEvent, event.fontfaces.map(face => face.family)]));
+  }
+  const source = 'url(data:application/octet-stream;base64,AA==)';
+  await new FontFace('Loose', source).load();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, []);
+  const first = new FontFace('Mid1', source);
+  fonts.add(first);
+  const p = first.load();
+  const second = new FontFace('Mid2', source);
+  fonts.add(second);
+  await Promise.all([p, second.load()]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, [['loading', true, []], ['loadingdone', true, ['Mid1', 'Mid2']]]);
+});
+
+test('a face deleted while it loads leaves the cycle without failing it', async () => {
+  const set = new FontFaceSet();
+  const kept = new FontFace('Kept', 'url(data:application/octet-stream;base64,AA==)');
+  const dropped = new FontFace('Dropped', 'url(data:application/octet-stream;base64,AA==)');
+  set.add(kept); set.add(dropped);
+  const events = [];
+  set.onloadingdone = event => events.push([event.type, [...event.fontfaces]]);
+  set.onloadingerror = event => events.push([event.type, [...event.fontfaces]]);
+  const loads = [kept.load(), dropped.load()];
+  set.delete(dropped);
+  await Promise.all(loads);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, [['loadingdone', [kept]]]);
+});
