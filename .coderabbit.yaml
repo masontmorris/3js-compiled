@@ -1,0 +1,14 @@
+# Reviews run only at code-ready, not on every push.
+# Trigger with `@coderabbitai review` or `@coderabbitai full review`,
+# or by adding the `review-ready` label.
+language: "en-US"
+reviews:
+  profile: "chill"
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
+    drafts: false
+    base_branches:
+      - "^main$"
+    labels:
+      - "review-ready"
