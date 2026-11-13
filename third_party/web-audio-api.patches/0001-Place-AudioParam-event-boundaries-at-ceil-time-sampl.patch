@@ -1,0 +1,205 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 01:18:00 -0500
+Subject: [PATCH 1/10] Place AudioParam event boundaries at ceil(time *
+ sampleRate)
+
+Event boundaries rounded to the nearest frame, so a setValueAtTime at a
+fractional sample time took effect one frame early. Per-frame times summed
+dt, which drifts below exact frame times, so a curve starting exactly on a
+frame started one frame late. Chromium places each boundary at
+ceil(time * sampleRate), counted from the context's first frame. Do the
+same, and compute each frame's time from its index.
+---
+ src/param.rs | 91 +++++++++++++++++++++++++++++++---------------------
+ 1 file changed, 55 insertions(+), 36 deletions(-)
+
+diff --git a/src/param.rs b/src/param.rs
+index 9008466..c587d67 100644
+--- a/src/param.rs
++++ b/src/param.rs
+@@ -691,6 +691,34 @@ struct BlockInfos {
+     next_block_time: f64,
+ }
+ 
++impl BlockInfos {
++    fn rate(&self) -> f64 {
++        let rate = 1. / self.dt;
++        let whole = rate.round();
++        if (rate - whole).abs() < 1e-6 {
++            whole
++        } else {
++            rate
++        }
++    }
++
++    // Index in this block of the first frame at or after `time`. Chromium
++    // places event boundaries at `ceil(time * sampleRate)`, counted from the
++    // context's first frame, so a change at a fractional sample time lands
++    // on the next frame.
++    fn index_at(&self, time: f64) -> usize {
++        let rate = self.rate();
++        ((time * rate).ceil() - (self.block_time * rate).round()).max(0.) as usize
++    }
++
++    // Time of frame `index` in this block, from the frame count rather than
++    // by summing `dt`, which drifts below exact frame times.
++    fn time_at(&self, index: usize) -> f64 {
++        let rate = self.rate();
++        ((self.block_time * rate).round() + index as f64) / rate
++    }
++}
++
+ #[derive(Debug)]
+ pub(crate) struct AudioParamProcessor {
+     default_value: f32, // immutable
+@@ -1102,7 +1130,7 @@ impl AudioParamProcessor {
+ 
+         // fill buffer with current intrinsic value until `event.time`
+         if infos.is_a_rate {
+-            let end_index = ((time - infos.block_time).max(0.) / infos.dt).round() as usize;
++            let end_index = infos.index_at(time);
+             let end_index_clipped = end_index.min(infos.count);
+ 
+             for _ in self.buffer.len()..end_index_clipped {
+@@ -1152,25 +1180,22 @@ impl AudioParamProcessor {
+ 
+         if infos.is_a_rate {
+             let start_index = self.buffer.len();
+-            // TODO use ceil() or round() when `end_time` is between two samples?
+-            // <https://github.com/orottier/web-audio-api-rs/pull/460>
+-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
++            let end_index = infos.index_at(end_time);
+             let end_index_clipped = end_index.min(infos.count);
+ 
+             // compute "real" value according to `t` then clamp it
+             // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
+             if end_index_clipped > start_index {
+-                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+-
+                 let mut value = 0.;
+-                for _ in start_index..end_index_clipped {
+-                    value = if time < start_time {
++                let start_frame = infos.index_at(start_time);
++                for index in start_index..end_index_clipped {
++                    let time = infos.time_at(index);
++                    value = if index < start_frame {
+                         self.intrinsic_value
+                     } else {
+                         compute_linear_ramp_sample(start_time, duration, start_value, diff, time)
+                     };
+                     self.buffer.push(value);
+-                    time += infos.dt;
+                 }
+                 self.intrinsic_value = value;
+             }
+@@ -1260,17 +1285,15 @@ impl AudioParamProcessor {
+ 
+         if infos.is_a_rate {
+             let start_index = self.buffer.len();
+-            // TODO use ceil() or round() when `end_time` is between two samples?
+-            // <https://github.com/orottier/web-audio-api-rs/pull/460>
+-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
++            let end_index = infos.index_at(end_time);
+             let end_index_clipped = end_index.min(infos.count);
+ 
+             if end_index_clipped > start_index {
+-                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+-
+                 let mut value = 0.;
+-                for _ in start_index..end_index_clipped {
+-                    value = if time < start_time {
++                let start_frame = infos.index_at(start_time);
++                for index in start_index..end_index_clipped {
++                    let time = infos.time_at(index);
++                    value = if index < start_frame {
+                         self.intrinsic_value
+                     } else {
+                         compute_exponential_ramp_sample(
+@@ -1283,8 +1306,6 @@ impl AudioParamProcessor {
+                     };
+ 
+                     self.buffer.push(value);
+-
+-                    time += infos.dt;
+                 }
+                 self.intrinsic_value = value;
+             }
+@@ -1388,25 +1409,22 @@ impl AudioParamProcessor {
+ 
+         if infos.is_a_rate {
+             let start_index = self.buffer.len();
+-            // TODO use ceil() or round() when `end_time` is between two samples?
+-            // <https://github.com/orottier/web-audio-api-rs/pull/460>
+-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
++            let end_index = infos.index_at(end_time);
+             let end_index_clipped = end_index.min(infos.count);
+ 
+             if end_index_clipped > start_index {
+-                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+-
+                 let mut value = 0.;
+-                for _ in start_index..end_index_clipped {
++                let start_frame = infos.index_at(start_time);
++                for index in start_index..end_index_clipped {
++                    let time = infos.time_at(index);
+                     // check if we have reached start_time
+-                    value = if time - start_time < 0. {
++                    value = if index < start_frame {
+                         self.intrinsic_value
+                     } else {
+                         compute_set_target_sample(start_time, time_constant, end_value, diff, time)
+                     };
+ 
+                     self.buffer.push(value);
+-                    time += infos.dt;
+                 }
+                 self.intrinsic_value = value;
+             }
+@@ -1489,26 +1507,22 @@ impl AudioParamProcessor {
+ 
+         if infos.is_a_rate {
+             let start_index = self.buffer.len();
+-            // TODO use ceil() or round() when `end_time` is between two samples?
+-            // <https://github.com/orottier/web-audio-api-rs/pull/460>
+-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
++            let end_index = infos.index_at(end_time);
+             let end_index_clipped = end_index.min(infos.count);
+ 
+             if end_index_clipped > start_index {
+-                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+-
+                 let mut value = 0.;
+-                for _ in start_index..end_index_clipped {
++                let start_frame = infos.index_at(start_time);
++                for index in start_index..end_index_clipped {
++                    let time = infos.time_at(index);
+                     // check if we have reached start_time
+-                    value = if time < start_time {
++                    value = if index < start_frame {
+                         self.intrinsic_value
+                     } else {
+                         compute_set_value_curve_sample(start_time, duration, values, time)
+                     };
+ 
+                     self.buffer.push(value);
+-
+-                    time += infos.dt;
+                 }
+                 self.intrinsic_value = value;
+             }
+@@ -3565,8 +3579,13 @@ mod tests {
+         render.onmessage(&mut AutomationRate::A);
+         render.handle_incoming_event(param.set_value_at_time_raw(2., 0.000001));
+ 
++        // the event lands on the first frame at or after its time
+         let vs = render.compute_intrinsic_values(0., 1., 10);
+-        assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
++        assert_float_eq!(
++            vs,
++            &[0., 2., 2., 2., 2., 2., 2., 2., 2., 2.][..],
++            abs_all <= 0.
++        );
+     }
+ 
+     #[test]

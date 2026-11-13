@@ -10,6 +10,8 @@ import { EVENT_HANDLERS } from './dom-methods.js';
 import { CookieJar, Crypto, QuotaExceededError, atob, btoa, evaluateMedia as evaluate, openWindow, serializeMedia } from './window.js';
 import { DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly } from './geometry.js';
 import { MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry, updateIntersections } from './observers.js';
+import * as audio from './audio.js';
+import { XMLHttpRequest, ProgressEvent } from './xhr.js';
 
 const ops = Deno.core.ops;
 const config = globalThis.__hostConfig;
@@ -50,6 +52,92 @@ setHost({
   },
 });
 
+const floats = bytes => new Float32Array(bytes.slice().buffer);
+const view = array => new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+let endedPump = null;
+// The graph changes a page makes in one task turn go to the engine in one call. AudioParam automation, property sets,
+// connections, source starts and stops, and releases queue here in order, as op_audio_batch's commands, and go when
+// the turn's promise jobs run, which is before the frame ends, or before any other audio call, so each call sees the
+// changes made before it. A command that fails is reported, as an error in a listener is, and the rest still run.
+const turnEnd = Promise.resolve();
+let batch = { words: [], strings: [], names: new Map(), values: [] };
+let flushQueued = false;
+const flush = () => {
+  flushQueued = false;
+  if (batch.words.length === 0) return;
+  const { words, strings, values } = batch;
+  batch = { words: [], strings: [], names: new Map(), values: [] };
+  try {
+    ops.op_audio_batch(new Uint8Array(new Float64Array(words).buffer), strings, values);
+  } catch (error) {
+    (globalThis.reportError ?? globalThis.console?.error)?.(error);
+  }
+};
+const name = text => {
+  let index = batch.names.get(text);
+  if (index === undefined) {
+    index = batch.strings.push(text) - 1;
+    batch.names.set(text, index);
+  }
+  return index;
+};
+const queue = (...words) => {
+  batch.words.push(...words);
+  if (!flushQueued) {
+    flushQueued = true;
+    turnEnd.then(flush);
+  }
+};
+const flushed = call => (...args) => {
+  flush();
+  return call(...args);
+};
+// An online context's currentTime is the frame count the render thread publishes, in render quanta, to the context's
+// SharedArrayBuffer as each quantum begins, so reading it is no call into the engine and it advances by render
+// quantum, as in Chrome. An offline context's is a call.
+const clocks = new Map();
+audio.setAudioHost({
+  context: flushed(spec => {
+    // Ended sources arrive over one long-lived op, started with the first context.
+    endedPump ??= (async () => {
+      for (;;) audio.sourceEnded(await ops.op_audio_ended());
+    })();
+    const slot = spec.kind === 'offline' ? undefined : new SharedArrayBuffer(4);
+    const info = ops.op_audio_context(spec, slot);
+    if (slot) clocks.set(info.id, { quanta: new Int32Array(slot), rate: info.sampleRate });
+    return info;
+  }),
+  currentTime: id => {
+    const clock = clocks.get(id);
+    return clock ? ((Atomics.load(clock.quanta, 0) >>> 0) * 128) / clock.rate : ops.op_audio_current_time(id);
+  },
+  baseLatency: flushed(id => ops.op_audio_base_latency(id)),
+  outputLatency: flushed(id => ops.op_audio_output_latency(id)),
+  destination: flushed(id => ops.op_audio_destination(id)),
+  listener: flushed(id => ops.op_audio_listener(id)),
+  maxChannelCount: flushed(id => ops.op_audio_max_channel_count(id)),
+  suspend: flushed(id => ops.op_audio_lifecycle(id, 'suspend')),
+  resume: flushed(id => ops.op_audio_lifecycle(id, 'resume')),
+  close: flushed(id => ops.op_audio_lifecycle(id, 'close')),
+  render: flushed(async id => (await ops.op_audio_render(id)).map(floats)),
+  node: flushed((context, kind, options) => ops.op_audio_node(context, kind, options)),
+  set: (id, prop, value) => queue(1, id, name(prop), batch.values.push(value) - 1),
+  param: (id, param, method, a, b, c) => queue(0, id, name(param), name(method), a, b, c),
+  curve: flushed((id, param, values, start, duration) => ops.op_audio_curve(id, param, view(values), start, duration)),
+  paramValue: flushed((id, param) => ops.op_audio_param_value(id, param)),
+  connect: (from, to, output, input) => queue(2, from, to, output, input),
+  connectParam: (from, to, param, output) => queue(3, from, to, name(param), output),
+  disconnect: (from, to, output, input) => queue(4, from, to, output, input),
+  disconnectParam: (from, to, param, output) => queue(5, from, to, name(param), output),
+  start: (id, when, offset, duration) => queue(6, id, when, offset, duration),
+  stop: (id, when) => queue(7, id, when),
+  release: id => queue(8, id),
+  buffer: flushed((channels, rate) => ops.op_audio_buffer(channels.map(view), rate)),
+  bufferData: flushed((id, channel) => floats(ops.op_audio_buffer_data(id, channel))),
+  sourceBuffer: flushed((node, buffer) => ops.op_audio_source_buffer(node, buffer)),
+  decode: flushed((bytes, rate) => ops.op_audio_decode(new Uint8Array(bytes), rate)),
+  analyser: flushed((id, kind, array) => ops.op_audio_analyser(id, kind, view(array))),
+});
 // Media queries over the window's size and pixel ratio, with Edge's answers for a desktop with a mouse.
 const evaluateMedia = query => evaluate(query, { width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio });
 // A list's `matches` reads the window as it is. A list with a change listener is watched, which keeps it alive as a
@@ -142,11 +230,20 @@ Object.assign(window, {
   MutationObserver, MutationRecord, NodeList, IntersectionObserver, IntersectionObserverEntry,
   Storage, URL, URLSearchParams, Blob, File, Headers, Request, Response, ImageBitmap, MediaQueryList, MediaQueryListEvent,
   AbortController, AbortSignal, DOMMatrix, DOMMatrixReadOnly, DOMPoint, DOMPointReadOnly, DOMRect, DOMRectReadOnly,
+  XMLHttpRequest, ProgressEvent,
+  AudioContext: audio.AudioContext, OfflineAudioContext: audio.OfflineAudioContext, BaseAudioContext: audio.BaseAudioContext,
+  AudioNode: audio.AudioNode, AudioParam: audio.AudioParam, AudioBuffer: audio.AudioBuffer, AudioListener: audio.AudioListener,
+  AudioDestinationNode: audio.AudioDestinationNode, AudioScheduledSourceNode: audio.AudioScheduledSourceNode,
+  GainNode: audio.GainNode, AudioBufferSourceNode: audio.AudioBufferSourceNode, OscillatorNode: audio.OscillatorNode,
+  ConstantSourceNode: audio.ConstantSourceNode, StereoPannerNode: audio.StereoPannerNode, PannerNode: audio.PannerNode,
+  AnalyserNode: audio.AnalyserNode, BiquadFilterNode: audio.BiquadFilterNode, DelayNode: audio.DelayNode,
+  OfflineAudioCompletionEvent: audio.OfflineAudioCompletionEvent, HTMLMediaElement: audio.HTMLMediaElement, HTMLAudioElement: audio.HTMLAudioElement,
   atob, btoa, fetch, createImageBitmap, document, navigator, screen, localStorage, QuotaExceededError, Crypto,
   crypto: new Crypto(bytes => ops.op_random_fill(bytes)),
   sessionStorage: new Storage(),
   location: locationObject,
   Image: imageConstructor(document),
+  Audio: audio.audioConstructor(document),
   matchMedia: query => new MediaQueryList(query),
   getComputedStyle: element => element.style,
   devicePixelRatio: config.ratio,

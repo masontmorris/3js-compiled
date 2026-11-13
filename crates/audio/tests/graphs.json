@@ -1,0 +1,5020 @@
+{
+ "graphs": [
+  {
+   "name": "gain-set-value-at-time",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.25,
+     0.1
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.75,
+     0.2004
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0,
+     0.3
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-linear-ramp",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0,
+     0.05
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     1,
+     0.25
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.1,
+     0.4
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-linear-ramp-no-anchor",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.2,
+     0.3
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-exponential-ramp",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.01,
+     0.05
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "exponentialRampToValueAtTime",
+     1,
+     0.25
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "exponentialRampToValueAtTime",
+     0.001,
+     0.45
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-set-target",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0,
+     0.05,
+     0.03
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0.8,
+     0.25,
+     0.1
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-value-curve",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueCurveAtTime",
+     [
+      0,
+      0.8,
+      0.2,
+      1,
+      0.5,
+      0.05,
+      0.9
+     ],
+     0.1,
+     0.3
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-set-value-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.4,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.9,
+     0.1000137
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.1,
+     0.30000001
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-linear-ramp-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.3,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.9,
+     0.2000313
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0.2,
+     0.3500077
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-exponential-ramp-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0.05,
+     0.0500091
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "exponentialRampToValueAtTime",
+     0.9,
+     0.2000313
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-set-target-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0.2,
+     0.1000137,
+     0.02
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setTargetAtTime",
+     0.7,
+     0.3000071,
+     0.05
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-value-curve-fractional",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueCurveAtTime",
+     [
+      0,
+      0.8,
+      0.2,
+      1,
+      0.5,
+      0.05,
+      0.9
+     ],
+     0.1000071,
+     0.2000033
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-cancel-scheduled",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0,
+     0
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     1,
+     0.4
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "cancelScheduledValues",
+     0.2
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-cancel-and-hold",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "c",
+     "ConstantSource",
+     {
+      "offset": 1
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     0,
+     0
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     1,
+     0.4
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "cancelAndHoldAtTime",
+     0.2
+    ],
+    [
+     "connect",
+     "c",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "c",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "gain-howler-fade-on-tone",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 48000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 1
+     }
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "setValueAtTime",
+     1,
+     0.1
+    ],
+    [
+     "param",
+     "g",
+     "gain",
+     "linearRampToValueAtTime",
+     0,
+     0.35
+    ],
+    [
+     "connect",
+     "s",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-0.5",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 0.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-0.75",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 0.75
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-1",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-1.5",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 1.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-2",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-3.3",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 3.3
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-4",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 4
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-ramp",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ],
+    [
+     "param",
+     "s",
+     "playbackRate",
+     "setValueAtTime",
+     0.5,
+     0
+    ],
+    [
+     "param",
+     "s",
+     "playbackRate",
+     "linearRampToValueAtTime",
+     4,
+     0.2
+    ]
+   ]
+  },
+  {
+   "name": "rate-1-buffer-22050",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 5513,
+      "sampleRate": 22050,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "rate-1.5-buffer-44100",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 11025,
+      "sampleRate": 44100,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 1.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "detune-700",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "detune": 700
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-whole",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-start-end",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.05,
+      "loopEnd": 0.12
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-start-end-rate-1.7",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.05,
+      "loopEnd": 0.12,
+      "playbackRate": 1.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-offset-past-end",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.05,
+      "loopEnd": 0.12
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0,
+     0.2
+    ]
+   ]
+  },
+  {
+   "name": "start-at-sample",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.1
+    ]
+   ]
+  },
+  {
+   "name": "start-subsample",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.100013
+    ]
+   ]
+  },
+  {
+   "name": "start-offset",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.05,
+     0.1
+    ]
+   ]
+  },
+  {
+   "name": "start-offset-duration",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.05,
+     0.03,
+     0.08
+    ]
+   ]
+  },
+  {
+   "name": "start-stop",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.02
+    ],
+    [
+     "stop",
+     "s",
+     0.15
+    ]
+   ]
+  },
+  {
+   "name": "stop-subsample",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ],
+    [
+     "stop",
+     "s",
+     0.150007
+    ]
+   ]
+  },
+  {
+   "name": "loop-stop",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.01,
+      "loopEnd": 0.2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ],
+    [
+     "stop",
+     "s",
+     0.37
+    ]
+   ]
+  },
+  {
+   "name": "howler-sprite-loop",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.03,
+      "loopEnd": 0.09
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0,
+     0.03,
+     86400
+    ]
+   ]
+  },
+  {
+   "name": "rate-1.5-context-44100",
+   "lane": "graph",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "playbackRate": 1.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "loop-start-end-context-44100",
+   "lane": "graph",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 1,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 12000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b",
+      "loop": true,
+      "loopStart": 0.05,
+      "loopEnd": 0.12
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0.010007
+    ]
+   ]
+  },
+  {
+   "name": "oscillator-sine-1k",
+   "lane": "graph",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 1,
+   "ops": [
+    [
+     "node",
+     "o",
+     "Oscillator",
+     {
+      "type": "sine",
+      "frequency": 1000
+     }
+    ],
+    [
+     "node",
+     "g",
+     "Gain",
+     {
+      "gain": 0.5
+     }
+    ],
+    [
+     "connect",
+     "o",
+     "g"
+    ],
+    [
+     "connect",
+     "g",
+     "out"
+    ],
+    [
+     "start",
+     "o",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono--1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo--1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono--0.75",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.75
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo--0.75",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.75
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono--0.4",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.4
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo--0.4",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.4
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono--0.1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo--0.1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -0.1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono-0",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo-0",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono-0.3",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.3
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo-0.3",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.3
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono-0.7",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo-0.7",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-mono-1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-stereo-1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 2,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-automated",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": -1
+     }
+    ],
+    [
+     "param",
+     "p",
+     "pan",
+     "linearRampToValueAtTime",
+     1,
+     0.5
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "stereo-panner-context-44100",
+   "lane": "pan",
+   "sampleRate": 44100,
+   "length": 22050,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 22050,
+      "sampleRate": 44100,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "StereoPanner",
+     {
+      "pan": 0.35
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-0",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": -1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 2.7,
+      "positionY": 0,
+      "positionZ": -2.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-2",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 4.4,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-3",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 6.1,
+      "positionY": 0,
+      "positionZ": 6.1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-4",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": 7.8
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-5",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -9.5,
+      "positionY": 0,
+      "positionZ": 9.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-6",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -11.2,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-linear-7",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "linear",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -6.45,
+      "positionY": 10.32,
+      "positionZ": -3.87
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-0",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": -1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 2.7,
+      "positionY": 0,
+      "positionZ": -2.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-2",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 4.4,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-3",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 6.1,
+      "positionY": 0,
+      "positionZ": 6.1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-4",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": 7.8
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-5",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -9.5,
+      "positionY": 0,
+      "positionZ": 9.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-6",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -11.2,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-inverse-7",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -6.45,
+      "positionY": 10.32,
+      "positionZ": -3.87
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-0",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": -1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-1",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 2.7,
+      "positionY": 0,
+      "positionZ": -2.7
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-2",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 4.4,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-3",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 6.1,
+      "positionY": 0,
+      "positionZ": 6.1
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-4",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": 7.8
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-5",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -9.5,
+      "positionY": 0,
+      "positionZ": 9.5
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-6",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -11.2,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-exponential-7",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "exponential",
+      "refDistance": 1,
+      "maxDistance": 20,
+      "rolloffFactor": 1,
+      "positionX": -6.45,
+      "positionY": 10.32,
+      "positionZ": -3.87
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-moving",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "positionX": -4,
+      "positionZ": -1
+     }
+    ],
+    [
+     "param",
+     "p",
+     "positionX",
+     "linearRampToValueAtTime",
+     4,
+     0.5
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-listener-turned",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "listener",
+     "forwardX",
+     1
+    ],
+    [
+     "listener",
+     "forwardZ",
+     0
+    ],
+    [
+     "listener",
+     "positionX",
+     0.5
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "distanceModel": "inverse",
+      "positionX": 2,
+      "positionZ": 2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "equalpower-cone",
+   "lane": "pan",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "mix"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "equalpower",
+      "positionX": 1,
+      "positionZ": -2,
+      "orientationX": 1,
+      "orientationY": 0,
+      "orientationZ": 0,
+      "coneInnerAngle": 60,
+      "coneOuterAngle": 180,
+      "coneOuterGain": 0.2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-0",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": -2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-1",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": 2,
+      "positionY": 0,
+      "positionZ": -2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-2",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": 2,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-3",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": 2,
+      "positionY": 0,
+      "positionZ": 2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-4",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": 2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-5",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": -2,
+      "positionY": 0,
+      "positionZ": 2
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-6",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": -2,
+      "positionY": 0,
+      "positionZ": 0
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  },
+  {
+   "name": "hrtf-7",
+   "lane": "hrtf",
+   "sampleRate": 48000,
+   "length": 24000,
+   "channels": 2,
+   "ops": [
+    [
+     "buffer",
+     "b",
+     {
+      "channels": 1,
+      "length": 24000,
+      "sampleRate": 48000,
+      "signal": "noise"
+     }
+    ],
+    [
+     "node",
+     "s",
+     "AudioBufferSource",
+     {
+      "buffer": "b"
+     }
+    ],
+    [
+     "node",
+     "p",
+     "Panner",
+     {
+      "panningModel": "HRTF",
+      "distanceModel": "inverse",
+      "positionX": -1,
+      "positionY": 1.6,
+      "positionZ": -0.6
+     }
+    ],
+    [
+     "connect",
+     "s",
+     "p"
+    ],
+    [
+     "connect",
+     "p",
+     "out"
+    ],
+    [
+     "start",
+     "s",
+     0
+    ]
+   ]
+  }
+ ],
+ "decodes": [
+  {
+   "name": "decode-tone-stereo-44100-bare-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-44100-bare.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-tone-stereo-44100-bare-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-44100-bare.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-tone-mono-22050-bare-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-22050-bare.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-tone-mono-22050-bare-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-22050-bare.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-1ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-22050.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-1ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-22050.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-1ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-44100.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-1ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-44100.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-1ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-48000.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-1ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-48000.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-2ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-22050.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-2ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-22050.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-2ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-44100.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-2ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-44100.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-mp3-2ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-48000.mp3",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-mp3-2ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-48000.mp3",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-1ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-22050.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-1ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-22050.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-1ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-44100.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-1ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-44100.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-1ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-48000.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-1ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-48000.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-2ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-22050.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-2ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-22050.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-2ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-44100.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-2ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-44100.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-ogg-2ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-48000.ogg",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-ogg-2ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-48000.ogg",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-1ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-22050.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-1ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-22050.wav",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-1ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-44100.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-1ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-44100.wav",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-1ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-mono-48000.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-1ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-mono-48000.wav",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-2ch-22050-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-22050.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-2ch-22050-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-22050.wav",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-2ch-44100-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-44100.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-2ch-44100-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-44100.wav",
+   "sampleRate": 48000
+  },
+  {
+   "name": "decode-wav-2ch-48000-to-44100",
+   "lane": "decode",
+   "file": "tone-stereo-48000.wav",
+   "sampleRate": 44100
+  },
+  {
+   "name": "decode-wav-2ch-48000-to-48000",
+   "lane": "decode",
+   "file": "tone-stereo-48000.wav",
+   "sampleRate": 48000
+  }
+ ]
+}

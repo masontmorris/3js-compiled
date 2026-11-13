@@ -15,6 +15,8 @@ replay_image = (
     .add_local_file(ROOT / "Cargo.lock", "/src/Cargo.lock")
     .add_local_file(ROOT / "rust-toolchain.toml", "/src/rust-toolchain.toml")
     .add_local_dir(ROOT / "crates", "/src/crates")
+    .add_local_dir(ROOT / "third_party", "/src/third_party")
+    .add_local_dir(ROOT / "examples" / "audio" / "clips", "/src/examples/audio/clips")
 )
 # The Linux DXC release needs glibc 2.38, which Debian bookworm lacks.
 gate_image = (
@@ -51,3 +53,8 @@ def js_tests():
 def wgsl_gate():
     subprocess.run(["dxc", "--version"], check=True)
     subprocess.run(["node", "tools/wgsl-gate/gate.mjs", "/tmp/wgsl-gate"], cwd="/src", check=True)
+
+
+@app.function(image=replay_image, cpu=2, memory=4096, timeout=1200)
+def audio_offline():
+    subprocess.run(["cargo", "test", "-p", "threejsc-audio", "--release", "--locked", "--", "--nocapture"], cwd="/src", check=True)

@@ -284,6 +284,7 @@ pub struct Page {
     pub storage: Option<PathBuf>,
     pub ratio: f64,
     pub screen: (u32, u32),
+    pub audio: threejsc_host::audio::Options,
 }
 impl Default for Page {
     fn default() -> Self {
@@ -292,6 +293,12 @@ impl Default for Page {
             storage: None,
             ratio: 1.0,
             screen: (1920, 1080),
+            // Tests render audio with no device, so they never play through the machine's speakers.
+            audio: threejsc_host::audio::Options {
+                device: Some("none".into()),
+                csv: std::env::temp_dir().join("threejsc-test-audio.csv"),
+                ..Default::default()
+            },
         }
     }
 }
@@ -319,7 +326,11 @@ impl<'a> Game<'a> {
     ) -> Result<Self> {
         let mut js = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(platform::Loader::new())),
-            extensions: vec![host_ext::init(), platform::extension::init()],
+            extensions: vec![
+                host_ext::init(),
+                platform::extension::init(),
+                threejsc_host::audio::extension::init(),
+            ],
             ..Default::default()
         });
         let mut storage = Vec::new();
@@ -343,6 +354,15 @@ impl<'a> Game<'a> {
                 cookies = serde_json::from_str(saved).unwrap_or(cookies);
             }
         }
+        let mut audio = page.audio.clone();
+        let audio_log = Rc::clone(&log);
+        audio.log = Some(Rc::new(move |message: String| {
+            let _ = writeln!(audio_log.borrow_mut(), "{message}");
+            eprintln!("{message}");
+        }));
+        js.op_state()
+            .borrow_mut()
+            .put(threejsc_host::audio::Audio::new(audio));
         js.op_state().borrow_mut().put(State {
             color: [0.0, 0.0, 0.0, 1.0],
             commands: None,
@@ -1665,6 +1685,142 @@ mod tests {
         )?;
         assert_eq!(result(&log, "fields that differ"), "0", "{log}");
         assert!(!log.contains("Uncaught"), "{log}");
+        Ok(())
+    }
+    // Runs `script` in the page and answers whether it returned true.
+    fn holds(game: &mut Game, script: String) -> Result<bool> {
+        Ok(game
+            .js
+            .execute_script("host:check", script)?
+            .open(game.js.v8_isolate())
+            .is_true())
+    }
+
+    fn batched(game: &Game) -> (u64, u64) {
+        game.js
+            .op_state()
+            .borrow()
+            .borrow::<threejsc_host::audio::Audio>()
+            .batched()
+    }
+
+    #[test]
+    fn audio_changes_made_in_a_frame_reach_the_engine_in_one_call_before_it_ends() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-batch-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-batch.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        // The page builds its graph, then changes it in each frame's callback with no other audio call.
+        game.frame()?;
+        for _ in 0..5 {
+            let (batches, commands) = batched(&game);
+            game.frame()?;
+            let (after, applied) = batched(&game);
+            assert_eq!(after - batches, 1, "one call per frame");
+            assert!(
+                holds(
+                    &mut game,
+                    format!("globalThis.__made === {} && __made > 0", applied - commands)
+                )?,
+                "every change the frame made reached the engine by its end: {}",
+                std::fs::read_to_string(&log_path)?
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_engine_lets_go_of_nodes_and_buffers_the_page_drops() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-release-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-release.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.frame()?;
+        let held = |game: &Game| {
+            game.js
+                .op_state()
+                .borrow()
+                .borrow::<threejsc_host::audio::Audio>()
+                .held()
+        };
+        let before = held(&game);
+        holds(&mut game, "__churn(); true".into())?;
+        game.frame()?;
+        assert!(held(&game) >= before + 300, "the churn made 300 handles");
+        // The started sources go once they have played and their ended events have reached the page.
+        let started = Instant::now();
+        while held(&game) >= before + 30 && started.elapsed() < std::time::Duration::from_secs(10) {
+            game.js.v8_isolate().low_memory_notification();
+            game.frame()?;
+        }
+        assert!(
+            held(&game) < before + 30,
+            "the engine holds {} handles, from {before}: {}",
+            held(&game),
+            std::fs::read_to_string(&log_path)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn audio_current_time_is_the_engines_and_advances_by_render_quantum() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-audio-time-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/audio-time.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.frame()?;
+        holds(&mut game, "globalThis.__times = []; true".into())?;
+        // Frames run until the context has played 0.3 s, which a loaded runner may take far longer than that to do.
+        let started = Instant::now();
+        while !holds(
+            &mut game,
+            "__times.length > 10 && __times.at(-1) > 0.3 && new Set(__times).size > 10".into(),
+        )? {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(20),
+                "currentTime advanced while the context ran: {}",
+                std::fs::read_to_string(&log_path)?
+            );
+            game.frame()?;
+            // The page's reading, then the engine's: the engine's is the same or a few quanta later, with room for a
+            // shared runner that preempts the test between the two reads.
+            holds(&mut game, "__times.push(__time()); true".into())?;
+            let engine = game
+                .js
+                .op_state()
+                .borrow()
+                .borrow::<threejsc_host::audio::Audio>()
+                .current_time(1);
+            assert!(
+                holds(
+                    &mut game,
+                    format!(
+                        "{{ const t = __times.at(-1), e = {engine}, q = t * __rate / 128, r = Math.round(q);
+                        const ok = Math.abs(q - r) < 1e-6 && t <= e && e - t < 0.25 && (__times.length < 2 || t >= __times.at(-2));
+                        if (!ok) console.log(`currentTime ${{t}} engine ${{e}} quanta ${{q}}`);
+                        ok }}"
+                    )
+                )?,
+                "{}",
+                std::fs::read_to_string(&log_path)?
+            );
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
         Ok(())
     }
 }

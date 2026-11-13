@@ -1,0 +1,142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mason Morris <masonmorris8@gmail.com>
+Date: Thu, 12 Nov 2026 22:55:38 -0500
+Subject: [PATCH 12/12] Keep a suspended render thread suspended on its new stream
+
+A device follower moves a context from its own thread, so it can move
+one whose render thread has answered a suspend before the suspend's
+continuation pauses the stream. The render thread's suspended flag
+stayed with the old stream, so the new one started Running and played,
+and the continuation then paused it under a Running state.
+
+CloseAndRecycle now answers the flag with the graph, and Startup takes
+it, so the new render thread starts suspended when the old one was.
+---
+ src/context/offline.rs |  5 ++++-
+ src/context/online.rs  | 16 ++++++++++------
+ src/message.rs         |  8 ++++----
+ src/render/thread.rs   | 11 ++++++++---
+ 4 files changed, 26 insertions(+), 14 deletions(-)
+
+diff --git a/src/context/offline.rs b/src/context/offline.rs
+index 6cc9c0e..1ca6460 100644
+--- a/src/context/offline.rs
++++ b/src/context/offline.rs
+@@ -86,7 +86,10 @@ impl OfflineAudioContext {
+ 
+         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+         let graph = crate::render::graph::Graph::new(node_id_producer);
+-        let message = crate::message::ControlMessage::Startup { graph };
++        let message = crate::message::ControlMessage::Startup {
++            graph,
++            suspended: false,
++        };
+         sender.send(message).unwrap();
+ 
+         // track number of frames - synced from render thread to control thread
+diff --git a/src/context/online.rs b/src/context/online.rs
+index 6a49744..d83be00 100644
+--- a/src/context/online.rs
++++ b/src/context/online.rs
+@@ -273,7 +273,10 @@ impl AudioContext {
+         // Construct the audio Graph and hand it to the render thread
+         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+         let graph = Graph::new(node_id_producer);
+-        let message = ControlMessage::Startup { graph };
++        let message = ControlMessage::Startup {
++            graph,
++            suspended: false,
++        };
+         ctrl_msg_send.send(message).unwrap();
+ 
+         // Set up the event loop thread that handles the events spawned by the render thread
+@@ -413,15 +416,16 @@ impl AudioContext {
+         // Flush out the ctrl msg receiver, cache
+         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
+ 
+-        // Acquire the active audio graph from the current render thread, shutting it down
+-        let graph = if matches!(pending_msgs.first(), Some(ControlMessage::Startup { .. })) {
++        // Acquire the active audio graph from the current render thread, shutting it down. The new render thread starts
++        // suspended when this one was, as after a suspend whose continuation has not paused the stream yet.
++        let (graph, suspended) = if matches!(pending_msgs.first(), Some(ControlMessage::Startup { .. })) {
+             // Handle the edge case where the previous backend was suspended for its entire lifetime.
+             // In this case, the `Startup` control message was never processed.
+             log::debug!("SinkChange: recover unstarted graph");
+ 
+             let msg = pending_msgs.remove(0);
+             match msg {
+-                ControlMessage::Startup { graph } => graph,
++                ControlMessage::Startup { graph, suspended } => (graph, suspended),
+                 _ => unreachable!(),
+             }
+         } else {
+@@ -439,7 +443,7 @@ impl AudioContext {
+             // A stream that stopped after a device error runs no callback to answer, and the graph lives in that
+             // callback, so withdraw the request, leave the context as it was and report the error.
+             match graph_recv.recv_timeout(Duration::from_secs(2)) {
+-                Ok(graph) => graph,
++                Ok(recycled) => recycled,
+                 Err(_) if self.render_thread_init.ctrl_msg_recv.try_recv().is_ok() => {
+                     for msg in pending_msgs {
+                         ctrl_msg_send.send(msg).unwrap();
+@@ -496,7 +500,7 @@ impl AudioContext {
+         }
+ 
+         // send the audio graph to the new render thread
+-        let message = ControlMessage::Startup { graph };
++        let message = ControlMessage::Startup { graph, suspended };
+         ctrl_msg_send.send(message).unwrap();
+ 
+         // flush the cached msgs through the held sender: they were already past any staging, and taking the sender's
+diff --git a/src/message.rs b/src/message.rs
+index cd766fc..66a9425 100644
+--- a/src/message.rs
++++ b/src/message.rs
+@@ -43,13 +43,13 @@ pub(crate) enum ControlMessage {
+     /// Mark node as a cycle breaker (DelayNode only)
+     MarkCycleBreaker { id: AudioNodeId },
+ 
+-    /// Shut down and recycle the audio graph
++    /// Shut down and recycle the audio graph, with whether the render thread was suspended
+     CloseAndRecycle {
+-        sender: crossbeam_channel::Sender<Graph>,
++        sender: crossbeam_channel::Sender<(Graph, bool)>,
+     },
+ 
+-    /// Start rendering with given audio graph
+-    Startup { graph: Graph },
++    /// Start rendering with given audio graph, suspended when the render thread it came from was
++    Startup { graph: Graph, suspended: bool },
+ 
+     /// Suspend and pause audio processing
+     Suspend { notify: OneshotNotify },
+diff --git a/src/render/thread.rs b/src/render/thread.rs
+index 66f6432..3257364 100644
+--- a/src/render/thread.rs
++++ b/src/render/thread.rs
+@@ -191,17 +191,22 @@ impl RenderThread {
+             }
+             CloseAndRecycle { sender } => {
+                 self.set_state(AudioContextState::Suspended);
+-                let _ = sender.send(self.graph.take().unwrap());
++                let _ = sender.send((self.graph.take().unwrap(), self.suspended));
+                 self.receiver = None;
+                 return ControlFlow::Break(()); // no further handling of ctrl msgs
+             }
+-            Startup { graph } => {
++            Startup { graph, suspended } => {
+                 debug_assert!(self.graph.is_none());
+                 self.graph = Some(graph);
++                self.suspended = suspended;
+                 if let Some(startup_pending) = self.startup_pending.as_ref() {
+                     startup_pending.store(false, Ordering::Release);
+                 }
+-                self.set_state(AudioContextState::Running);
++                self.set_state(if suspended {
++                    AudioContextState::Suspended
++                } else {
++                    AudioContextState::Running
++                });
+             }
+             NodeMessage { id, mut msg } => {
+                 self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
