@@ -197,7 +197,11 @@ impl RenderThread {
             }
             CloseAndRecycle { sender } => {
                 #[cfg(feature = "test-control")]
-                crate::test_control::recycle_barrier();
+                crate::test_control::recycle_barrier(0);
+                #[cfg(feature = "test-control")]
+                crate::test_control::recycle_barrier(1);
+                #[cfg(feature = "test-control")]
+                crate::test_control::recycle_barrier(2);
                 self.set_state(AudioContextState::Suspended);
                 let _ = sender.send((self.graph.take().unwrap(), self.suspended));
                 self.receiver = None;

@@ -64,19 +64,21 @@ mod io;
 pub mod test_control {
     use std::sync::{mpsc, Mutex};
 
-    static RECYCLE_BARRIER: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    static RECYCLE_BARRIER: Mutex<Option<(u8, mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
 
     /// Stop the next graph recycle after the render thread takes the request.
-    pub fn hold_next_recycle() -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+    pub fn hold_next_recycle(stage: u8) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
         let (entered_send, entered_recv) = mpsc::channel();
         let (release_send, release_recv) = mpsc::channel();
-        *RECYCLE_BARRIER.lock().unwrap() = Some((entered_send, release_recv));
+        *RECYCLE_BARRIER.lock().unwrap() = Some((stage, entered_send, release_recv));
         (entered_recv, release_send)
     }
 
-    pub(crate) fn recycle_barrier() {
-        let barrier = RECYCLE_BARRIER.lock().unwrap().take();
-        if let Some((entered, release)) = barrier {
+    pub(crate) fn recycle_barrier(stage: u8) {
+        let mut guard = RECYCLE_BARRIER.lock().unwrap();
+        let barrier = if guard.as_ref().is_some_and(|item| item.0 == stage) { guard.take() } else { None };
+        drop(guard);
+        if let Some((_, entered, release)) = barrier {
             let _ = entered.send(());
             let _ = release.recv();
         }
