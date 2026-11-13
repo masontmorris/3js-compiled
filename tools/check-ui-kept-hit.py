@@ -12,12 +12,17 @@ for step in script:
     if step['type'] == 'wait': frame += step['frames']
     elif step['type'] == 'capture': frame += 1; starts.append(frame)
 wrong = 0
-for i, (path, start) in enumerate(zip(sorted(caps.glob('t*.png')), starts)):
+captures = sorted(caps.glob('t*.png'))
+if len(captures) != len(starts):
+    sys.exit(f'expected {len(starts)} captures, found {len(captures)}')
+for i, (path, start) in enumerate(zip(captures, starts)):
     x = int(path.stem.split('-x')[1])
     drawn = Image.open(path).convert('RGB').getpixel((x, 60)) == (0, 200, 0)
     near = lambda f: start <= f <= start + 60
-    to = 'game' if any(near(f) for gx, f in game if gx == x) else 'page' if any(near(f) for f in hud) else 'nobody'
-    ok = to == ('page' if drawn else 'game')
+    game_received = any(near(f) for gx, f in game if gx == x)
+    page_received = any(near(f) for f in hud)
+    to = ' and '.join(name for name, received in (('game', game_received), ('page', page_received)) if received) or 'nobody'
+    ok = game_received == (not drawn) and page_received == drawn
     wrong += not ok
     print(f'{path.name}: button drawn at x={x}: {drawn}; click went to {to}{"" if ok else "  <-- WRONG"}')
 print(f'{wrong} of {len(starts)} clicks disagree with the frame on screen')
