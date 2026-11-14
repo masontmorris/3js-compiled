@@ -18,6 +18,7 @@ $runs = @{
 foreach ($case in $Cases) {
     $dir = Join-Path $Out $case
     New-Item -ItemType Directory -Force $dir, 'tools/ui-repro/out' | Out-Null
+    Get-ChildItem tools/ui-repro/out -Filter *.png | Remove-Item
     $pids = Join-Path $dir 'ui-host-pids.txt'
     $cpu = Join-Path $dir 'ui-host-cpu.csv'
     Set-Content $pids -Value $null
