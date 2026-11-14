@@ -121,8 +121,8 @@ impl Pointers {
             }
             owner
         } else {
-            // An up with no press open ends a press whose down went to the game before this UI
-            // existed, so it goes to the game wherever it lands.
+            // An up with no press open ends a press whose down the host never saw, so it goes to
+            // the game wherever it lands.
             let owner = match hit {
                 Some((ids, corner)) if pointer.action != 2 => Owner::Page { ids, corner },
                 _ => Owner::Game,
@@ -143,6 +143,20 @@ impl Pointers {
             Owner::Game => Route::Game,
             Owner::Neither => Route::Neither,
         }
+    }
+    /// What a UI that replaces this one on a new device starts from: the press in progress, the
+    /// rest of which goes to neither side if the page received its start. Until that UI runs,
+    /// `pointer` with no frame on screen routes the input.
+    pub fn handed_over(mut self) -> Pointers {
+        self.clear();
+        Pointers {
+            press: self.press,
+            ..Pointers::default()
+        }
+    }
+    /// Takes over the press in progress from the pointers a UI handed over.
+    pub fn adopt(&mut self, earlier: Pointers) {
+        self.press = earlier.press;
     }
     /// ui-host stopped: its layouts go, and the rest of a press it received goes to neither
     /// side.
@@ -242,13 +256,18 @@ mod tests {
         /// The game replaced the GPU device, so the host drops its UI and starts another on the
         /// new device.
         fn stop(&mut self) {
+            self.pointers = std::mem::take(&mut self.pointers).handed_over();
             self.running = false;
         }
         /// A UI starts with a page laid out at `size` with `rects`, its first frame on screen.
         fn start(&mut self, size: Size, rects: Vec<Rect>) {
-            let out = std::mem::take(&mut self.out);
+            let (out, held) = (
+                std::mem::take(&mut self.out),
+                std::mem::take(&mut self.pointers),
+            );
             *self = Host::new(size, rects);
             self.out = out;
+            self.pointers.adopt(held);
         }
         fn view(&self) -> View {
             self.rings.view()
@@ -296,7 +315,9 @@ mod tests {
         }
         fn send(&mut self, pointer: Pointer) {
             if !self.running {
-                self.out.push(Game(pointer));
+                if self.pointers.pointer(None, pointer) == Route::Game {
+                    self.out.push(Game(pointer));
+                }
                 return;
             }
             let shown = self.view().shown;
@@ -418,8 +439,7 @@ mod tests {
 
     #[test]
     fn a_release_with_no_press_goes_to_the_game() {
-        // The down went to the game before this UI existed, or before a device replacement
-        // started it again, so its up belongs to the game too.
+        // The host never saw the down, which was made outside the window.
         let mut host = Host::new(OLD, right_button(1280));
         host.pointer(2, 1160.0);
         assert_eq!(

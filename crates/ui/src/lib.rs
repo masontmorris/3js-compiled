@@ -555,6 +555,26 @@ fn composite_pipeline(
     (layout, pipeline)
 }
 
+/// The pointer press in progress while no UI runs: before the first, and between a UI and the
+/// one that replaces it on a new device. The next UI adopts it, so a press goes entirely to the
+/// side its down went to whenever the UI starts.
+#[derive(Default)]
+pub struct Presses(pointers::Pointers);
+
+impl Presses {
+    /// Whether the pointer input belongs to the page while no UI runs: it is the rest of a press
+    /// whose down went to the page, and goes to neither side. The game receives the rest.
+    pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
+        let pointer = pointers::Pointer {
+            action,
+            x,
+            y,
+            button,
+        };
+        self.0.pointer(None, pointer) != pointers::Route::Game
+    }
+}
+
 pub struct Ui {
     d3d: D3d,
     connection: Connection,
@@ -675,9 +695,15 @@ impl Ui {
         });
         self.connection = Connection::Launching(rx);
     }
-    /// The game's latest state, for the UI that replaces this one on a new device.
-    pub fn into_state(mut self) -> Option<String> {
-        self.state.take()
+    /// The game's latest state and the press in progress, for the UI that replaces this one on
+    /// a new device.
+    pub fn into_parts(mut self) -> (Option<String>, Presses) {
+        let pointers = std::mem::take(&mut self.pointers).handed_over();
+        (self.state.take(), Presses(pointers))
+    }
+    /// Takes over the press in progress from before this UI started.
+    pub fn adopt(&mut self, presses: Presses) {
+        self.pointers.adopt(presses.0);
     }
     pub fn update(
         &mut self,
