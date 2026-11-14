@@ -1174,8 +1174,19 @@ fn the_hud_hears_the_pointer_come_back_in_the_frame_it_left() {
     // Servo may get the moves and the leave before one rendering update. Edge ends with the button
     // hovered: with the moves dispatched one at a time it fires the button's over and enter, out
     // and leave, and over and enter events, and with the three coalesced only the first over and
-    // enter (C:\3jsc\swarm\pr23-cr1\edge-burst).
+    // enter (C:\3jsc\swarm\pr23-cr1\edge-burst). The page keeps a requestAnimationFrame loop, as
+    // an animated HUD does, so Servo's rendering updates follow the loop and the three events
+    // queue for one of them rather than the first starting an update of its own.
     let dir = hud_workdir("hud-hover-burst");
+    let page = std::fs::read_to_string(dir.join("hud-hover.html")).unwrap();
+    std::fs::write(
+        dir.join("hud-hover.html"),
+        page.replace(
+            "let hovered = null;",
+            "requestAnimationFrame(function frame() { requestAnimationFrame(frame); });\nlet hovered = null;",
+        ),
+    )
+    .unwrap();
     let steps = serde_json::json!([
         {"type": "wait", "frames": 300},
         {"type": "pointer", "action": "move", "x": 140, "y": 80},
