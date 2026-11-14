@@ -583,6 +583,32 @@ same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
 "#);
 }
 
+/// The same page with 1,200 cached rects as well, whose checks fill whatever the offset reads leave
+/// of each evaluation: the checks still leave the document scan a share, so a rect the page
+/// computed later gets an id.
+#[test]
+fn rect_checks_after_offset_reads_leave_the_document_scan_a_share() {
+    run(r#"
+const rows = Array.from({ length: 3000 }, (_, i) => new Element("row", [i % 1000, 600 + Math.floor(i / 1000), 1, 1], body));
+const items = Array.from({ length: 1200 }, (_, i) => new Element("div", [(i % 40) * 30, 20 + Math.floor(i / 40) * 12, 20, 10], body));
+const boxes = () => items.map(item => item.box);
+ids(...boxes().map(box => ({ box })));
+const c = new Element("div#c", [1240, 500, 30, 30], body);
+READ_MS = 0.001;
+const given = new Set();
+for (let n = 0; n < 40; n++) {
+  const before = clock;
+  const got = tick(() => {
+    for (const row of rows) void row.offsetWidth;
+    return JSON.stringify({ events: [], rects: [...boxes(), c.box] });
+  })[3];
+  same(clock - before < 2.2, true, `evaluation ${n} took ${clock - before} ms of model time`);
+  if (got[1200]) given.add(got[1200]);
+}
+same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
+"#);
+}
+
 /// Two siblings with one box, the first lifted over the second by `z-index`: the rect names the
 /// one drawn on top, as Servo's hit test at its centre does, and still names it once the other
 /// moves away.
@@ -599,3 +625,4 @@ same(both.ids, [topId], `the rect names the element on top`);
 same(both.also[0] > 0 && both.also[0] !== topId, true, `the other among its more ids: ${both.also}`);
 "#);
 }
+
