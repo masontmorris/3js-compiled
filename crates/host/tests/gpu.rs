@@ -1238,7 +1238,10 @@ fn a_hud_whose_surfaces_cannot_grow_starts_again_at_the_new_size() {
         ((1680, 720), MAGENTA),
         "{log}\n{ui_log}"
     );
-    assert!(ui_log.contains("[host] ui-host launch 2 after:"), "{ui_log}");
+    assert!(
+        ui_log.contains("[host] ui-host launch 2 after:"),
+        "{ui_log}"
+    );
 }
 
 #[test]

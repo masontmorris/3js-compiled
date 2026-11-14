@@ -260,8 +260,19 @@ impl ServoWgpuRenderingContext {
         if self.frame_producer.borrow().size() == size {
             return;
         }
-        self.frame_producer.borrow().set_size(size);
-        self.fit_surfaces(size);
+        self.grow(size);
+    }
+
+    /// Takes `size` once the surfaces hold it. When they cannot grow, the size stays as it was,
+    /// so the caller sees that the resize failed.
+    fn grow(&self, size: PhysicalSize<u32>) {
+        match self.fit_surfaces(size) {
+            Ok(()) => self.frame_producer.borrow().set_size(size),
+            Err(error) => eprintln!(
+                "[grafting-servo] surfaces for {}x{} could not be allocated: {error:?}",
+                size.width, size.height
+            ),
+        }
     }
 
     /// Grows the swap chain's surfaces to hold `size`, rounded up to `SURFACE_STEP`, and keeps
@@ -270,10 +281,10 @@ impl ServoWgpuRenderingContext {
     /// On an RTX 3060, each ANGLE surface that WebRender drew into and surfman then destroyed
     /// left about 0.24 MB of write-combined GPU driver memory behind, so replacing the surfaces
     /// on every resize grew ui-host by about 0.5 MB per resize.
-    fn fit_surfaces(&self, size: PhysicalSize<u32>) {
+    fn fit_surfaces(&self, size: PhysicalSize<u32>) -> Result<(), surfman::Error> {
         let held = self.swap_chain.size();
         if size.width as i32 <= held.width && size.height as i32 <= held.height {
-            return;
+            return Ok(());
         }
         let step =
             |want: u32, held: i32| want.max(held as u32).next_multiple_of(SURFACE_STEP) as i32;
@@ -295,6 +306,7 @@ impl ServoWgpuRenderingContext {
                 "[servo-resize-trace] resize requested={size:?} surfaces={grown:?} result={result:?} actual={actual:?}"
             );
         }
+        result
     }
 
     /// Read the full current frame as a CPU-side RGBA image.
@@ -340,8 +352,7 @@ impl RenderingContext for ServoWgpuRenderingContext {
         }
 
         self.trace_surface("before-resize");
-        self.frame_producer.borrow().set_size(size);
-        self.fit_surfaces(size);
+        self.grow(size);
     }
 
     fn present(&self) {

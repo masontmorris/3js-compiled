@@ -710,6 +710,17 @@ fn main() {
         {
             size = PhysicalSize::new(width, height);
             webview.resize(size);
+            if ctx.size() != size {
+                // Frames of this size would come from smaller surfaces. A new ui-host makes its
+                // surfaces at the window's size.
+                let text = format!(
+                    "[ui-host] its surfaces could not grow to {width}x{height}, so it stops for \
+                     the host to start another"
+                );
+                eprintln!("{text}");
+                send(&Msg::Report { text });
+                break;
+            }
             placer.borrow_mut().resized((width, height));
             *relayout.borrow_mut() = Some(Relayout::new((width, height), Instant::now()));
             destroy_slots(&frame_ctx, &mut slots);
