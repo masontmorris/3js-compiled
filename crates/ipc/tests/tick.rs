@@ -5,7 +5,9 @@
 //! `TICK` in V8 against a page model: elements with border boxes, in a tree, with
 //! `pointer-events: none` where `hit` is false. Each case runs twice: with the page measuring its
 //! rects with `getBoundingClientRect` during the tick, and with rects the page computed some other
-//! way, which `TICK` finds in its caches and by document scan. Box reads and walking the document
+//! way, which `TICK` finds in its caches and by document scan. `z` stands for `z-index`: a hit
+//! test puts an element of greater `z` above the elements of lesser `z`, else the later in
+//! document order above the earlier. Box reads and walking the document
 //! with `querySelectorAll` advance the page's clock. `listed` counts the elements `children`
 //! lists, which a page's DOM builds a list of.
 
@@ -14,7 +16,7 @@ use deno_core::{JsRuntime, RuntimeOptions};
 const PAGE: &str = r#"
 globalThis.Element = class Element {
   constructor(name, box, parent, hit = true) {
-    Object.assign(this, { name, box, parent, hit, kids: [] });
+    Object.assign(this, { name, box, parent, hit, kids: [], z: 0 });
     parent?.kids.push(this);
   }
   getBoundingClientRect() {
@@ -97,7 +99,7 @@ globalThis.document = {
   elementsFromPoint(x, y) {
     if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return [];
     const [inside] = [([ex, ey, w, h]) => x >= ex && y >= ey && x < ex + w && y < ey + h];
-    return tree().filter(element => element.hit && inside(element.box)).reverse();
+    return tree().filter(element => element.hit && inside(element.box)).reverse().sort((a, b) => b.z - a.z);
   },
   elementFromPoint(x, y) { return this.elementsFromPoint(x, y)[0] ?? null; },
 };
@@ -578,5 +580,22 @@ for (let n = 0; n < 12; n++) {
   if (id) given.add(id);
 }
 same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
+"#);
+}
+
+/// Two siblings with one box, the first lifted over the second by `z-index`: the rect names the
+/// one drawn on top, as Servo's hit test at its centre does, and still names it once the other
+/// moves away.
+#[test]
+fn of_two_same_box_siblings_a_rect_names_the_one_drawn_on_top() {
+    run(r#"
+const top = new Element("div#top", [100, 20, 200, 80], body);
+const below = new Element("div#below", [100, 20, 200, 80], body);
+top.z = 1;
+const both = named(top);
+below.box = [400, 20, 200, 80];
+const [topId] = ids(top);
+same(both.ids, [topId], `the rect names the element on top`);
+same(both.also[0] > 0 && both.also[0] !== topId, true, `the other among its more ids: ${both.also}`);
 "#);
 }
