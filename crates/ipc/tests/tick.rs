@@ -6,15 +6,16 @@
 //! `pointer-events: none` where `hit` is false. Each case runs twice: with the page measuring its
 //! rects with `getBoundingClientRect` during the tick, and with rects the page computed some other
 //! way, which `TICK` finds in its caches and by document scan. Box reads and walking the document
-//! with `querySelectorAll` advance the page's clock.
+//! with `querySelectorAll` advance the page's clock. `listed` counts the elements `children`
+//! lists, which a page's DOM builds a list of.
 
 use deno_core::{JsRuntime, RuntimeOptions};
 
 const PAGE: &str = r#"
 globalThis.Element = class Element {
   constructor(name, box, parent, hit = true) {
-    Object.assign(this, { name, box, parent, hit, children: [] });
-    parent?.children.push(this);
+    Object.assign(this, { name, box, parent, hit, kids: [] });
+    parent?.kids.push(this);
   }
   getBoundingClientRect() {
     reads += 1;
@@ -25,13 +26,18 @@ globalThis.Element = class Element {
     return { x, y, width, height };
   }
   remove() {
-    this.parent.children.splice(this.parent.children.indexOf(this), 1);
+    this.parent.kids.splice(this.parent.kids.indexOf(this), 1);
     this.parent = null;
   }
   get offsetWidth() { return this.box[2]; }
   get parentElement() { return this.parent; }
+  get children() {
+    listed += this.kids.length;
+    return [...this.kids];
+  }
+  get firstElementChild() { return this.kids[0] ?? null; }
   get nextElementSibling() {
-    const siblings = this.parent?.children ?? [];
+    const siblings = this.parent?.kids ?? [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }
   get isConnected() { return html.contains(this); }
@@ -45,7 +51,7 @@ globalThis.Element = class Element {
   }
 };
 globalThis.HTMLElement = Element;
-let reads = 0, clock = 0, READ_MS = 0;
+let reads = 0, listed = 0, clock = 0, READ_MS = 0;
 globalThis.Node = { DOCUMENT_POSITION_FOLLOWING: 4 };
 globalThis.NodeFilter = { SHOW_ELEMENT: 1 };
 globalThis.getComputedStyle = element => ({ pointerEvents: element.hit ? "auto" : "none" });
@@ -63,7 +69,7 @@ const tree = () => {
   while (stack.length) {
     const element = stack.pop();
     out.push(element);
-    for (let i = element.children.length - 1; i >= 0; i--) stack.push(element.children[i]);
+    for (let i = element.kids.length - 1; i >= 0; i--) stack.push(element.kids[i]);
   }
   return out;
 };
@@ -79,7 +85,7 @@ globalThis.document = {
       currentNode: root,
       nextNode() {
         let element = this.currentNode;
-        if (element.children.length) return (this.currentNode = element.children[0]);
+        if (element.kids.length) return (this.currentNode = element.kids[0]);
         for (; element && element !== root; element = element.parent) {
           const next = element.nextElementSibling;
           if (next) return (this.currentNode = next);
@@ -306,7 +312,7 @@ fn adv12_two_buttons_that_filled_one_slot_in_turn_keep_two_ids() {
 const move = (element, parent, to) => {
   element.remove();
   element.parent = parent;
-  parent.children.push(element);
+  parent.kids.push(element);
   element.box = to;
 };
 const slot = new Element("div.slot", [1068, 20, 192, 80], body);
@@ -533,5 +539,21 @@ const got = tick(() => {
   return JSON.stringify({ rects: [[10, 20, 5, 5]] });
 })[3];
 same(got, [0], 'detached measured element');
+"#);
+}
+
+/// A rect whose element has 10,000 children: looking at its relatives visits at most 16 of them,
+/// and lists none of the others.
+#[test]
+fn a_rect_over_an_element_with_many_children_lists_only_those_it_visits() {
+    run(r#"
+const list = new Element("div#list", [100, 20, 200, 400], body);
+for (let i = 0; i < 10000; i++) new Element("div", [100, 20 + i / 25, 200, 1], list);
+for (let n = 0; n < 3; n++) {
+  listed = 0;
+  const got = ids(list);
+  same(got[0] > 0, true, `evaluation ${n} named the list`);
+  same(listed <= 16, true, `evaluation ${n} listed ${listed} children`);
+}
 "#);
 }
