@@ -27,11 +27,11 @@
 // with no measured element left unchecked by then is named 0, and the next evaluation checks it
 // first. The scan walks the document from where it stopped and stops 1 ms in, going on in the next
 // evaluation until it has seen every element once. In every other evaluation, box reads of elements
-// the page read `offsetWidth` of stop 1 ms in, and the scan may run 1 ms from where the checks of
-// rects leave off, so those reads cannot starve the checks or the scan. Looking at a candidate's
-// relatives stops after 16 elements per rect, and a rect has at most 8 candidates. A box a whole
-// scan finds no element for is not looked for again for 60 evaluations. Every cache holds only the
-// boxes of the latest reply.
+// the page read `offsetWidth` of stop 1 ms in, checks of rects stop 1.5 ms in, and the scan may run
+// 1 ms from where the checks leave off, so neither those reads nor the checks can starve the scan.
+// Looking at a candidate's relatives stops after 16 elements per rect, and a rect has at most 8
+// candidates. A box a whole scan finds no element for is not looked for again for 60 evaluations.
+// Every cache holds only the boxes of the latest reply.
 (tick => {
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
@@ -118,6 +118,7 @@
     }
   }
   const until = started + 2;
+  const checksUntil = split ? started + 1.5 : until;
   const outlining = (elements, rect) =>
     (elements ?? []).filter(element => element.isConnected && near(boxOf(element), rect));
   const missing = [];
@@ -133,7 +134,7 @@
     }
     let found = measuredBy.get(key) ?? [];
     if (!found.length) {
-      if (performance.now() >= until) {
+      if (performance.now() >= checksUntil) {
         stopped ??= i;
         continue;
       }
