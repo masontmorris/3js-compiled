@@ -1087,6 +1087,26 @@ fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() 
     );
 }
 
+/// The `:hover` states and boundary events hud-hover.html reported, in order.
+fn hud_hover_events(log: &str) -> (Vec<bool>, Vec<String>) {
+    let events: Vec<serde_json::Value> = log
+        .lines()
+        .filter_map(|line| line.split_once("HUD event ").map(|(_, json)| json))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .collect();
+    let hovered = events
+        .iter()
+        .filter_map(|event| event["hovered"].as_bool())
+        .collect();
+    let seen = events
+        .iter()
+        .filter_map(|event| event["seen"].as_array())
+        .flatten()
+        .filter_map(|kind| kind.as_str().map(String::from))
+        .collect();
+    (hovered, seen)
+}
+
 #[test]
 #[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
 fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
@@ -1113,24 +1133,10 @@ fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
         "host exited with {status}
 {log}"
     );
-    let events: Vec<serde_json::Value> = log
-        .lines()
-        .filter_map(|line| line.split_once("HUD event ").map(|(_, json)| json))
-        .map(|json| serde_json::from_str(json).unwrap())
-        .collect();
-    let hovered: Vec<bool> = events
-        .iter()
-        .filter_map(|event| event["hovered"].as_bool())
-        .collect();
-    let seen: Vec<&str> = events
-        .iter()
-        .filter_map(|event| event["seen"].as_array())
-        .flatten()
-        .filter_map(|kind| kind.as_str())
-        .collect();
+    let (hovered, seen) = hud_hover_events(&log);
     let of = |prefix: &str| -> Vec<&str> {
         seen.iter()
-            .copied()
+            .map(String::as_str)
             .filter(|kind| kind.starts_with(prefix))
             .collect()
     };
@@ -1159,6 +1165,47 @@ fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
         ],
         "{log}"
     );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_hears_the_pointer_come_back_in_the_frame_it_left() {
+    // The pointer moves onto the button, onto the game and back onto the button in one frame, so
+    // Servo may get the moves and the leave before one rendering update. Edge ends with the button
+    // hovered: with the moves dispatched one at a time it fires the button's over and enter, out
+    // and leave, and over and enter events, and with the three coalesced only the first over and
+    // enter (C:\3jsc\swarm\pr23-cr1\edge-burst).
+    let dir = hud_workdir("hud-hover-burst");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "pointer", "action": "move", "x": 640, "y": 400},
+        {"type": "pointer", "action": "move", "x": 150, "y": 90},
+        {"type": "wait", "frames": 60},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-hover"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let (hovered, seen) = hud_hover_events(&log);
+    assert_eq!(hovered, [false, true], "{log}");
+    for kind in ["pointer", "mouse"] {
+        let got: Vec<&str> = seen
+            .iter()
+            .map(String::as_str)
+            .filter(|seen| seen.starts_with(kind))
+            .collect();
+        let entry = [format!("{kind}over"), format!("{kind}enter")];
+        let through = [
+            entry.clone(),
+            [format!("{kind}out"), format!("{kind}leave")],
+            entry.clone(),
+        ]
+        .concat();
+        assert!(
+            got == entry || got == through,
+            "{kind} events {got:?}, want {entry:?} or {through:?}\n{log}"
+        );
+    }
 }
 
 #[test]
