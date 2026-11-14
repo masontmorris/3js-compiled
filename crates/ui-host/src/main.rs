@@ -159,6 +159,11 @@ const IDLE_POLL: Duration = Duration::from_millis(100);
 /// render as soon as they finish.
 const RENDER_INTERVAL: Duration = Duration::from_millis(20);
 
+/// Longest wait for the page to finish loading before ui-host asks the host for state. Servo's
+/// `LoadStatus::Complete` waits for every subresource, while Edge shows a page as its images and
+/// fonts load, so a page with a stalled load is taken as loaded after this.
+const LOAD_FALLBACK: Duration = Duration::from_millis(500);
+
 /// Evaluations that may wait for their Servo frame at once. Two let one evaluation run while
 /// the previous one renders.
 const UNPAINTED: usize = 2;
@@ -610,6 +615,7 @@ fn main() {
             tick_script: tick_script.clone(),
         }))
         .build();
+    let loading = Instant::now();
 
     let mut next_pub: u64 = 0;
     let mut ready_value = ready_base;
@@ -883,7 +889,10 @@ fn main() {
             webview.paint();
             ctx.present_without_wait();
             painted(fresh);
-            if warmed_at.is_none() && webview.load_status() == LoadStatus::Complete {
+            if warmed_at.is_none()
+                && (webview.load_status() == LoadStatus::Complete
+                    || loading.elapsed() >= LOAD_FALLBACK)
+            {
                 warmed_at = Some(Instant::now());
             }
         } else if due
