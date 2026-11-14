@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  html, body { margin: 0; background: transparent; }
+  #b { position: absolute; left: 40px; top: 40px; width: 200px; height: 80px; background: rgb(0, 0, 255); }
+</style>
+</head>
+<body>
+<div id="b"></div>
+<script>
+const b = document.getElementById("b");
+const seen = [];
+for (const type of ["pointerover", "pointerenter", "pointerout", "pointerleave", "mouseover", "mouseenter", "mouseout", "mouseleave"]) {
+  b.addEventListener(type, () => seen.push(type));
+}
+let hovered = null;
+window.__bridge = {
+  tick() {
+    const events = [];
+    if (seen.length) events.push({ type: "boundary", seen: seen.splice(0) });
+    if (b.matches(":hover") !== hovered) {
+      hovered = b.matches(":hover");
+      events.push({ type: "hover", hovered });
+    }
+    return JSON.stringify({ events, rects: [[40, 40, 200, 80]] });
+  }
+};
+</script>
+</body>
+</html>

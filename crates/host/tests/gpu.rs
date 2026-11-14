@@ -971,8 +971,8 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
     }
 }
 
-/// A work directory holding hud-replace.html, a blue box that takes the color of its patch, after
-/// checking that ui-host.exe is beside the host.
+/// A work directory holding the HUD pages in tests/fixtures, after checking that ui-host.exe is
+/// beside the host. hud-replace.html is a blue box that takes the color of its patch.
 fn hud_workdir(name: &str) -> PathBuf {
     let host_exe = PathBuf::from(env!("CARGO_BIN_EXE_host"));
     assert!(
@@ -981,11 +981,15 @@ fn hud_workdir(name: &str) -> PathBuf {
         host_exe.display()
     );
     let dir = workdir(name);
-    std::fs::copy(
-        Path::new(ROOT).join("crates/host/tests/fixtures/hud-replace.html"),
-        dir.join("hud-replace.html"),
-    )
-    .unwrap();
+    for page in ["hud-replace.html", "hud-hover.html"] {
+        std::fs::copy(
+            Path::new(ROOT)
+                .join("crates/host/tests/fixtures")
+                .join(page),
+            dir.join(page),
+        )
+        .unwrap();
+    }
     dir
 }
 
@@ -1068,6 +1072,80 @@ fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() 
             && received.len() == 2
             && received.iter().all(|&n| n > 0),
         "{ui_log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
+    // hud-hover.html reports its button's :hover state and boundary events. The pointer moves onto
+    // the button, onto the game, and back. Edge, with the page over the canvas, hovers the button
+    // and fires its over and enter events on each move onto it, and clears the hover and fires its
+    // out and leave events on the move onto the canvas (C:\3jsc\swarm\e2-ui-defects\edge-hover).
+    // Servo and Edge interleave the pointer and mouse events differently, as on any move, so the
+    // two kinds are compared apart.
+    let dir = hud_workdir("hud-hover");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "wait", "frames": 60},
+        {"type": "pointer", "action": "move", "x": 640, "y": 400},
+        {"type": "wait", "frames": 60},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "wait", "frames": 60},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-hover"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    let events: Vec<serde_json::Value> = log
+        .lines()
+        .filter_map(|line| line.split_once("HUD event ").map(|(_, json)| json))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .collect();
+    let hovered: Vec<bool> = events
+        .iter()
+        .filter_map(|event| event["hovered"].as_bool())
+        .collect();
+    let seen: Vec<&str> = events
+        .iter()
+        .filter_map(|event| event["seen"].as_array())
+        .flatten()
+        .filter_map(|kind| kind.as_str())
+        .collect();
+    let of = |prefix: &str| -> Vec<&str> {
+        seen.iter()
+            .copied()
+            .filter(|kind| kind.starts_with(prefix))
+            .collect()
+    };
+    assert_eq!(hovered, [false, true, false, true], "{log}");
+    assert_eq!(
+        of("pointer"),
+        [
+            "pointerover",
+            "pointerenter",
+            "pointerout",
+            "pointerleave",
+            "pointerover",
+            "pointerenter"
+        ],
+        "{log}"
+    );
+    assert_eq!(
+        of("mouse"),
+        [
+            "mouseover",
+            "mouseenter",
+            "mouseout",
+            "mouseleave",
+            "mouseover",
+            "mouseenter"
+        ],
+        "{log}"
     );
 }
 

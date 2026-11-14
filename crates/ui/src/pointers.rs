@@ -521,6 +521,104 @@ mod tests {
         );
     }
 
+    /// The page's notice that the pointer left it for the game, at the window point where it did.
+    fn left(x: f64) -> Pointer {
+        Pointer {
+            action: 3,
+            ..at(0, x)
+        }
+    }
+
+    #[test]
+    fn the_page_hears_when_the_pointer_leaves_it_for_the_game() {
+        let mut host = Host::new(OLD, right_button(1280));
+        for x in [1160.0, 900.0, 800.0, 1160.0, 900.0] {
+            host.pointer(0, x);
+        }
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(0, 1160.0)),
+                Page(left(900.0)),
+                Game(at(0, 900.0)),
+                Game(at(0, 800.0)),
+                Page(at(0, 1160.0)),
+                Page(left(900.0)),
+                Game(at(0, 900.0)),
+            ],
+            "the page hears once per time the pointer leaves it, before the game gets the move"
+        );
+    }
+
+    #[test]
+    fn a_press_dragged_off_the_page_leaves_it_at_the_next_game_input() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(0, 1160.0);
+        host.pointer(1, 1160.0);
+        host.pointer(0, 900.0);
+        host.pointer(2, 900.0);
+        host.pointer(0, 800.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(0, 1160.0)),
+                Page(at(1, 1160.0)),
+                Page(at(0, 900.0)),
+                Page(at(2, 900.0)),
+                Page(left(800.0)),
+                Game(at(0, 800.0)),
+            ],
+            "the press stays with the page"
+        );
+    }
+
+    #[test]
+    fn a_down_on_the_game_tells_the_page_the_pointer_left_it() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(0, 1160.0);
+        host.click(900.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(0, 1160.0)),
+                Page(left(900.0)),
+                Game(at(1, 900.0)),
+                Game(at(2, 900.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn input_that_starts_on_the_game_tells_the_page_nothing() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(0, 900.0);
+        host.click(900.0);
+        host.pointer(0, 1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Game(at(0, 900.0)),
+                Game(at(1, 900.0)),
+                Game(at(2, 900.0)),
+                Page(at(0, 1160.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_page_hears_the_pointer_left_after_the_input_held_before_it() {
+        let mut host = Host::new(OLD, right_button(1280));
+        host.resize(NEW);
+        host.pointer(0, 1160.0);
+        host.pointer(0, 900.0);
+        host.reply(NEW, Some(right_button(1680)));
+        assert_eq!(
+            host.take(),
+            [Game(at(0, 900.0)), Page(at(0, 1560.0)), Page(left(900.0)),],
+            "the move over the kept frame's button, then the notice, once the page is laid out"
+        );
+    }
+
     #[test]
     fn the_rest_of_a_page_press_reaches_neither_side_across_a_ui_restart() {
         // The game's requestDevice() replaces the device mid-press, and the host starts a new UI.
