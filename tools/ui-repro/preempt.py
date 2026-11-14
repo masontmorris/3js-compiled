@@ -20,6 +20,8 @@ while pid is None and time.time() < deadline:
 if pid is None: sys.exit(f"no ui-host child of host {host}")
 h = k32.OpenProcess(0x0800 | 0x1000 | 0x00100000, False, pid)  # SUSPEND_RESUME | QUERY_LIMITED | SYNCHRONIZE
 if not h: raise ctypes.WinError(ctypes.get_last_error())
+# STATUS_PROCESS_IS_TERMINATING: ui-host began exiting after the last wait.
+TERMINATING = -0x3FFFFEF6
 n = 0
 try:
     while True:
@@ -27,12 +29,13 @@ try:
         if wait == 0: break
         if wait != 0x102: raise ctypes.WinError(ctypes.get_last_error())
         status = nt.NtSuspendProcess(h)
+        if status == TERMINATING: break
         if status < 0: raise OSError(f'NtSuspendProcess failed: {status:#x}')
         try:
             time.sleep(0.008)
         finally:
             status = nt.NtResumeProcess(h)
-            if status < 0: raise OSError(f'NtResumeProcess failed: {status:#x}')
+            if status < 0 and status != TERMINATING: raise OSError(f'NtResumeProcess failed: {status:#x}')
         time.sleep(0.012); n += 1
 finally:
     k32.CloseHandle(h)
