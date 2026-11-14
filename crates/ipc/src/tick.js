@@ -17,7 +17,8 @@
 // `pointer-events` is not `none`, or the topmost candidate when none is hit-testable. The topmost
 // is the last in document order, except that hit-testable candidates neither of which contains the
 // other, such as siblings, go in the order the hit test at the rect's centre draws them, so
-// `z-index` counts; candidates it does not reach follow in document order. Its more ids are of the
+// `z-index` counts; candidates it does not reach follow in document order. When the bound below
+// stops the hit test, they keep the order the rect's box last had. Its more ids are of the
 // other hit-testable candidates, topmost first, so a rect whose named element the page rebuilds
 // every tick, such as a label, still shares an id with the rect it was. Rects that share one box
 // name its candidates from the bottom up, and a box with fewer candidates than rects gives the
@@ -36,7 +37,7 @@
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
       next: 1, evaluation: 0, from: 0, offsetFrom: 0, measured: null, offsets: null, walker: null,
-      byBox: new Map(), byIndex: [], pending: new Map(), absent: new Map(),
+      byBox: new Map(), byIndex: [], orders: new Map(), pending: new Map(), absent: new Map(),
     };
     const measure = Element.prototype.getBoundingClientRect;
     S.read = element => measure.call(element);
@@ -234,14 +235,15 @@
   };
   const above = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
   // The candidates a rect can name, topmost first.
-  const pool = (elements, rect) => {
+  const pool = (elements, rect, key) => {
     if (elements.length < 2) return elements;
     const sorted = [...elements].sort(above);
     const hits = sorted.filter(hit);
     if (!hits.length) return sorted.slice(0, 1);
     const nested = hits.every((a, i) => hits.every((b, j) => j <= i || a.contains(b) || b.contains(a)));
-    if (nested || performance.now() >= until) return hits;
-    const drawn = document.elementsFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
+    if (nested) return hits;
+    const drawn = performance.now() < until ?
+      document.elementsFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2) : S.orders.get(key) ?? [];
     const depth = element => {
       const at = drawn.indexOf(element);
       return at < 0 ? drawn.length : at;
@@ -260,12 +262,14 @@
   const seen = new Map();
   const byBox = new Map();
   const byIndex = [];
+  const orders = new Map();
   const ids = [], also = [];
   rects.forEach((rect, i) => {
     const key = keys[i];
     if (seeds[i] === null) {
       byIndex.push(S.byIndex[i]);
       if (S.byBox.has(key)) byBox.set(key, S.byBox.get(key));
+      if (S.orders.has(key)) orders.set(key, S.orders.get(key));
       ids.push(0);
       also.push(0, 0, 0);
       return;
@@ -278,7 +282,8 @@
       return;
     }
     byBox.set(key, all);
-    const top = pool(all, rect);
+    const top = pool(all, rect, key);
+    orders.set(key, top);
     let named = top[0], n = 0;
     if (shared.get(key) > 1) {
       const k = seen.get(key) ?? 0;
@@ -293,5 +298,6 @@
   });
   S.byBox = byBox;
   S.byIndex = byIndex;
+  S.orders = orders;
   return [innerWidth, innerHeight, json, ids, also, missing];
 })
