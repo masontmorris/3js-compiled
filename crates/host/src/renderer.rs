@@ -280,7 +280,8 @@ impl Renderer {
             self.executor
                 .replay_then(&streams, Some(&mut self.game), Some(&mut trailer))
         });
-        let device = self.executor.took_device().then(|| Gpu {
+        // took_device() keeps the last replay's flag, so only a frame that replayed reports it.
+        let device = (replay.is_some() && self.executor.took_device()).then(|| Gpu {
             device: self.executor.device().clone(),
             queue: self.executor.queue().clone(),
             format: self.window.config.format,
