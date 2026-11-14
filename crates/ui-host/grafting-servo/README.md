@@ -1,6 +1,8 @@
 # grafting-servo
 
-Servo-specific offscreen rendering adapter built on [`grafting`](../grafting/).
+Servo-specific offscreen rendering adapter built on `grafting`.
+
+This crate comes from [wgpu-graft](https://github.com/merely-made/wgpu-graft). Paths in backticks below, such as the demos and receipts, are in that repository, not in 3js-compiled.
 
 This crate bridges Servo's rendering context to the host application. It provides two things:
 
@@ -12,7 +14,7 @@ This crate bridges Servo's rendering context to the host application. It provide
 - **CPU readback** (`ServoWgpuRenderingContext::read_full_frame()`): Works on all platforms. Simpler to integrate — just display the returned image in your framework's image widget. Adds a GPU→CPU→GPU round-trip per frame.
 - **GPU import** (`ServoWgpuInteropAdapter`): Avoids CPU frame readback, but requires compatible native sharing support between Servo's GL producer and the host wgpu backend. Default GL normalization copies the imported surface into a fresh GPU texture with top-left origin. Linux uses Vulkan external memory and Apple uses IOSurface/Metal. On Windows this adapter requires DX12 to match the host's physical GPU and imports ANGLE D3D11 output through a shared NT handle. Graft's lower-level Windows Vulkan importer is a separate route; this adapter constructor refuses a Vulkan host device.
 
-The CPU readback demos ([xilem](../demo-servo-xilem/), [gpui](../demo-servo-gpui/)) use `read_full_frame()`. The [winit demo](../demo-servo-winit/) tries GPU import first and falls back to CPU readback.
+The CPU readback demos (xilem in `demo-servo-xilem/`, gpui in `demo-servo-gpui/`) use `read_full_frame()`. The winit demo (`demo-servo-winit/`) tries GPU import first and falls back to CPU readback.
 
 ## Feature flags
 
@@ -29,7 +31,7 @@ core package has a separate distribution status.
 The installation below pins the qualified Servo 0.7 supplier source
 `7907ff295da2c20c2a791419e6658d1c05350345`. Its eleven Windows typed rows and
 DX12/wgpu 30 GPU initial/click/resize gate are recorded in the
-[current receipt](../docs/receipts/servo_current_20261007/README.md). This is a
+current receipt (`docs/receipts/servo_current_20261007/README.md`). This is a
 documentation follow-up: runtime source is unchanged, and the native receipt
 remains bound to the archived source of that earlier commit.
 
@@ -78,12 +80,12 @@ Pinned Servo clears the entire context and renders with buffer age zero on each
 explicit paint. This avoids Surfman's ANGLE preservation blit between default
 framebuffer IDs while retaining GL completion. The Windows wgpu 30 donor has
 passed GPU initial-pixel, click, and resize checks in the
-[current qualification receipt](../docs/receipts/servo_current_20261007/README.md).
+current qualification receipt (`docs/receipts/servo_current_20261007/README.md`).
 Current Turnstone host integration, accessibility, reopened-view reliability,
 and full teardown remain separate gates. The
-[earlier receipt](../docs/receipts/servo_present_hook_20261006/README.md) preserves
+earlier receipt (`docs/receipts/servo_present_hook_20261006/README.md`) preserves
 the intermittent default reopened-view failure and synchronization comparisons.
 
 ## License
 
-[MPL-2.0](../LICENSE)
+[MPL-2.0](https://www.mozilla.org/MPL/2.0/)
