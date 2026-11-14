@@ -1008,7 +1008,10 @@ fn hud_workdir(name: &str) -> PathBuf {
 /// `page` with `from` replaced by `to`. A fixture reworded so that it no longer contains `from`
 /// fails the test here rather than running it on the unedited page.
 fn replaced(page: &str, from: &str, to: &str) -> String {
-    assert!(page.contains(from), "the fixture no longer contains {from:?}");
+    assert!(
+        page.contains(from),
+        "the fixture no longer contains {from:?}"
+    );
     page.replace(from, to)
 }
 
