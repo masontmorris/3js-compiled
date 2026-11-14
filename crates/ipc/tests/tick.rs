@@ -5,16 +5,19 @@
 //! `TICK` in V8 against a page model: elements with border boxes, in a tree, with
 //! `pointer-events: none` where `hit` is false. Each case runs twice: with the page measuring its
 //! rects with `getBoundingClientRect` during the tick, and with rects the page computed some other
-//! way, which `TICK` finds in its caches and by document scan. Box reads and walking the document
-//! with `querySelectorAll` advance the page's clock.
+//! way, which `TICK` finds in its caches and by document scan. `z` stands for `z-index`: a hit
+//! test puts an element of greater `z` above the elements of lesser `z`, else the later in
+//! document order above the earlier. Box reads and walking the document
+//! with `querySelectorAll` advance the page's clock. `listed` counts the elements `children`
+//! lists, which a page's DOM builds a list of.
 
 use deno_core::{JsRuntime, RuntimeOptions};
 
 const PAGE: &str = r#"
 globalThis.Element = class Element {
   constructor(name, box, parent, hit = true) {
-    Object.assign(this, { name, box, parent, hit, children: [] });
-    parent?.children.push(this);
+    Object.assign(this, { name, box, parent, hit, kids: [], z: 0 });
+    parent?.kids.push(this);
   }
   getBoundingClientRect() {
     reads += 1;
@@ -25,13 +28,18 @@ globalThis.Element = class Element {
     return { x, y, width, height };
   }
   remove() {
-    this.parent.children.splice(this.parent.children.indexOf(this), 1);
+    this.parent.kids.splice(this.parent.kids.indexOf(this), 1);
     this.parent = null;
   }
   get offsetWidth() { return this.box[2]; }
   get parentElement() { return this.parent; }
+  get children() {
+    listed += this.kids.length;
+    return [...this.kids];
+  }
+  get firstElementChild() { return this.kids[0] ?? null; }
   get nextElementSibling() {
-    const siblings = this.parent?.children ?? [];
+    const siblings = this.parent?.kids ?? [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }
   get isConnected() { return html.contains(this); }
@@ -45,7 +53,7 @@ globalThis.Element = class Element {
   }
 };
 globalThis.HTMLElement = Element;
-let reads = 0, clock = 0, READ_MS = 0;
+let reads = 0, listed = 0, clock = 0, READ_MS = 0;
 globalThis.Node = { DOCUMENT_POSITION_FOLLOWING: 4 };
 globalThis.NodeFilter = { SHOW_ELEMENT: 1 };
 globalThis.getComputedStyle = element => ({ pointerEvents: element.hit ? "auto" : "none" });
@@ -63,7 +71,7 @@ const tree = () => {
   while (stack.length) {
     const element = stack.pop();
     out.push(element);
-    for (let i = element.children.length - 1; i >= 0; i--) stack.push(element.children[i]);
+    for (let i = element.kids.length - 1; i >= 0; i--) stack.push(element.kids[i]);
   }
   return out;
 };
@@ -79,7 +87,7 @@ globalThis.document = {
       currentNode: root,
       nextNode() {
         let element = this.currentNode;
-        if (element.children.length) return (this.currentNode = element.children[0]);
+        if (element.kids.length) return (this.currentNode = element.kids[0]);
         for (; element && element !== root; element = element.parent) {
           const next = element.nextElementSibling;
           if (next) return (this.currentNode = next);
@@ -91,7 +99,7 @@ globalThis.document = {
   elementsFromPoint(x, y) {
     if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return [];
     const [inside] = [([ex, ey, w, h]) => x >= ex && y >= ey && x < ex + w && y < ey + h];
-    return tree().filter(element => element.hit && inside(element.box)).reverse();
+    return tree().filter(element => element.hit && inside(element.box)).reverse().sort((a, b) => b.z - a.z);
   },
   elementFromPoint(x, y) { return this.elementsFromPoint(x, y)[0] ?? null; },
 };
@@ -306,7 +314,7 @@ fn adv12_two_buttons_that_filled_one_slot_in_turn_keep_two_ids() {
 const move = (element, parent, to) => {
   element.remove();
   element.parent = parent;
-  parent.children.push(element);
+  parent.kids.push(element);
   element.box = to;
 };
 const slot = new Element("div.slot", [1068, 20, 192, 80], body);
@@ -533,5 +541,129 @@ const got = tick(() => {
   return JSON.stringify({ rects: [[10, 20, 5, 5]] });
 })[3];
 same(got, [0], 'detached measured element');
+"#);
+}
+
+/// A rect whose element has 10,000 children: looking at its relatives visits at most 16 of them,
+/// and lists none of the others.
+#[test]
+fn a_rect_over_an_element_with_many_children_lists_only_those_it_visits() {
+    run(r#"
+const list = new Element("div#list", [100, 20, 200, 400], body);
+for (let i = 0; i < 10000; i++) new Element("div", [100, 20 + i / 25, 200, 1], list);
+for (let n = 0; n < 3; n++) {
+  listed = 0;
+  const got = ids(list);
+  same(got[0] > 0, true, `evaluation ${n} named the list`);
+  same(listed <= 16, true, `evaluation ${n} listed ${listed} children`);
+}
+"#);
+}
+
+/// A page that reads `offsetWidth` of 3,000 rows every tick, more box reads than fit in 2 ms, and
+/// lists one rect it computed: the offset reads leave the rect's checks and the document scan a
+/// share of the evaluation, so the rect gets an id within a few evaluations.
+#[test]
+fn offset_reads_that_fill_every_evaluation_leave_the_document_scan_a_share() {
+    run(r#"
+const rows = Array.from({ length: 3000 }, (_, i) => new Element("row", [i % 1000, 600 + Math.floor(i / 1000), 1, 1], body));
+const c = new Element("div#c", [1060, 20, 200, 80], body);
+READ_MS = 0.001;
+const given = new Set();
+for (let n = 0; n < 12; n++) {
+  const before = clock;
+  const [id] = tick(() => {
+    for (const row of rows) void row.offsetWidth;
+    return JSON.stringify({ events: [], rects: [c.box] });
+  })[3];
+  same(clock - before < 2.2, true, `evaluation ${n} took ${clock - before} ms of model time`);
+  if (id) given.add(id);
+}
+same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
+"#);
+}
+
+/// The same page with 1,200 cached rects as well, whose checks fill whatever the offset reads leave
+/// of each evaluation: the checks still leave the document scan a share, so a rect the page
+/// computed later gets an id.
+#[test]
+fn rect_checks_after_offset_reads_leave_the_document_scan_a_share() {
+    run(r#"
+const rows = Array.from({ length: 3000 }, (_, i) => new Element("row", [i % 1000, 600 + Math.floor(i / 1000), 1, 1], body));
+const items = Array.from({ length: 1200 }, (_, i) => new Element("div", [(i % 40) * 30, 20 + Math.floor(i / 40) * 12, 20, 10], body));
+const boxes = () => items.map(item => item.box);
+ids(...boxes().map(box => ({ box })));
+const c = new Element("div#c", [1240, 500, 30, 30], body);
+READ_MS = 0.001;
+const given = new Set();
+for (let n = 0; n < 40; n++) {
+  const before = clock;
+  const got = tick(() => {
+    for (const row of rows) void row.offsetWidth;
+    return JSON.stringify({ events: [], rects: [...boxes(), c.box] });
+  })[3];
+  same(clock - before < 2.2, true, `evaluation ${n} took ${clock - before} ms of model time`);
+  if (got[1200]) given.add(got[1200]);
+}
+same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
+"#);
+}
+
+/// Two siblings with one box, the first lifted over the second by `z-index`: the rect names the
+/// one drawn on top, as Servo's hit test at its centre does, and still names it once the other
+/// moves away.
+#[test]
+fn of_two_same_box_siblings_a_rect_names_the_one_drawn_on_top() {
+    run(r#"
+const top = new Element("div#top", [100, 20, 200, 80], body);
+const below = new Element("div#below", [100, 20, 200, 80], body);
+top.z = 1;
+const both = named(top);
+below.box = [400, 20, 200, 80];
+const [topId] = ids(top);
+same(both.ids, [topId], `the rect names the element on top`);
+same(both.also[0] > 0 && both.also[0] !== topId, true, `the other among its more ids: ${both.also}`);
+"#);
+}
+
+/// The same two siblings, both measured by a page whose offset reads fill every evaluation: when
+/// the 2 ms bound stops the hit test, the rect keeps naming the one drawn on top.
+#[test]
+fn a_rect_keeps_its_paint_order_when_the_bound_stops_the_hit_test() {
+    run(r#"
+const top = new Element("div#top", [100, 20, 200, 80], body);
+const below = new Element("div#below", [100, 20, 200, 80], body);
+top.z = 1;
+const rows = Array.from({ length: 3000 }, (_, i) => new Element("row", [i % 1000, 600 + Math.floor(i / 1000), 1, 1], body));
+const evaluate = () => tick(() => {
+  if (MEASURED) below.getBoundingClientRect();
+  const rect = box(top);
+  for (const row of rows) void row.offsetWidth;
+  return JSON.stringify({ events: [], rects: [rect] });
+})[3][0];
+const topId = evaluate();
+same(topId > 0, true, "the first evaluation names the rect");
+READ_MS = 0.001;
+const got = Array.from({ length: 8 }, evaluate);
+same(got.some(id => id > 0) && got.every(id => id === 0 || id === topId), true, `ids ${got}, want 0 or ${topId}`);
+"#);
+}
+
+/// Two rects of the box two siblings share, the first lifted over the second by `z-index`, with no
+/// order remembered for the box and a hit test that uses up the 2 ms bound: the second rect ranks
+/// the siblings as the first one's hit test did, so the two rects name the two siblings.
+#[test]
+fn two_rects_of_one_box_name_two_elements_when_the_bound_stops_the_hit_test_between_them() {
+    run(r#"
+const top = new Element("div#top", [100, 20, 200, 80], body);
+const below = new Element("div#below", [100, 20, 200, 80], body);
+top.z = 1;
+const hitTest = document.elementsFromPoint;
+document.elementsFromPoint = function (x, y) {
+  clock += 3;
+  return hitTest.call(this, x, y);
+};
+const got = Array.from({ length: 4 }, () => ids(top, below)).find(([a, b]) => a && b);
+same(got !== undefined && got[0] !== got[1], true, `ids ${got}, want two`);
 "#);
 }

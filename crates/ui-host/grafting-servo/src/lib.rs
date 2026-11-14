@@ -47,6 +47,13 @@ fn resize_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("GRAFT_SERVO_RESIZE_TRACE").as_deref() == Ok("1"))
 }
 
+/// Whether every growth of the swap chain's surfaces fails, as when the GPU cannot allocate them,
+/// for tests of what follows.
+fn surface_growth_fails() -> bool {
+    static FAILS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FAILS.get_or_init(|| std::env::var("THREEJSC_UI_FAIL_SURFACE_GROWTH").as_deref() == Ok("1"))
+}
+
 #[cfg(feature = "servo")]
 pub use image;
 #[cfg(feature = "servo")]
@@ -253,8 +260,19 @@ impl ServoWgpuRenderingContext {
         if self.frame_producer.borrow().size() == size {
             return;
         }
-        self.frame_producer.borrow().set_size(size);
-        self.fit_surfaces(size);
+        self.grow(size);
+    }
+
+    /// Takes `size` once the surfaces hold it. When they cannot grow, the size stays as it was,
+    /// so the caller sees that the resize failed.
+    fn grow(&self, size: PhysicalSize<u32>) {
+        match self.fit_surfaces(size) {
+            Ok(()) => self.frame_producer.borrow().set_size(size),
+            Err(error) => eprintln!(
+                "[grafting-servo] surfaces for {}x{} could not be allocated: {error:?}",
+                size.width, size.height
+            ),
+        }
     }
 
     /// Grows the swap chain's surfaces to hold `size`, rounded up to `SURFACE_STEP`, and keeps
@@ -263,10 +281,10 @@ impl ServoWgpuRenderingContext {
     /// On an RTX 3060, each ANGLE surface that WebRender drew into and surfman then destroyed
     /// left about 0.24 MB of write-combined GPU driver memory behind, so replacing the surfaces
     /// on every resize grew ui-host by about 0.5 MB per resize.
-    fn fit_surfaces(&self, size: PhysicalSize<u32>) {
+    fn fit_surfaces(&self, size: PhysicalSize<u32>) -> Result<(), surfman::Error> {
         let held = self.swap_chain.size();
         if size.width as i32 <= held.width && size.height as i32 <= held.height {
-            return;
+            return Ok(());
         }
         let step =
             |want: u32, held: i32| want.max(held as u32).next_multiple_of(SURFACE_STEP) as i32;
@@ -274,7 +292,12 @@ impl ServoWgpuRenderingContext {
         let info = self.frame_producer.borrow().context();
         let device = info.device.borrow_mut();
         let mut context = info.context.borrow_mut();
-        let result = self.swap_chain.resize(&*device, &mut *context, grown);
+        // A failed allocation leaves surfman's swap chain as it was, as this does.
+        let result = if surface_growth_fails() {
+            Err(surfman::Error::Failed)
+        } else {
+            self.swap_chain.resize(&*device, &mut *context, grown)
+        };
         if resize_trace_enabled() {
             let actual = device
                 .context_surface_info(&context)
@@ -283,6 +306,7 @@ impl ServoWgpuRenderingContext {
                 "[servo-resize-trace] resize requested={size:?} surfaces={grown:?} result={result:?} actual={actual:?}"
             );
         }
+        result
     }
 
     /// Read the full current frame as a CPU-side RGBA image.
@@ -328,8 +352,7 @@ impl RenderingContext for ServoWgpuRenderingContext {
         }
 
         self.trace_surface("before-resize");
-        self.frame_producer.borrow().set_size(size);
-        self.fit_surfaces(size);
+        self.grow(size);
     }
 
     fn present(&self) {

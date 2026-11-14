@@ -30,8 +30,20 @@ fn host(
     steps: &serde_json::Value,
     args: &[&str],
 ) -> (ExitStatus, String) {
+    host_with(dir, entry, steps, args, &[])
+}
+
+/// `host` with the variables `env` set for the host and the ui-host it starts.
+fn host_with(
+    dir: &Path,
+    entry: &Path,
+    steps: &serde_json::Value,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> (ExitStatus, String) {
     std::fs::write(dir.join("steps.json"), steps.to_string()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_host"))
+        .envs(env.iter().copied())
         .current_dir(dir)
         .arg("--entry")
         .arg(entry)
@@ -971,8 +983,8 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
     }
 }
 
-/// A work directory holding hud-replace.html, a blue box that takes the color of its patch, after
-/// checking that ui-host.exe is beside the host.
+/// A work directory holding the HUD pages in tests/fixtures, after checking that ui-host.exe is
+/// beside the host. hud-replace.html is a blue box that takes the color of its patch.
 fn hud_workdir(name: &str) -> PathBuf {
     let host_exe = PathBuf::from(env!("CARGO_BIN_EXE_host"));
     assert!(
@@ -981,12 +993,26 @@ fn hud_workdir(name: &str) -> PathBuf {
         host_exe.display()
     );
     let dir = workdir(name);
-    std::fs::copy(
-        Path::new(ROOT).join("crates/host/tests/fixtures/hud-replace.html"),
-        dir.join("hud-replace.html"),
-    )
-    .unwrap();
+    for page in ["hud-replace.html", "hud-hover.html"] {
+        std::fs::copy(
+            Path::new(ROOT)
+                .join("crates/host/tests/fixtures")
+                .join(page),
+            dir.join(page),
+        )
+        .unwrap();
+    }
     dir
+}
+
+/// `page` with `from` replaced by `to`. A fixture reworded so that it no longer contains `from`
+/// fails the test here rather than running it on the unedited page.
+fn replaced(page: &str, from: &str, to: &str) -> String {
+    assert!(
+        page.contains(from),
+        "the fixture no longer contains {from:?}"
+    );
+    page.replace(from, to)
 }
 
 #[test]
@@ -1067,6 +1093,222 @@ fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() 
         ui_log.contains("[host] ui-host launch 2 after: the GPU device was replaced")
             && received.len() == 2
             && received.iter().all(|&n| n > 0),
+        "{ui_log}"
+    );
+}
+
+/// The `:hover` states and boundary events hud-hover.html reported, in order.
+fn hud_hover_events(log: &str) -> (Vec<bool>, Vec<String>) {
+    let events: Vec<serde_json::Value> = log
+        .lines()
+        .filter_map(|line| line.split_once("HUD event ").map(|(_, json)| json))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .collect();
+    let hovered = events
+        .iter()
+        .filter_map(|event| event["hovered"].as_bool())
+        .collect();
+    let seen = events
+        .iter()
+        .filter_map(|event| event["seen"].as_array())
+        .flatten()
+        .filter_map(|kind| kind.as_str().map(String::from))
+        .collect();
+    (hovered, seen)
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
+    // hud-hover.html reports its button's :hover state and boundary events. The pointer moves onto
+    // the button, onto the game, and back. Edge, with the page over the canvas, hovers the button
+    // and fires its over and enter events on each move onto it, and clears the hover and fires its
+    // out and leave events on the move onto the canvas (C:\3jsc\swarm\e2-ui-defects\edge-hover).
+    // Servo and Edge interleave the pointer and mouse events differently, as on any move, so the
+    // two kinds are compared apart.
+    let dir = hud_workdir("hud-hover");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "wait", "frames": 60},
+        {"type": "pointer", "action": "move", "x": 640, "y": 400},
+        {"type": "wait", "frames": 60},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "wait", "frames": 60},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-hover"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    let (hovered, seen) = hud_hover_events(&log);
+    let of = |prefix: &str| -> Vec<&str> {
+        seen.iter()
+            .map(String::as_str)
+            .filter(|kind| kind.starts_with(prefix))
+            .collect()
+    };
+    assert_eq!(hovered, [false, true, false, true], "{log}");
+    assert_eq!(
+        of("pointer"),
+        [
+            "pointerover",
+            "pointerenter",
+            "pointerout",
+            "pointerleave",
+            "pointerover",
+            "pointerenter"
+        ],
+        "{log}"
+    );
+    assert_eq!(
+        of("mouse"),
+        [
+            "mouseover",
+            "mouseenter",
+            "mouseout",
+            "mouseleave",
+            "mouseover",
+            "mouseenter"
+        ],
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_hears_the_pointer_come_back_in_the_frame_it_left() {
+    // The pointer moves onto the button, onto the game and back onto the button in one frame, so
+    // Servo may get the moves and the leave before one rendering update. Edge ends with the button
+    // hovered: with the moves dispatched one at a time it fires the button's over and enter, out
+    // and leave, and over and enter events, and with the three coalesced only the first over and
+    // enter (C:\3jsc\swarm\pr23-cr1\edge-burst). The page keeps a requestAnimationFrame loop, as
+    // an animated HUD does, so Servo's rendering updates follow the loop and the three events
+    // queue for one of them rather than the first starting an update of its own.
+    let dir = hud_workdir("hud-hover-burst");
+    let page = std::fs::read_to_string(dir.join("hud-hover.html")).unwrap();
+    std::fs::write(
+        dir.join("hud-hover.html"),
+        replaced(
+            &page,
+            "let hovered = null;",
+            "requestAnimationFrame(function frame() { requestAnimationFrame(frame); });\nlet hovered = null;",
+        ),
+    )
+    .unwrap();
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "pointer", "action": "move", "x": 140, "y": 80},
+        {"type": "pointer", "action": "move", "x": 640, "y": 400},
+        {"type": "pointer", "action": "move", "x": 150, "y": 90},
+        {"type": "wait", "frames": 60},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-hover"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let (hovered, seen) = hud_hover_events(&log);
+    assert_eq!(hovered, [false, true], "{log}");
+    for kind in ["pointer", "mouse"] {
+        let got: Vec<&str> = seen
+            .iter()
+            .map(String::as_str)
+            .filter(|seen| seen.starts_with(kind))
+            .collect();
+        let entry = [format!("{kind}over"), format!("{kind}enter")];
+        let through = [
+            entry.clone(),
+            [format!("{kind}out"), format!("{kind}leave")],
+            entry.clone(),
+        ]
+        .concat();
+        assert!(
+            got == entry || got == through,
+            "{kind} events {got:?}, want {entry:?} or {through:?}\n{log}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_shows_while_an_image_of_its_page_never_loads() {
+    // hud-stall.html is hud-replace.html with an image from a local server that accepts the
+    // request and never answers, so the page never finishes loading. Edge shows such a page while
+    // the image loads, so the HUD must show the game's magenta patch.
+    let dir = hud_workdir("hud-stall");
+    let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = server.local_addr().unwrap().port();
+    let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = requests.clone();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in server.incoming().flatten() {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            held.push(stream);
+        }
+    });
+    let page = std::fs::read_to_string(dir.join("hud-replace.html")).unwrap();
+    let image = format!(r#"<div id="box"></div><img src="http://127.0.0.1:{port}/stall.png">"#);
+    std::fs::write(
+        dir.join("hud-stall.html"),
+        replaced(&page, r#"<div id="box"></div>"#, &image),
+    )
+    .unwrap();
+    let capture = dir.join("hud.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 400},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-stall"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    assert!(
+        requests.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the page never asked for its image\n{log}"
+    );
+    let image = image::open(&capture).unwrap().to_rgba8();
+    assert_eq!(
+        [image.get_pixel(60, 60).0, image.get_pixel(640, 360).0],
+        [MAGENTA, RED],
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn a_hud_whose_surfaces_cannot_grow_starts_again_at_the_new_size() {
+    // THREEJSC_UI_FAIL_SURFACE_GROWTH=1 makes every growth of ui-host's surfaces fail, as when the
+    // GPU cannot allocate them. The box sits 40 px from the right edge, so after the window grows
+    // from 1280 to 1680 it lies outside the surfaces ui-host had. ui-host must not export frames of
+    // the new size from those, but stop, so that the host starts a ui-host at the new size.
+    let dir = hud_workdir("hud-growth");
+    let page = std::fs::read_to_string(dir.join("hud-replace.html")).unwrap();
+    std::fs::write(
+        dir.join("hud-right.html"),
+        replaced(&page, "left: 40px", "right: 40px"),
+    )
+    .unwrap();
+    let capture = dir.join("hud.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "resize", "width": 1680, "height": 720},
+        {"type": "wait", "frames": 400},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let env = [("THREEJSC_UI_FAIL_SURFACE_GROWTH", "1")];
+    let (status, log) = host_with(&dir, &bundle("hud-right"), &steps, &[], &env);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let ui_log = std::fs::read_to_string(dir.join("ui-host.log")).unwrap();
+    let image = image::open(&capture).unwrap().to_rgba8();
+    assert_eq!(
+        (image.dimensions(), image.get_pixel(1580, 80).0),
+        ((1680, 720), MAGENTA),
+        "{log}\n{ui_log}"
+    );
+    assert!(
+        ui_log.contains("[host] ui-host launch 2 after:"),
         "{ui_log}"
     );
 }

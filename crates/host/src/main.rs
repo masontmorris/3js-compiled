@@ -152,15 +152,25 @@ fn filter_name(filter: wgpu::ErrorFilter) -> &'static str {
         wgpu::ErrorFilter::Internal => "internal",
     }
 }
-/// Whether the HUD takes the pointer input at window pixel (`x`, `y`). The game gets the input
-/// otherwise.
-fn hud_takes(ui: Option<&mut ui::Ui>, action: PointerAction, x: f64, y: f64, button: i16) -> bool {
+/// Whether the HUD takes the pointer input at window pixel (`x`, `y`): `ui` when it runs, else
+/// `presses`, the press in progress the next UI adopts. The game gets the input otherwise.
+fn hud_takes(
+    ui: Option<&mut ui::Ui>,
+    presses: &mut ui::Presses,
+    action: PointerAction,
+    x: f64,
+    y: f64,
+    button: i16,
+) -> bool {
     let code = match action {
         PointerAction::Move => 0,
         PointerAction::Down => 1,
         PointerAction::Up => 2,
     };
-    ui.is_some_and(|ui| ui.pointer(code, x, y, button))
+    match ui {
+        Some(ui) => ui.pointer(code, x, y, button),
+        None => presses.pointer(code, x, y, button),
+    }
 }
 /// Starts the UI for `page` on `gpu` off the game thread, since it opens a pipe and starts ui-host.
 fn launch_ui(gpu: &Gpu, page: String, size: (u32, u32)) -> mpsc::Receiver<Result<ui::Ui>> {
@@ -365,6 +375,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
     // before `bridge.open` asks for it after the first frame.
     let mut page: Option<String> = None;
     let mut ui = None;
+    let mut presses = ui::Presses::default();
     let mut ui_launch: Option<mpsc::Receiver<Result<ui::Ui>>> = None;
     let mut pending_patch = None;
     let mut gamepads = Gamepads::new(
@@ -492,6 +503,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     let (x, y) = (f64::from(x), f64::from(y));
                     if !hud_takes(
                         ui.as_mut(),
+                        &mut presses,
                         PointerAction::Move,
                         x * density,
                         y * density,
@@ -518,6 +530,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     let button = input::mouse_button(mouse_btn);
                     if !hud_takes(
                         ui.as_mut(),
+                        &mut presses,
                         PointerAction::Down,
                         x * density,
                         y * density,
@@ -544,6 +557,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                     let button = input::mouse_button(mouse_btn);
                     if !hud_takes(
                         ui.as_mut(),
+                        &mut presses,
                         PointerAction::Up,
                         x * density,
                         y * density,
@@ -624,7 +638,7 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                         // The HUD page lays out at a device pixel ratio of 1, so a step's CSS
                         // pixels are the page's as well as the game's.
                         let button = i16::from(*button);
-                        if !hud_takes(ui.as_mut(), *action, *x, *y, button) {
+                        if !hud_takes(ui.as_mut(), &mut presses, *action, *x, *y, button) {
                             game.event(&pointer(*action, *x, *y, button, 1, &modifiers))?
                         }
                     }
@@ -675,7 +689,9 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         if let Some(rx) = &ui_launch {
             match rx.try_recv() {
                 Ok(result) => {
-                    ui = Some(result?);
+                    let mut started = result?;
+                    started.adopt(std::mem::take(&mut presses));
+                    ui = Some(started);
                     ui_launch = None;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => bail!("UI initialization thread stopped"),
@@ -732,9 +748,10 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
                 if let Some(page) = page.clone().filter(|_| ui.is_some() || ui_launch.is_some()) {
                     log(log_file, "UI restarts on the device the game requested")?;
                     // The old UI took this frame's patch in `update`, so it holds the game's latest
-                    // state. A UI still launching took none, and `pending_patch` keeps it instead.
+                    // state, and it holds the press in progress. A UI still launching took neither,
+                    // and `pending_patch` and `presses` keep them instead.
                     if let Some(old) = ui.take() {
-                        pending_patch = old.into_state();
+                        (pending_patch, presses) = old.into_parts();
                     }
                     ui_launch = Some(launch_ui(&gpu, page, size));
                 }

@@ -31,6 +31,16 @@ The patch records the element under the last mouse button down in place of its p
 
 Upstream issue: not filed. Servo's policy forbids AI-written issues.
 
+## servo-script: enter and leave events with no related target
+
+`handle_mouse_enter_leave_event` builds its target chain from the event target up to the common ancestor of the target and the related target, and uses the target itself when there is no related target. The chain is then empty. So when the pointer leaves the viewport, the hovered element and its ancestors get `pointerout` and `mouseout` but no `pointerleave` or `mouseleave`. And when it enters with nothing hovered, as on the first move or after leaving, they get `pointerover` and `mouseover` but no `pointerenter` or `mouseenter`.
+
+The patch runs the chain to the root when there is no related target. ui-host gives Servo a viewport leave when the pointer moves off the HUD onto the game, so the HUD element gets the four events Edge fires when the pointer moves from it onto the canvas below, and the four enter events when the pointer comes back. With the chain to the root, `body`, `html` and the document get the enter and leave events too, as when the pointer leaves or enters a browser window.
+
+`note_pending_input_event` keeps at most one mouse move in the queue that the next rendering update handles: a new move replaces the queued one. A viewport leave does not end that, so when the pointer leaves the HUD and comes back before the update, the move back replaces the move before the leave. The queue is then the move back and the leave, in that order, and the element the pointer returned to ends unhovered until the next move. The patch also makes a queued leave end the replacement, so a move after it queues after it, and the element ends hovered as in Edge.
+
+Upstream issue: not filed. Servo's policy forbids AI-written issues.
+
 ## servo-fonts: bound the shaped text cache
 
 `Font::shape_text` caches every shaped string in a per-font map that is never trimmed. Text that changes on every rendering update, such as a frame counter, adds one entry each time.
