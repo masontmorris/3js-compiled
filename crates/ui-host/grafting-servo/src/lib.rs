@@ -81,9 +81,11 @@ impl ServoWgpuRenderingContext {
         let info = self.frame_producer.borrow().context();
         let device = info.device.borrow_mut();
         let mut context = info.context.borrow_mut();
-        let _ = self
-            .swap_chain
-            .swap_buffers(&*device, &mut *context, PreserveBuffer::No);
+        let _ = self.swap_chain.swap_buffers(
+            &*device,
+            &mut *context,
+            surfman::chains::PreserveBuffer::No,
+        );
     }
     /// Create a rendering context on surfman's default GPU. Use this for the
     /// CPU readback path, which routes frames through the CPU and does not need
