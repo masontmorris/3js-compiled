@@ -259,6 +259,11 @@ impl DocumentEventHandler {
             *self.mouse_move_event_index.borrow_mut() = Some(pending_input_events.len());
         }
 
+        // A move after a leave must not replace one before it, or the leave would come last.
+        if matches!(event.event.event, InputEvent::MouseLeftViewport(..)) {
+            *self.mouse_move_event_index.borrow_mut() = None;
+        }
+
         if let InputEvent::Wheel(ref new_wheel_event) = event.event.event {
             // Coalesce with any existing pending wheel event by summing deltas.
             if let Some(existing_constellation_wheel_event) = self
