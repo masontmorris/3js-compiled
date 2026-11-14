@@ -46,10 +46,11 @@ foreach ($mode in $order) {
     $ErrorActionPreference = 'Continue'
     $result = python @checkArgs 2>&1 | Select-Object -Last 1
     $ErrorActionPreference = 'Stop'
-    if ($LASTEXITCODE -ne 0) { $failed++ }
+    $trialPass = $LASTEXITCODE -eq 0 -and $hostProcess.ExitCode -eq 0
+    if (-not $trialPass) { $failed++ }
     if ("$result" -match 'over=(\d+)') { $over[$mode] += [int]$Matches[1] }
     if ("$result" -match 'hud_over=(\d+)') { $hudOver += [int]$Matches[1] }
-    Write-Output "$index $mode $(if ($LASTEXITCODE -eq 0) { 'pass' } else { 'FAIL' }) (machine load before run $load%): $result"
+    Write-Output "$index $mode $(if ($trialPass) { 'pass' } else { 'FAIL' }) (machine load before run $load%): $result"
 }
 $pass = $failed -eq 0 -and $over.ui -le $over.noui
 Write-Output "first-second intervals over $([math]::Round(2000 / $Hz, 3)) ms: UI $($over.ui) in $UiRuns runs, --no-ui $($over.noui) in $NoUiRuns runs; UI intervals over it from the HUD's first frame through 30 frames after: $hudOver; failed runs $failed; rule $(if ($pass) { 'PASS' } else { 'FAIL' })"
