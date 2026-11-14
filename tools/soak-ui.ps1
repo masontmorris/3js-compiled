@@ -62,3 +62,4 @@ while (-not $p.HasExited) {
 Move-Item -Force frames.csv, host.log $Out
 if (Test-Path ui-host.log) { Move-Item -Force ui-host.log $Out }
 Write-Output "host exited $($p.ExitCode) after $([math]::Round(((Get-Date) - $started).TotalSeconds)) s"
+if ($p.ExitCode -ne 0) { exit $p.ExitCode }

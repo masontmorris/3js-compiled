@@ -47,5 +47,6 @@ foreach ($case in $Cases) {
     Move-Item -Force frames.csv, host.log $dir
     if (Test-Path ui-host.log) { Move-Item -Force ui-host.log $dir }
     Get-ChildItem tools/ui-repro/out -Filter *.png | Move-Item -Force -Destination $dir
+    if ($hostProcess.ExitCode -ne 0) { throw "$case host exited $($hostProcess.ExitCode)" }
     Write-Output "$case done"
 }

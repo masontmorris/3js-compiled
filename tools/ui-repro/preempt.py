@@ -39,4 +39,5 @@ try:
         time.sleep(0.012); n += 1
 finally:
     k32.CloseHandle(h)
+if n == 0: sys.exit(f"no preemption cycles completed for ui-host {pid}")
 print(f"preempted ui-host {pid} {n} times")

@@ -31,9 +31,9 @@ foreach ($mode in $order) {
     }
     $dir = Join-Path $Out ('{0:D2}-{1}' -f $index, $mode)
     New-Item -ItemType Directory -Force $dir | Out-Null
-    $hostArgs = @('--entry', 'examples/hud/game.js', '--script', $script)
+    $hostArgs = @('--entry', 'examples/hud/game.js', '--script', ('"' + $script + '"'))
     if ($mode -eq 'noui') { $hostArgs += '--no-ui' }
-    if ($Record) { $hostArgs += @('--record', (Join-Path $dir 'frames')) }
+    if ($Record) { $hostArgs += @('--record', ('"' + (Join-Path $dir 'frames') + '"')) }
     $load = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
     $hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList $hostArgs `
         -RedirectStandardOutput (Join-Path $dir 'host-console.log') -RedirectStandardError (Join-Path $dir 'host-stderr.log')

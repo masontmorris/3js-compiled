@@ -47,6 +47,9 @@ def check(case):
         yield 'later events of the reply arrive', 'UIEV {"type":"after","tail":"plain"}' in log
     elif case in ('flood', 'plain'):
         cpu, intervals = frames(case, 120)
+        yield f'{len(cpu)} post-warm-up frames, at least 480 required', len(cpu) >= 480
+        if len(cpu) < 480:
+            return
         yield f'cpu p50 {statistics.median(cpu):.3f} ms under 2 ms', statistics.median(cpu) < 2.0
         yield f'max interval {max(intervals):.3f} ms within {2000 / hz:.3f} ms', max(intervals) <= 2000 / hz
     elif case.startswith('pace'):
@@ -69,7 +72,7 @@ def pacing(case):
 def check_pacing(case):
     evals, frames_per_s, cpu = pacing(case)
     yield f'{evals:.1f} evaluations/s, {frames_per_s:.1f} Servo frames/s, ui-host cpu {cpu:.0f} ms/s', \
-        evals <= frames_per_s + 1.0
+        frames_per_s > 0 and evals <= frames_per_s + 1.0
 
 
 failed = 0

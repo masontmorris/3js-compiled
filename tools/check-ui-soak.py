@@ -43,8 +43,9 @@ unjudged = False
 quartiles = lambda values: (values[len(values) // 4], values[(3 * len(values)) // 4])
 for proc in ('host', 'ui-host'):
     for key, ruled in (('private_mb', True), ('handles', True), ('gpu_dedicated_mb', True), ('working_set_mb', False)):
-        series = [r for r in rows if r['proc'] == proc and float(r['elapsed_s']) > start and r.get(key)]
-        windows = sorted({r.get('window') or 'any size' for r in series})
+        process_rows = [r for r in rows if r['proc'] == proc and float(r['elapsed_s']) > start]
+        windows = sorted({r.get('window') or 'any size' for r in process_rows})
+        series = [r for r in process_rows if r.get(key)]
         judged = 0
         for window in windows:
             at = [r for r in series if (r.get('window') or 'any size') == window]

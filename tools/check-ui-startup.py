@@ -24,7 +24,8 @@ if ui:
     assert shown, 'HUD never appeared'
     first = int(shown[0]) - 1
     assert first > 0, 'HUD appeared on the game\'s first frame'
-    window = [(frame, round(intervals[frame], 3)) for frame in range(first, min(first + 31, len(intervals)))
+    assert first + 30 < len(intervals), 'HUD observation window is incomplete'
+    window = [(frame, round(intervals[frame], 3)) for frame in range(first, first + 31)
               if intervals[frame] > limit]
     text = f'{text}; HUD from frame {first}; hud_over={len(window)}: intervals over the limit from it through 30 frames after {window}'
     hitch = [frame for frame, _ in window if frame <= first + 1]
