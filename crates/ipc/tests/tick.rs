@@ -557,3 +557,26 @@ for (let n = 0; n < 3; n++) {
 }
 "#);
 }
+
+/// A page that reads `offsetWidth` of 3,000 rows every tick, more box reads than fit in 2 ms, and
+/// lists one rect it computed: the offset reads leave the rect's checks and the document scan a
+/// share of the evaluation, so the rect gets an id within a few evaluations.
+#[test]
+fn offset_reads_that_fill_every_evaluation_leave_the_document_scan_a_share() {
+    run(r#"
+const rows = Array.from({ length: 3000 }, (_, i) => new Element("row", [i % 1000, 600 + Math.floor(i / 1000), 1, 1], body));
+const c = new Element("div#c", [1060, 20, 200, 80], body);
+READ_MS = 0.001;
+const given = new Set();
+for (let n = 0; n < 12; n++) {
+  const before = clock;
+  const [id] = tick(() => {
+    for (const row of rows) void row.offsetWidth;
+    return JSON.stringify({ events: [], rects: [c.box] });
+  })[3];
+  same(clock - before < 2.2, true, `evaluation ${n} took ${clock - before} ms of model time`);
+  if (id) given.add(id);
+}
+same(given.size, 1, `ids given to the computed rect: ${[...given]}`);
+"#);
+}
