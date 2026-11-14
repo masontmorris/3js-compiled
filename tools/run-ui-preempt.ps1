@@ -9,7 +9,7 @@ if (Test-Path $Out) {
 }
 New-Item -ItemType Directory -Force $Out, 'tools/ui-repro/out' | Out-Null
 Get-ChildItem tools/ui-repro/out -Filter *.png | Remove-Item
-$hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList @('--entry', 'examples/hud/game.js', '--script', $Script, '--novsync') `
+$hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList @('--entry', 'examples/hud/game.js', '--script', ('"' + $Script + '"'), '--novsync') `
     -RedirectStandardOutput (Join-Path $Out 'host-console.log') -RedirectStandardError (Join-Path $Out 'host-stderr.log')
 $null = $hostProcess.Handle
 $preempt = Start-Process python -ArgumentList 'tools/ui-repro/preempt.py', $hostProcess.Id -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Out 'preempt.log')

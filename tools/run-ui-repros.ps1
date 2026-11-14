@@ -26,6 +26,7 @@ foreach ($case in $Cases) {
     $hostArgs = @('--entry', $runs[$case][0], '--script', $runs[$case][1]) + $runs[$case][2..9]
     $hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList $hostArgs `
         -RedirectStandardOutput (Join-Path $dir 'host-console.log') -RedirectStandardError (Join-Path $dir 'host-stderr.log')
+    $null = $hostProcess.Handle
     $watch = Start-Job -ArgumentList $hostProcess.Id, $pids, $cpu -ScriptBlock {
         param($hostPid, $file, $cpuFile)
         $seen = @{}

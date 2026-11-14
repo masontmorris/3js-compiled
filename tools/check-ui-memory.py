@@ -2,7 +2,9 @@ import re
 import sys
 from pathlib import Path
 
-private = [int(m) for m in re.findall(r'ui-host memory: .*private (\d+) MB', Path(sys.argv[1]).read_text(encoding='utf-8'))]
+log = Path(sys.argv[1]).read_text(encoding='utf-8')
+assert not re.search(r'^\[host\] ui-host launch\b', log, re.MULTILINE), 'multiple ui-host sessions; check each session separately'
+private = [int(m) for m in re.findall(r'ui-host memory: .*private (\d+) MB', log)]
 steady = private[12:]
 assert len(steady) >= 24, ('too few 5 s memory samples after the first minute', len(private))
 n = len(steady)

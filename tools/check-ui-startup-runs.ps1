@@ -10,7 +10,8 @@ $ErrorActionPreference = 'Stop'
 $root = (Get-Location).Path
 New-Item -ItemType Directory -Force $Out | Out-Null
 $script = Join-Path $Out 'startup.json'
-'[{"type":"wait","frames":300},{"type":"close"}]' | Set-Content -Encoding ascii $script
+$frames = [math]::Max(300, [int][math]::Ceiling($Hz * 2))
+('[{{"type":"wait","frames":{0}}},{{"type":"close"}}]' -f $frames) | Set-Content -Encoding ascii $script
 $order = @()
 $ui = 0
 $noUi = 0
@@ -37,6 +38,7 @@ foreach ($mode in $order) {
     $load = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
     $hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -ArgumentList $hostArgs `
         -RedirectStandardOutput (Join-Path $dir 'host-console.log') -RedirectStandardError (Join-Path $dir 'host-stderr.log')
+    $null = $hostProcess.Handle
     $hostProcess.WaitForExit()
     $previous = $hostProcess.Id
     Move-Item -Force frames.csv, host.log $dir

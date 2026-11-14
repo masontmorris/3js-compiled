@@ -7,6 +7,7 @@ $stub = Join-Path $dir 'ui-host.exe'
 Copy-Item $HostExe $hostCopy
 Copy-Item "$env:SystemRoot\System32\whoami.exe" $stub
 $p = Start-Process -FilePath $hostCopy -PassThru -WindowStyle Hidden -ArgumentList @('--entry', "`"$Entry`"")
+$null = $p.Handle
 try {
     Start-Sleep -Seconds 5
     $p.Refresh()

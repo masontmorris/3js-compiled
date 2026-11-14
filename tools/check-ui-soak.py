@@ -15,9 +15,12 @@ seconds_at = lambda frame: sum(float(f['interval_ms']) for f in frames[1:frame])
 start, frame, resizes = seconds_at(shown), 0, 0
 for step in json.loads((run / 'soak.json').read_text()):
     frame += step.get('frames', 0)
-    resizes += step['type'] == 'resize'
-    if resizes == 10 and step['type'] == 'resize':
+    reached_resize = step['type'] == 'resize' and frame < len(frames)
+    resizes += reached_resize
+    if resizes == 10 and reached_resize:
         start = max(start, seconds_at(frame))
+print(f'{resizes} resizes reached')
+assert len(frames) >= frame, f'incomplete soak: {len(frames)} frames recorded, {frame} scheduled'
 ui_log = (run / 'ui-host.log').read_text()
 published, skipped = map(int, re.findall(r'frames published: (\d+), skipped \(no free ring slot\): (\d+)', ui_log)[-1])
 # The sampler writes a row with no pid when it finds no process, before ui-host starts or after

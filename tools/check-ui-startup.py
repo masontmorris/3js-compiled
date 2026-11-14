@@ -18,6 +18,7 @@ for frame, interval in enumerate(intervals[1:], start=1):
     elapsed += interval
     if interval > limit:
         over.append((frame, round(interval, 3)))
+assert elapsed >= 1000, f'incomplete first second: {elapsed:.3f} ms of intervals'
 text = f'over={len(over)}: first-second intervals over {limit:.3f} ms {over}'
 if ui:
     shown = re.findall(r'ui-host first frame shown at game frame (\d+)', (run / 'host.log').read_text())
