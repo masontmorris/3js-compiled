@@ -1005,6 +1005,13 @@ fn hud_workdir(name: &str) -> PathBuf {
     dir
 }
 
+/// `page` with `from` replaced by `to`. A fixture reworded so that it no longer contains `from`
+/// fails the test here rather than running it on the unedited page.
+fn replaced(page: &str, from: &str, to: &str) -> String {
+    assert!(page.contains(from), "the fixture no longer contains {from:?}");
+    page.replace(from, to)
+}
+
 #[test]
 #[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
 fn a_page_opened_after_a_top_level_await_shows_the_hud() {
@@ -1181,7 +1188,8 @@ fn the_hud_hears_the_pointer_come_back_in_the_frame_it_left() {
     let page = std::fs::read_to_string(dir.join("hud-hover.html")).unwrap();
     std::fs::write(
         dir.join("hud-hover.html"),
-        page.replace(
+        replaced(
+            &page,
             "let hovered = null;",
             "requestAnimationFrame(function frame() { requestAnimationFrame(frame); });\nlet hovered = null;",
         ),
@@ -1241,7 +1249,7 @@ fn the_hud_shows_while_an_image_of_its_page_never_loads() {
     let image = format!(r#"<div id="box"></div><img src="http://127.0.0.1:{port}/stall.png">"#);
     std::fs::write(
         dir.join("hud-stall.html"),
-        page.replace(r#"<div id="box"></div>"#, &image),
+        replaced(&page, r#"<div id="box"></div>"#, &image),
     )
     .unwrap();
     let capture = dir.join("hud.png");
@@ -1275,7 +1283,7 @@ fn a_hud_whose_surfaces_cannot_grow_starts_again_at_the_new_size() {
     let page = std::fs::read_to_string(dir.join("hud-replace.html")).unwrap();
     std::fs::write(
         dir.join("hud-right.html"),
-        page.replace("left: 40px", "right: 40px"),
+        replaced(&page, "left: 40px", "right: 40px"),
     )
     .unwrap();
     let capture = dir.join("hud.png");
