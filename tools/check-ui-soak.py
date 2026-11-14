@@ -17,7 +17,13 @@ else:
 log = (run / 'host.log').read_text()
 shown = int(re.search(r'ui-host first frame shown at game frame (\d+)', log).group(1))
 frames = list(csv.DictReader((run / 'frames.csv').open()))
-seconds_at = lambda frame: sum(float(f['interval_ms']) for f in frames[1:frame]) / 1000.0
+# handed_at_ms is on the page's clock, which the host starts right after its process starts, so
+# with the sampler's host-start offset it places each frame on the sampler's timeline even when
+# the first frame comes seconds after launch. Older folders have no offset and count from frame 0.
+if clock.exists() and frames and frames[0].get('handed_at_ms'):
+    seconds_at = lambda frame: float(frames[min(frame, len(frames) - 1)]['handed_at_ms']) / 1000.0
+else:
+    seconds_at = lambda frame: sum(float(f['interval_ms']) for f in frames[1:frame]) / 1000.0
 start, frame, resizes = seconds_at(shown), 0, 0
 for step in json.loads((run / 'soak.json').read_text()):
     frame += step.get('frames', 0)
