@@ -30,8 +30,20 @@ fn host(
     steps: &serde_json::Value,
     args: &[&str],
 ) -> (ExitStatus, String) {
+    host_with(dir, entry, steps, args, &[])
+}
+
+/// `host` with the variables `env` set for the host and the ui-host it starts.
+fn host_with(
+    dir: &Path,
+    entry: &Path,
+    steps: &serde_json::Value,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> (ExitStatus, String) {
     std::fs::write(dir.join("steps.json"), steps.to_string()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_host"))
+        .envs(env.iter().copied())
         .current_dir(dir)
         .arg("--entry")
         .arg(entry)
@@ -1192,6 +1204,41 @@ fn the_hud_shows_while_an_image_of_its_page_never_loads() {
         [MAGENTA, RED],
         "{log}"
     );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn a_hud_whose_surfaces_cannot_grow_starts_again_at_the_new_size() {
+    // THREEJSC_UI_FAIL_SURFACE_GROWTH=1 makes every growth of ui-host's surfaces fail, as when the
+    // GPU cannot allocate them. The box sits 40 px from the right edge, so after the window grows
+    // from 1280 to 1680 it lies outside the surfaces ui-host had. ui-host must not export frames of
+    // the new size from those, but stop, so that the host starts a ui-host at the new size.
+    let dir = hud_workdir("hud-growth");
+    let page = std::fs::read_to_string(dir.join("hud-replace.html")).unwrap();
+    std::fs::write(
+        dir.join("hud-right.html"),
+        page.replace("left: 40px", "right: 40px"),
+    )
+    .unwrap();
+    let capture = dir.join("hud.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 300},
+        {"type": "resize", "width": 1680, "height": 720},
+        {"type": "wait", "frames": 400},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let env = [("THREEJSC_UI_FAIL_SURFACE_GROWTH", "1")];
+    let (status, log) = host_with(&dir, &bundle("hud-right"), &steps, &[], &env);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    let ui_log = std::fs::read_to_string(dir.join("ui-host.log")).unwrap();
+    let image = image::open(&capture).unwrap().to_rgba8();
+    assert_eq!(
+        (image.dimensions(), image.get_pixel(1580, 80).0),
+        ((1680, 720), MAGENTA),
+        "{log}\n{ui_log}"
+    );
+    assert!(ui_log.contains("[host] ui-host launch 2 after:"), "{ui_log}");
 }
 
 #[test]

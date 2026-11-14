@@ -47,6 +47,13 @@ fn resize_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("GRAFT_SERVO_RESIZE_TRACE").as_deref() == Ok("1"))
 }
 
+/// Whether every growth of the swap chain's surfaces fails, as when the GPU cannot allocate them,
+/// for tests of what follows.
+fn surface_growth_fails() -> bool {
+    static FAILS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FAILS.get_or_init(|| std::env::var("THREEJSC_UI_FAIL_SURFACE_GROWTH").as_deref() == Ok("1"))
+}
+
 #[cfg(feature = "servo")]
 pub use image;
 #[cfg(feature = "servo")]
@@ -274,7 +281,12 @@ impl ServoWgpuRenderingContext {
         let info = self.frame_producer.borrow().context();
         let device = info.device.borrow_mut();
         let mut context = info.context.borrow_mut();
-        let result = self.swap_chain.resize(&*device, &mut *context, grown);
+        // A failed allocation leaves surfman's swap chain as it was, as this does.
+        let result = if surface_growth_fails() {
+            Err(surfman::Error::Failed)
+        } else {
+            self.swap_chain.resize(&*device, &mut *context, grown)
+        };
         if resize_trace_enabled() {
             let actual = device
                 .context_surface_info(&context)
