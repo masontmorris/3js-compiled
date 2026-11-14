@@ -204,12 +204,13 @@
         all.add(next);
         next = next.nextElementSibling;
       }
-      const down = [...seed.children];
-      while (down.length && more()) {
-        const child = down.shift();
-        if (near(boxOf(child), rect)) {
-          all.add(child);
-          down.push(...child.children);
+      const parents = [seed];
+      for (let p = 0; p < parents.length; p++) {
+        for (let child = parents[p].firstElementChild; child && more(); child = child.nextElementSibling) {
+          if (near(boxOf(child), rect)) {
+            all.add(child);
+            parents.push(child);
+          }
         }
       }
     }
