@@ -29,9 +29,16 @@ const stop = (code, why) => {
       `Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`], { stdio: 'ignore' });
   } catch {}
   setTimeout(() => {
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-    if (why) console.error(why);
-    process.exit(code);
+    let status = code;
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    } catch (error) {
+      status = status || 1;
+      console.error(`could not remove the profile ${profile}: ${error}`);
+    } finally {
+      if (why) console.error(why);
+      process.exit(status);
+    }
   }, 2000);
 };
 process.on('uncaughtException', error => stop(1, `session failed at ${step}: ${error.stack}`));
