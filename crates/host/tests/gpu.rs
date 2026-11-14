@@ -1072,6 +1072,35 @@ fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() 
 }
 
 #[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn frames_without_commands_after_a_replacement_keep_the_new_ui() {
+    // hud-replace-idle.js replaces the device at frame 600, draws one frame on the new one and
+    // then submits nothing. Each later frame has no commands to replay, so none of them may report
+    // the replacement again and start the UI over.
+    let dir = hud_workdir("hud-replace-idle");
+    let after = dir.join("after.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 920},
+        {"type": "capture", "path": after},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-replace-idle"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    assert_eq!(
+        log.matches("UI restarts on the device the game requested")
+            .count(),
+        1,
+        "{log}"
+    );
+    let image = image::open(&after).unwrap().to_rgba8();
+    assert_eq!(image.get_pixel(60, 60).0, MAGENTA, "{log}");
+}
+
+#[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
 fn compile_async_settles_before_the_first_frame_and_while_drawing_as_in_edge() {
     // compile.js against Edge (C:\3jsc\swarm\e3-r13\kit\out\edge\compile-host-*): compileAsync
