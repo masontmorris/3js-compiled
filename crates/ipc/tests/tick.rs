@@ -648,3 +648,22 @@ const got = Array.from({ length: 8 }, evaluate);
 same(got.some(id => id > 0) && got.every(id => id === 0 || id === topId), true, `ids ${got}, want 0 or ${topId}`);
 "#);
 }
+
+/// Two rects of the box two siblings share, the first lifted over the second by `z-index`, with no
+/// order remembered for the box and a hit test that uses up the 2 ms bound: the second rect ranks
+/// the siblings as the first one's hit test did, so the two rects name the two siblings.
+#[test]
+fn two_rects_of_one_box_name_two_elements_when_the_bound_stops_the_hit_test_between_them() {
+    run(r#"
+const top = new Element("div#top", [100, 20, 200, 80], body);
+const below = new Element("div#below", [100, 20, 200, 80], body);
+top.z = 1;
+const hitTest = document.elementsFromPoint;
+document.elementsFromPoint = function (x, y) {
+  clock += 3;
+  return hitTest.call(this, x, y);
+};
+const got = Array.from({ length: 4 }, () => ids(top, below)).find(([a, b]) => a && b);
+same(got !== undefined && got[0] !== got[1], true, `ids ${got}, want two`);
+"#);
+}
