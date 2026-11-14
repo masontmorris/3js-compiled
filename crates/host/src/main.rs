@@ -387,6 +387,16 @@ fn run(options: &Options, steps: &[Step], log_file: &Log) -> Result<()> {
         game.set_frame_pacing(ms)?;
     }
     let clock = game.clock_origin();
+    // Lets a tool that samples the host from outside, such as tools/soak-ui.ps1, line its own clock
+    // up with frames.csv's page-clock times.
+    let origin = std::time::SystemTime::now() - clock.elapsed();
+    log(
+        log_file,
+        &format!(
+            "page clock origin unix ms: {:.3}",
+            origin.duration_since(std::time::UNIX_EPOCH)?.as_secs_f64() * 1000.0
+        ),
+    )?;
     let progress = Arc::new(RenderProgress::default());
     game.set_render_progress(progress.clone());
     let rendering = progress.clone();

@@ -9,18 +9,23 @@ hz = float(sys.argv[2]) if len(sys.argv) > 2 else 169.0
 limit = 5.0
 rows = list(csv.DictReader((run / 'samples.csv').open()))
 clock = run / 'sampler-clock.json'
-if clock.exists():
-    offset = json.loads(clock.read_text())['host_start_elapsed_s']
+log = (run / 'host.log').read_text()
+# The host logs its page clock's origin, the clock of frames.csv's handed_at_ms, and the sampler its
+# own start, so their difference puts samples and frames on one timeline. Older folders lack one or
+# both: they fall back to the host's process start, or to counting from frame 0.
+sampler = json.loads(clock.read_text()) if clock.exists() else {}
+page_origin = re.search(r'page clock origin unix ms: ([\d.]+)', log)
+if page_origin and 'sampler_start_unix_ms' in sampler:
+    offset = (float(page_origin.group(1)) - sampler['sampler_start_unix_ms']) / 1000.0
+elif sampler:
+    offset = sampler['host_start_elapsed_s']
+    print('note: no page clock origin; timing from host process start')
 else:
     offset = 0.0
     print('note: sampler clock offset unavailable; using legacy timing')
-log = (run / 'host.log').read_text()
 shown = int(re.search(r'ui-host first frame shown at game frame (\d+)', log).group(1))
 frames = list(csv.DictReader((run / 'frames.csv').open()))
-# handed_at_ms is on the page's clock, which the host starts right after its process starts, so
-# with the sampler's host-start offset it places each frame on the sampler's timeline even when
-# the first frame comes seconds after launch. Older folders have no offset and count from frame 0.
-if clock.exists() and frames and frames[0].get('handed_at_ms'):
+if sampler and frames and frames[0].get('handed_at_ms'):
     seconds_at = lambda frame: float(frames[min(frame, len(frames) - 1)]['handed_at_ms']) / 1000.0
 else:
     seconds_at = lambda frame: sum(float(f['interval_ms']) for f in frames[1:frame]) / 1000.0
