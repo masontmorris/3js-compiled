@@ -23,9 +23,12 @@
 // Work after the tick is bounded. It stops 2 ms into the evaluation, box reads included: a rect
 // with no measured element left unchecked by then is named 0, and the next evaluation checks it
 // first. The scan walks the document from where it stopped and stops 1 ms in, going on in the next
-// evaluation until it has seen every element once. Looking at a candidate's relatives stops after
-// 16 elements per rect, and a rect has at most 8 candidates. A box a whole scan finds no element for
-// is not looked for again for 60 evaluations. Every cache holds only the boxes of the latest reply.
+// evaluation until it has seen every element once. In every other evaluation, box reads of elements
+// the page read `offsetWidth` of stop 1 ms in, and the scan may run 1 ms from where the checks of
+// rects leave off, so those reads cannot starve the checks or the scan. Looking at a candidate's
+// relatives stops after 16 elements per rect, and a rect has at most 8 candidates. A box a whole
+// scan finds no element for is not looked for again for 60 evaluations. Every cache holds only the
+// boxes of the latest reply.
 (tick => {
   const S = (globalThis[Symbol.for("threejsc.rect-ids")] ??= (() => {
     const S = {
@@ -70,17 +73,20 @@
   if (!Array.isArray(rects)) return [innerWidth, innerHeight, json, [], [], []];
 
   const started = performance.now();
+  // Whether this evaluation keeps its second millisecond for rect checks and the scan.
+  const split = S.evaluation % 2 === 0;
+  const offsetsUntil = started + (split ? 1 : 2);
   const offsetStart = offsetElements.size ? S.offsetFrom % offsetElements.size : 0;
   let offsetRead = 0;
   for (let pass = 0; pass < (offsetStart ? 2 : 1); pass++) {
     let index = 0;
     for (const element of offsetElements) {
       if (pass === 0 ? index++ < offsetStart : index++ >= offsetStart) continue;
-      if (performance.now() >= started + 2) break;
+      if (performance.now() >= offsetsUntil) break;
       if (element.isConnected) lastBox.set(element, S.read(element));
       offsetRead++;
     }
-    if (performance.now() >= started + 2) break;
+    if (performance.now() >= offsetsUntil) break;
   }
   S.offsetFrom = offsetElements.size ? (offsetStart + offsetRead) % offsetElements.size : 0;
   const boxes = new Map(lastBox);
@@ -167,7 +173,8 @@
       }
     }
     let left = S.pending.size;
-    while (left && performance.now() < started + 1) {
+    const scanUntil = split ? Math.min(until, performance.now() + 1) : started + 1;
+    while (left && performance.now() < scanUntil) {
       const element = S.walker.currentNode;
       const box = boxOf(element);
       for (const wanted of buckets.get(corner(box.x, box.y)) ?? []) {
