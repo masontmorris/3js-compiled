@@ -1151,6 +1151,51 @@ fn the_hud_hears_the_pointer_leave_it_for_the_game_and_come_back() {
 
 #[test]
 #[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn the_hud_shows_while_an_image_of_its_page_never_loads() {
+    // hud-stall.html is hud-replace.html with an image from a local server that accepts the
+    // request and never answers, so the page never finishes loading. Edge shows such a page while
+    // the image loads, so the HUD must show the game's magenta patch.
+    let dir = hud_workdir("hud-stall");
+    let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = server.local_addr().unwrap().port();
+    let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = requests.clone();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in server.incoming().flatten() {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            held.push(stream);
+        }
+    });
+    let page = std::fs::read_to_string(dir.join("hud-replace.html")).unwrap();
+    let image = format!(r#"<div id="box"></div><img src="http://127.0.0.1:{port}/stall.png">"#);
+    std::fs::write(
+        dir.join("hud-stall.html"),
+        page.replace(r#"<div id="box"></div>"#, &image),
+    )
+    .unwrap();
+    let capture = dir.join("hud.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 400},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-stall"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    assert!(
+        requests.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the page never asked for its image\n{log}"
+    );
+    let image = image::open(&capture).unwrap().to_rgba8();
+    assert_eq!(
+        [image.get_pixel(60, 60).0, image.get_pixel(640, 360).0],
+        [MAGENTA, RED],
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
 fn frames_without_commands_after_a_replacement_keep_the_new_ui() {
     // hud-replace-idle.js replaces the device at frame 600, draws one frame on the new one and
     // then submits nothing. Each later frame has no commands to replay, so none of them may report
