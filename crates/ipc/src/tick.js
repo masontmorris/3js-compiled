@@ -13,12 +13,15 @@
 // `getBoundingClientRect`, or a viewport box read after an `offsetWidth` read), else those the
 // same box, then the rect at the same index, named in the
 // last reply, else those a document scan finds; with each, its ancestors, descendants and next
-// siblings of the same box. The rect names the topmost hit-testable candidate, the last in
-// document order whose `pointer-events` is not `none`, or the topmost candidate when none is
-// hit-testable. Its more ids are of the other hit-testable candidates, topmost first, so a rect
-// whose named element the page rebuilds every tick, such as a label, still shares an id with the
-// rect it was. Rects that share one box name its candidates in document order, and a box with
-// fewer candidates than rects gives the later rects further ids of the same elements.
+// siblings of the same box. The rect names the topmost hit-testable candidate, one whose
+// `pointer-events` is not `none`, or the topmost candidate when none is hit-testable. The topmost
+// is the last in document order, except that hit-testable candidates neither of which contains the
+// other, such as siblings, go in the order the hit test at the rect's centre draws them, so
+// `z-index` counts; candidates it does not reach follow in document order. Its more ids are of the
+// other hit-testable candidates, topmost first, so a rect whose named element the page rebuilds
+// every tick, such as a label, still shares an id with the rect it was. Rects that share one box
+// name its candidates from the bottom up, and a box with fewer candidates than rects gives the
+// later rects further ids of the same elements.
 //
 // Work after the tick is bounded. It stops 2 ms into the evaluation, box reads included: a rect
 // with no measured element left unchecked by then is named 0, and the next evaluation checks it
@@ -230,11 +233,19 @@
   };
   const above = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
   // The candidates a rect can name, topmost first.
-  const pool = elements => {
+  const pool = (elements, rect) => {
     if (elements.length < 2) return elements;
     const sorted = [...elements].sort(above);
     const hits = sorted.filter(hit);
-    return hits.length ? hits : sorted.slice(0, 1);
+    if (!hits.length) return sorted.slice(0, 1);
+    const nested = hits.every((a, i) => hits.every((b, j) => j <= i || a.contains(b) || b.contains(a)));
+    if (nested || performance.now() >= until) return hits;
+    const drawn = document.elementsFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
+    const depth = element => {
+      const at = drawn.indexOf(element);
+      return at < 0 ? drawn.length : at;
+    };
+    return hits.sort((a, b) => depth(a) - depth(b));
   };
   const ID = Symbol.for("threejsc.rect-id"), MORE = Symbol.for("threejsc.rect-more-ids");
   const idOf = (element, n = 0) => {
@@ -266,7 +277,7 @@
       return;
     }
     byBox.set(key, all);
-    const top = pool(all);
+    const top = pool(all, rect);
     let named = top[0], n = 0;
     if (shared.get(key) > 1) {
       const k = seen.get(key) ?? 0;
