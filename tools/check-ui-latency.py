@@ -15,8 +15,10 @@ for row in rows:
         valid.append(i + 1 - seq)
 assert len(valid) >= 1200, len(valid)
 if '--first' in sys.argv:
-    assert int(shown['seq']) > 0, ('first HUD frame has no state', shown['index'])
-    assert valid[0] <= 5, ('first frame delay', valid[0])
+    first_index, first_seq = int(shown['index']), int(shown['seq'])
+    assert 0 < first_seq <= first_index + 1, ('first HUD frame has invalid sequence', first_index, first_seq)
+    first_delay = first_index + 1 - first_seq
+    assert first_delay <= 5, ('first frame delay', first_delay)
 median = statistics.median(valid[:1200])
 assert median <= 5, ('median delay', median)
 print(f'first HUD delay {valid[0]} frames; p50 {median} frames over 1200 frames')
