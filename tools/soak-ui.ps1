@@ -11,9 +11,12 @@ $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $Out | Out-Null
 $steps = if ($ResizeEvery -gt 0) {
     $sizes = '"width":1920,"height":1080', '"width":1280,"height":720'
-    @("{`"type`":`"wait`",`"frames`":$([int](15 * $Hz))}") + (0..([int]($Seconds / $ResizeEvery) - 1) | ForEach-Object {
-        "{`"type`":`"resize`",$($sizes[$_ % 2])},{`"type`":`"wait`",`"frames`":$([int]($ResizeEvery * $Hz))}"
-    })
+    "{`"type`":`"wait`",`"frames`":$([int](15 * $Hz))}"
+    for ($elapsed = 0; $elapsed -lt $Seconds; $elapsed += $ResizeEvery) {
+        $wait = [math]::Min($ResizeEvery, $Seconds - $elapsed)
+        $size = [int][math]::Floor($elapsed / $ResizeEvery) % 2
+        "{`"type`":`"resize`",$($sizes[$size])},{`"type`":`"wait`",`"frames`":$([int]($wait * $Hz))}"
+    }
 } else {
     "{`"type`":`"wait`",`"frames`":$([int](($Seconds + 15) * $Hz))}"
 }
