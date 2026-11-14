@@ -200,8 +200,11 @@ mod tests {
 
     /// `Ui` and ui-host without the pipe, D3D and Servo: the real `Rings`, `Pointers` and
     /// `Placer`, given ui-host's messages and the game's input as `Ui::update` and `Ui::pointer`
-    /// give them. `Page` holds each point as ui-host gives it to Servo.
+    /// give them. `Page` holds each point as ui-host gives it to Servo. While no UI runs, the game's
+    /// input goes as the host's `hud_takes` sends it.
     struct Host {
+        /// Whether a UI runs.
+        running: bool,
         rings: Rings<()>,
         pointers: Pointers,
         /// The size ui-host lays the page out at.
@@ -216,6 +219,7 @@ mod tests {
         /// A page laid out at `size` with `rects`, its first frame on screen.
         fn new(size: Size, rects: Vec<Rect>) -> Self {
             let mut host = Host {
+                running: true,
                 rings: Rings::default(),
                 pointers: Pointers::default(),
                 servo: size,
@@ -228,6 +232,23 @@ mod tests {
             host.reply(size, Some(rects));
             host.publish();
             host
+        }
+        /// The host before its first UI starts.
+        fn without_ui() -> Self {
+            let mut host = Host::new(OLD, Vec::new());
+            host.stop();
+            host
+        }
+        /// The game replaced the GPU device, so the host drops its UI and starts another on the
+        /// new device.
+        fn stop(&mut self) {
+            self.running = false;
+        }
+        /// A UI starts with a page laid out at `size` with `rects`, its first frame on screen.
+        fn start(&mut self, size: Size, rects: Vec<Rect>) {
+            let out = std::mem::take(&mut self.out);
+            *self = Host::new(size, rects);
+            self.out = out;
         }
         fn view(&self) -> View {
             self.rings.view()
@@ -274,6 +295,10 @@ mod tests {
             self.send(at(action, x));
         }
         fn send(&mut self, pointer: Pointer) {
+            if !self.running {
+                self.out.push(Game(pointer));
+                return;
+            }
             let shown = self.view().shown;
             match self.pointers.pointer(shown, pointer) {
                 Route::Game => self.out.push(Game(pointer)),
@@ -473,6 +498,61 @@ mod tests {
                 Game(at(1, 1160.0)),
                 Game(at(2, 1160.0))
             ]
+        );
+    }
+
+    #[test]
+    fn the_rest_of_a_page_press_reaches_neither_side_across_a_ui_restart() {
+        // The game's requestDevice() replaces the device mid-press, and the host starts a new UI.
+        let mut host = Host::new(OLD, right_button(1280));
+        host.pointer(1, 1160.0);
+        host.stop();
+        host.pointer(0, 1170.0);
+        host.start(OLD, right_button(1280));
+        host.pointer(0, 1160.0);
+        host.pointer(2, 1160.0);
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Page(at(1, 1160.0)),
+                Page(at(1, 1160.0)),
+                Page(at(2, 1160.0))
+            ],
+            "the game gets no part of the press, and the next click goes to the page"
+        );
+    }
+
+    #[test]
+    fn a_game_press_held_across_the_first_ui_start_stays_with_the_game() {
+        // A chord: its first down reaches the game before any UI runs, and a second button goes
+        // down over a HUD button once the UI shows it.
+        let mut host = Host::without_ui();
+        host.pointer(1, 1160.0);
+        host.start(OLD, right_button(1280));
+        let right = Pointer {
+            button: 2,
+            ..at(1, 1160.0)
+        };
+        host.send(right);
+        host.pointer(2, 1160.0);
+        let up = Pointer {
+            button: 2,
+            ..at(2, 1160.0)
+        };
+        host.send(up);
+        host.click(1160.0);
+        assert_eq!(
+            host.take(),
+            [
+                Game(at(1, 1160.0)),
+                Game(right),
+                Game(at(2, 1160.0)),
+                Game(up),
+                Page(at(1, 1160.0)),
+                Page(at(2, 1160.0))
+            ],
+            "the press ends at its last button up, and the next click goes to the page"
         );
     }
 
