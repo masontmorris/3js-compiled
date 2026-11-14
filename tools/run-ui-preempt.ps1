@@ -10,11 +10,15 @@ $hostProcess = Start-Process -FilePath $HostExe -PassThru -NoNewWindow -Argument
     -RedirectStandardOutput (Join-Path $Out 'host-console.log') -RedirectStandardError (Join-Path $Out 'host-stderr.log')
 $null = $hostProcess.Handle
 $preempt = Start-Process python -ArgumentList 'tools/ui-repro/preempt.py', $hostProcess.Id -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Out 'preempt.log')
+$null = $preempt.Handle
 $hostProcess.WaitForExit()
 $code = $hostProcess.ExitCode
-$preempt.WaitForExit(10000) | Out-Null
+$preemptOk = $preempt.WaitForExit(10000) -and $preempt.ExitCode -eq 0
 Move-Item -Force frames.csv, host.log $Out
 if (Test-Path ui-host.log) { Move-Item -Force ui-host.log $Out }
 Get-ChildItem tools/ui-repro/out -Filter *.png | Move-Item -Force -Destination $Out
 Write-Output "host exit $code; $(Get-Content (Join-Path $Out 'preempt.log'))"
 python tools/check-ui-resize-captures.py $Out
+$check = $LASTEXITCODE
+if (-not $preemptOk) { Write-Output 'preempt.py failed or did not finish, so ui-host may not have been preempted'; exit 1 }
+exit $check
