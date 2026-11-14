@@ -31,6 +31,8 @@ pub(crate) enum Route {
     Page(At),
     /// To neither side: the rest of a press whose ui-host has stopped.
     Neither,
+    /// To the game, after the page hears that the pointer left it.
+    Leave,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,6 +69,8 @@ pub(crate) struct Pointers {
     /// The rects the page listed last.
     last: Vec<Rect>,
     press: Option<Press>,
+    /// Whether the page has the pointer: input outside a game press went to the page last.
+    on_page: bool,
 }
 
 impl Pointers {
@@ -101,6 +105,8 @@ impl Pointers {
     /// Where `pointer` goes: during a press, where the press's down went; otherwise to the
     /// page when it lands on a rect of the frame on screen. Page input is placed on the rect it
     /// was made over, or, during a press and over no rect, beside the rect the down was over.
+    /// The first game input after page input is `Route::Leave`, so the page hears that the
+    /// pointer left it, as in a browser where the HUD lies over the game's canvas.
     pub fn pointer(&mut self, shown: Option<Size>, pointer: Pointer) -> Route {
         let hit = self.hit(shown, pointer);
         let offset =
@@ -136,10 +142,14 @@ impl Pointers {
             owner
         };
         match owner {
-            Owner::Page { ids, corner } => Route::Page(on.unwrap_or(At::Beside {
-                ids,
-                offset: offset(corner),
-            })),
+            Owner::Page { ids, corner } => {
+                self.on_page = true;
+                Route::Page(on.unwrap_or(At::Beside {
+                    ids,
+                    offset: offset(corner),
+                }))
+            }
+            Owner::Game if std::mem::take(&mut self.on_page) => Route::Leave,
             Owner::Game => Route::Game,
             Owner::Neither => Route::Neither,
         }
@@ -163,6 +173,7 @@ impl Pointers {
     pub fn clear(&mut self) {
         self.layouts.clear();
         self.last.clear();
+        self.on_page = false;
         if let Some(press) = &mut self.press
             && let Owner::Page { .. } = press.owner
         {
@@ -335,6 +346,13 @@ mod tests {
                     self.page(placed);
                 }
                 Route::Neither => {}
+                Route::Leave => {
+                    let size = shown.unwrap_or_default();
+                    let left = place::Pointer::left(pointer.x as f32, pointer.y as f32, size);
+                    let placed = self.placer.pointer(left);
+                    self.page(placed);
+                    self.out.push(Game(pointer));
+                }
             }
         }
         fn click(&mut self, x: f64) {
@@ -379,6 +397,7 @@ mod tests {
             [
                 Page(at(1, 1560.0)),
                 Page(at(2, 1560.0)),
+                Page(left(1160.0)),
                 Game(at(1, 1160.0)),
                 Game(at(2, 1160.0)),
             ]
@@ -496,6 +515,7 @@ mod tests {
                 Page(at(2, 100.0)),
                 Page(at(0, 100.0)),
                 Page(up),
+                Page(left(100.0)),
                 Game(at(0, 100.0)),
             ],
             "the press ends at its last button up"
@@ -524,7 +544,7 @@ mod tests {
     /// The page's notice that the pointer left it for the game, at the window point where it did.
     fn left(x: f64) -> Pointer {
         Pointer {
-            action: 3,
+            action: place::LEFT,
             ..at(0, x)
         }
     }

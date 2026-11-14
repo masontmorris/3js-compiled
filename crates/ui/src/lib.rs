@@ -571,7 +571,7 @@ impl Presses {
             y,
             button,
         };
-        self.0.pointer(None, pointer) != pointers::Route::Game
+        self.0.pointer(None, pointer) == pointers::Route::Neither
     }
 }
 
@@ -930,7 +930,8 @@ impl Ui {
     /// Whether the pointer input belongs to the page: it lands on one of the page's rects in
     /// the HUD frame on screen or, from a button down to the last button up, the down did. The
     /// game receives the input this returns false for. Page input goes to ui-host with the rect
-    /// it was made over, and ui-host places it there in the page's current layout.
+    /// it was made over, and ui-host places it there in the page's current layout. When game
+    /// input follows page input, ui-host first tells the page that the pointer left it.
     pub fn pointer(&mut self, action: u8, x: f64, y: f64, button: i16) -> bool {
         let pointer = pointers::Pointer {
             action,
@@ -943,30 +944,35 @@ impl Ui {
             _ => None,
         };
         let shown = link.and_then(|link| link.rings.view().shown);
-        match self.pointers.pointer(shown, pointer) {
-            pointers::Route::Game => false,
+        let size = shown.unwrap_or_default();
+        let (sent, taken) = match self.pointers.pointer(shown, pointer) {
+            pointers::Route::Game => return false,
+            pointers::Route::Neither => return true,
             pointers::Route::Page(at) => {
-                if let Some(link) = link {
-                    let (w, h) = shown.unwrap_or_default();
-                    self.notes.push(format!(
-                        "page pointer {action} at ({x}, {y}): publication {} on screen at \
-                         {w}x{h}, hit-tested on the rects of reply {}",
-                        link.shown_pub,
-                        self.pointers.reply_at(shown).unwrap_or(0)
-                    ));
-                    let _ = link.tx.send(Msg::Pointer(place::Pointer {
-                        action,
-                        x: x as f32,
-                        y: y as f32,
-                        button,
-                        size: shown.unwrap_or_default(),
-                        at,
-                    }));
-                }
-                true
+                let sent = place::Pointer {
+                    action,
+                    x: x as f32,
+                    y: y as f32,
+                    button,
+                    size,
+                    at,
+                };
+                (sent, true)
             }
-            pointers::Route::Neither => true,
+            pointers::Route::Leave => (place::Pointer::left(x as f32, y as f32, size), false),
+        };
+        if let Some(link) = link {
+            let (w, h) = size;
+            self.notes.push(format!(
+                "page pointer {} at ({x}, {y}): publication {} on screen at {w}x{h}, \
+                 hit-tested on the rects of reply {}",
+                sent.action,
+                link.shown_pub,
+                self.pointers.reply_at(shown).unwrap_or(0)
+            ));
+            let _ = link.tx.send(Msg::Pointer(sent));
         }
+        taken
     }
     /// The HUD for the frame of the last `update`, which the render thread draws: the frame
     /// shown then, or nothing while no frame is shown.

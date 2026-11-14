@@ -6,7 +6,7 @@ use threejsc_ipc as proto;
 
 use std::{
     cell::{Cell, RefCell},
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     fs::File,
     io::BufReader,
     os::windows::io::{FromRawHandle, OwnedHandle},
@@ -22,8 +22,8 @@ use proto::Msg;
 use servo::profile_traits::mem::MemoryReportResult;
 use servo::{
     DevicePoint, EventLoopWaker, InputEvent, InputEventId, InputEventResult, JSValue, LoadStatus,
-    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Preferences, ServoBuilder,
-    WebView, WebViewBuilder, WebViewDelegate,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent,
+    Preferences, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
 };
 use servo_base::generic_channel::GenericCallback;
 use servo_wgpu_interop_adapter::ServoWgpuRenderingContext;
@@ -73,7 +73,7 @@ struct Delegate {
     new_frame: Rc<Cell<bool>>,
     input_handled: Rc<Cell<bool>>,
     /// Pointer events given to Servo and not yet reported handled.
-    unhandled: Rc<Cell<u32>>,
+    unhandled: Rc<RefCell<HashSet<InputEventId>>>,
     tick_script: Rc<RefCell<TickScript>>,
 }
 
@@ -88,11 +88,11 @@ impl WebViewDelegate for Delegate {
     fn notify_input_event_handled(
         &self,
         _webview: WebView,
-        _event_id: InputEventId,
+        event_id: InputEventId,
         _result: InputEventResult,
     ) {
         self.input_handled.set(true);
-        self.unhandled.set(self.unhandled.get().saturating_sub(1));
+        self.unhandled.borrow_mut().remove(&event_id);
     }
     fn notify_crashed(&self, _webview: WebView, reason: String, _backtrace: Option<String>) {
         eprintln!("[ui-host] servo crash: {reason}");
@@ -100,27 +100,39 @@ impl WebViewDelegate for Delegate {
 }
 
 /// Gives Servo a placed pointer event, after the page's reply number `reply`.
-fn give(webview: &WebView, unhandled: &Cell<u32>, pointer: proto::place::Placed, reply: u64) {
+fn give(
+    webview: &WebView,
+    unhandled: &RefCell<HashSet<InputEventId>>,
+    pointer: proto::place::Placed,
+    reply: u64,
+) {
     eprintln!(
         "[ui-host] pointer {} given to Servo at ({}, {}) after reply {reply}",
         pointer.action, pointer.x, pointer.y
     );
     let point = DevicePoint::new(pointer.x, pointer.y).into();
-    let input = if pointer.action == 0 {
-        InputEvent::MouseMove(MouseMoveEvent::new(point))
-    } else {
-        InputEvent::MouseButton(MouseButtonEvent::new(
-            if pointer.action == 1 {
+    let input = match pointer.action {
+        0 => InputEvent::MouseMove(MouseMoveEvent::new(point)),
+        proto::place::LEFT => {
+            // Servo reports this handled only when the page has the pointer, so no resize may
+            // wait for it.
+            let left = MouseLeftViewportEvent::default();
+            webview.notify_input_event(InputEvent::MouseLeftViewport(left));
+            return;
+        }
+        action => InputEvent::MouseButton(MouseButtonEvent::new(
+            if action == 1 {
                 MouseButtonAction::Down
             } else {
                 MouseButtonAction::Up
             },
             MouseButton::from(pointer.button),
             point,
-        ))
+        )),
     };
-    webview.notify_input_event(input);
-    unhandled.set(unhandled.get() + 1);
+    unhandled
+        .borrow_mut()
+        .insert(webview.notify_input_event(input));
 }
 
 /// One ring entry. `pub_id == 0` means never published.
@@ -582,7 +594,7 @@ fn main() {
     servo.setup_logging();
     let new_frame = Rc::new(Cell::new(false));
     let input_handled = Rc::new(Cell::new(false));
-    let unhandled = Rc::new(Cell::new(0));
+    let unhandled = Rc::new(RefCell::new(HashSet::new()));
     // The replies sent so far, numbered as the host numbers them, and the number sent before each
     // of the latest publications.
     let replies = Rc::new(Cell::new(0u64));
@@ -685,8 +697,9 @@ fn main() {
         if shutting_down {
             break;
         }
-        let blocked =
-            relayout.borrow().is_some() || unhandled.get() > 0 || unshown.holds(Instant::now());
+        let blocked = relayout.borrow().is_some()
+            || !unhandled.borrow().is_empty()
+            || unshown.holds(Instant::now());
         if let Some((width, height)) = next_resize((size.width, size.height), &mut resizes, blocked)
         {
             size = PhysicalSize::new(width, height);

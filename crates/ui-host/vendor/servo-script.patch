@@ -20,7 +20,38 @@
              mouse_button_state: Cell::new(MouseButtons::empty()),
              current_hover_target: Default::default(),
              current_active_element: Default::default(),
-@@ -973,9 +973,9 @@
+@@ -540,18 +540,24 @@
+             FireMouseEventType::Enter | FireMouseEventType::Leave
+         ));
+ 
+-        let common_ancestor = match related_target.as_ref() {
+-            Some(related_target) => event_target
++        // threejsc: with no related target, as when the pointer enters or leaves the
++        // viewport, the chain runs to the root. Using the target as the common ancestor left it
++        // empty, so no enter or leave event fired.
++        let common_ancestor = related_target.as_ref().map(|related_target| {
++            event_target
+                 .common_ancestor_in_flat_tree(cx.no_gc(), related_target)
+-                .unwrap_or_else(|| DomRoot::from_ref(event_target)),
+-            None => DomRoot::from_ref(event_target),
+-        };
++                .unwrap_or_else(|| DomRoot::from_ref(event_target))
++        });
+ 
+         // We need to create a target chain in case the event target shares
+         // its boundaries with its ancestors.
+         let mut targets: Vec<_> = event_target
+             .inclusive_ancestors_in_flat_tree_unrooted(cx.no_gc())
+-            .take_while(|node| *node != *common_ancestor)
++            .take_while(|node| {
++                common_ancestor
++                    .as_ref()
++                    .is_none_or(|ancestor| *node != **ancestor)
++            })
+             .map(|node| node.as_rooted())
+             .collect();
+ 
+@@ -973,9 +979,9 @@
          // https://w3c.github.io/uievents/#hit-test
          // Prevent mouse event if element is disabled.
          // TODO: also inert.
@@ -33,7 +64,7 @@
  
          let mouse_event_type = match mouse_button_event.action {
              embedder_traits::MouseButtonAction::Up => atom!("mouseup"),
-@@ -1010,8 +1010,7 @@
+@@ -1010,8 +1016,7 @@
  
          match mouse_button_event.action {
              MouseButtonAction::Down => {
@@ -43,7 +74,7 @@
  
                  // Step 6. Dispatch pointerdown event.
                  let pointer_event_name = if self.mouse_button_state.get().is_empty() {
-@@ -1057,6 +1056,10 @@
+@@ -1057,6 +1062,10 @@
                      self.process_pending_pointer_capture(cx, pointer_id, "mouse", true);
                  }
  
@@ -54,7 +85,7 @@
                  // Step 7. Let result = dispatch event at target
                  let result = mouse_event
                      .upcast::<Event>()
-@@ -1084,12 +1087,6 @@
+@@ -1084,12 +1093,6 @@
                      document
                          .focus_handler()
                          .focus(cx, &node.find_click_focusable_area(cx));
@@ -67,7 +98,7 @@
                  }
              },
              // https://w3c.github.io/pointerevents/#dfn-handle-native-mouse-up
-@@ -1146,9 +1143,11 @@
+@@ -1146,9 +1149,11 @@
                  }
  
                  // Step 7. dispatch event at target.
@@ -82,7 +113,7 @@
  
                  // Click counts should still work for other buttons even though they
                  // do not trigger "click" and "dblclick" events, so we increment
-@@ -1167,12 +1166,20 @@
+@@ -1167,12 +1172,20 @@
                      &hit_test_result,
                      &element,
                  );
@@ -103,7 +134,7 @@
      fn maybe_trigger_click_for_mouse_button_down_event(
          &self,
          cx: &mut JSContext,
-@@ -1181,24 +1188,46 @@
+@@ -1181,24 +1194,46 @@
          hit_test_result: &HitTestResult,
          element: &Element,
      ) {

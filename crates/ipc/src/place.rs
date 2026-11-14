@@ -29,6 +29,11 @@ pub enum At {
     Beside { ids: Ids, offset: (f32, f32) },
 }
 
+/// The `action` of a notice that the pointer left the page for the game, which ui-host gives
+/// Servo as the pointer leaving its viewport. The other actions are 0 for a move, 1 for a button
+/// down and 2 for a button up.
+pub const LEFT: u8 = 3;
+
 /// A pointer event the host sends to the page, at its window point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pointer {
@@ -39,6 +44,24 @@ pub struct Pointer {
     /// The size of the frame on screen the host hit-tested the event in.
     pub size: (u32, u32),
     pub at: At,
+}
+
+impl Pointer {
+    /// The notice that the pointer left the page at window point (`x`, `y`) of the frame on
+    /// screen, of `size`. It names no rect, so it keeps its window point.
+    pub fn left(x: f32, y: f32, size: (u32, u32)) -> Self {
+        Pointer {
+            action: LEFT,
+            x,
+            y,
+            button: 0,
+            size,
+            at: At::Rect {
+                ids: [0; 4],
+                offset: (0.0, 0.0),
+            },
+        }
+    }
 }
 
 /// A pointer event at the point ui-host gives Servo.
