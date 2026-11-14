@@ -17,8 +17,9 @@
 // `pointer-events` is not `none`, or the topmost candidate when none is hit-testable. The topmost
 // is the last in document order, except that hit-testable candidates neither of which contains the
 // other, such as siblings, go in the order the hit test at the rect's centre draws them, so
-// `z-index` counts; candidates it does not reach follow in document order. When the bound below
-// stops the hit test, they keep the order the rect's box last had. Its more ids are of the
+// `z-index` counts; candidates it does not reach follow in document order. Rects that share one box
+// take the order of one hit test, and when the bound below stops the hit test before the box has
+// one, they keep the order the box last had. Its more ids are of the
 // other hit-testable candidates, topmost first, so a rect whose named element the page rebuilds
 // every tick, such as a label, still shares an id with the rect it was. Rects that share one box
 // name its candidates from the bottom up, and a box with fewer candidates than rects gives the
@@ -234,6 +235,9 @@
     return hittable.get(element);
   };
   const above = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
+  // The order each box's candidates are drawn in, taken once per evaluation so that rects sharing
+  // a box rank its candidates alike.
+  const drawnBy = new Map();
   // The candidates a rect can name, topmost first.
   const pool = (elements, rect, key) => {
     if (elements.length < 2) return elements;
@@ -242,8 +246,11 @@
     if (!hits.length) return sorted.slice(0, 1);
     const nested = hits.every((a, i) => hits.every((b, j) => j <= i || a.contains(b) || b.contains(a)));
     if (nested) return hits;
-    const drawn = performance.now() < until ?
-      document.elementsFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2) : S.orders.get(key) ?? [];
+    if (!drawnBy.has(key)) {
+      drawnBy.set(key, performance.now() < until ?
+        document.elementsFromPoint(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2) : S.orders.get(key) ?? []);
+    }
+    const drawn = drawnBy.get(key);
     const depth = element => {
       const at = drawn.indexOf(element);
       return at < 0 ? drawn.length : at;
