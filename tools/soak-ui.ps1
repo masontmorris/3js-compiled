@@ -28,6 +28,8 @@ $started = Get-Date
 $p = Start-Process -FilePath $HostExe -PassThru -WindowStyle Hidden -ArgumentList (@('--entry', "`"$Entry`"", '--script', "`"$script`"") + $HostArgs) `
     -RedirectStandardOutput (Join-Path $Out 'host-stdout.log') -RedirectStandardError (Join-Path $Out 'host-stderr.log')
 $null = $p.Handle
+$hostStartElapsed = ($p.StartTime - $started).TotalSeconds
+@{ host_start_elapsed_s = $hostStartElapsed } | ConvertTo-Json | Set-Content -Encoding ascii (Join-Path $Out 'sampler-clock.json')
 Add-Type -Namespace Soak -Name Win -MemberDefinition '[DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr window, int[] rect);'
 function Get-WindowSize($process) {
     $rect = [int[]]::new(4)

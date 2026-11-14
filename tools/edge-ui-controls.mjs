@@ -19,7 +19,10 @@ const port = 9349;
 const proc = spawn(edge, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--window-size=1280,720', page.href], { stdio: 'ignore' });
 let step = 'starting Edge';
+let stopping = false;
 const stop = (code, why) => {
+  if (stopping) return;
+  stopping = true;
   proc.kill();
   try {
     execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ` +
@@ -31,6 +34,8 @@ const stop = (code, why) => {
     process.exit(code);
   }, 2000);
 };
+process.on('uncaughtException', error => stop(1, `session failed at ${step}: ${error.stack}`));
+process.on('unhandledRejection', error => stop(1, `session failed at ${step}: ${error}`));
 setTimeout(() => stop(1, `run over 5 minutes at: ${step}`), 5 * 60 * 1000).unref();
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -39,7 +44,7 @@ for (let i = 0; i < 100 && !target; i++) {
   await sleep(100);
   try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page'); } catch {}
 }
-if (!target) stop(1, 'Edge showed no page in 10 s');
+if (!target) throw new Error('Edge showed no page in 10 s');
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise(r => ws.addEventListener('open', r));
 let id = 0;

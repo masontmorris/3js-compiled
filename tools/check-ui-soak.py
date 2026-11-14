@@ -8,6 +8,12 @@ run = Path(sys.argv[1])
 hz = float(sys.argv[2]) if len(sys.argv) > 2 else 169.0
 limit = 5.0
 rows = list(csv.DictReader((run / 'samples.csv').open()))
+clock = run / 'sampler-clock.json'
+if clock.exists():
+    offset = json.loads(clock.read_text())['host_start_elapsed_s']
+else:
+    offset = 0.0
+    print('note: sampler clock offset unavailable; using legacy timing')
 log = (run / 'host.log').read_text()
 shown = int(re.search(r'ui-host first frame shown at game frame (\d+)', log).group(1))
 frames = list(csv.DictReader((run / 'frames.csv').open()))
@@ -46,7 +52,7 @@ unjudged = False
 quartiles = lambda values: (values[len(values) // 4], values[(3 * len(values)) // 4])
 for proc in ('host', 'ui-host'):
     for key, ruled in (('private_mb', True), ('handles', True), ('gpu_dedicated_mb', True), ('working_set_mb', False)):
-        process_rows = [r for r in rows if r['proc'] == proc and float(r['elapsed_s']) > start]
+        process_rows = [r for r in rows if r['proc'] == proc and float(r['elapsed_s']) - offset > start]
         windows = sorted({r.get('window') or 'any size' for r in process_rows})
         series = [r for r in process_rows if r.get(key)]
         judged = 0

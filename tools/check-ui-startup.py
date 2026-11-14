@@ -1,4 +1,5 @@
 import csv
+import math
 import re
 import sys
 from pathlib import Path
@@ -10,10 +11,11 @@ rows = list(csv.DictReader((run / 'frames.csv').open()))
 assert len(rows) >= 2
 limit = 2000 / hz
 intervals = [float(row['interval_ms']) for row in rows]
+assert all(math.isfinite(interval) for interval in intervals), 'non-finite interval'
 elapsed = 0.0
 over = []
 for frame, interval in enumerate(intervals[1:], start=1):
-    if elapsed > 1000:
+    if elapsed >= 1000:
         break
     elapsed += interval
     if interval > limit:
