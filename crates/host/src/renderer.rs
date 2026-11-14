@@ -15,6 +15,8 @@ pub struct Frame {
     /// The streams the page submitted for this frame, in order.
     pub commands: Vec<Vec<u8>>,
     pub captures: Vec<PathBuf>,
+    /// The HUD to draw over the frame, after the canvas and before any capture.
+    pub ui: Option<threejsc_ui::Composite>,
 }
 pub struct Rendered {
     pub index: u64,
@@ -28,6 +30,16 @@ pub struct Rendered {
     pub refresh: Option<Instant>,
     /// When acquiring the surface texture began and ended.
     pub acquire: (Instant, Instant),
+    /// The device the window draws with from now on, when the frame's `requestDevice()` replaced it.
+    pub device: Option<Gpu>,
+}
+/// The device the window draws with, its queue and the window's texture format, which the UI
+/// composites with.
+#[derive(Clone)]
+pub struct Gpu {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub format: wgpu::TextureFormat,
 }
 
 /// The window's raw handles, from which the render thread makes a surface for a new device.
@@ -202,6 +214,15 @@ impl Target {
     }
 }
 impl Target {
+    /// The device the window draws with until the game replaces it.
+    pub fn gpu(&self) -> Gpu {
+        Gpu {
+            device: self.device.clone(),
+            queue: self.queue.clone(),
+            format: self.config.format,
+        }
+    }
+
     /// The limits a device requested from this adapter can have.
     pub fn adapter_limits(&self) -> wgpu::Limits {
         self.adapter.limits()
@@ -245,22 +266,29 @@ impl Renderer {
         self.window.resize(frame.size);
         let capture = !frame.captures.is_empty();
         let mut acquired = None;
+        let ui = frame.ui.as_ref();
         let replay = (!frame.commands.is_empty()).then(|| {
             let streams: Vec<&[u8]> = frame.commands.iter().map(Vec::as_slice).collect();
             let (window, drawn) = (&mut self.window, self.drawn);
             let mut trailer = |canvas: &wgpu::Texture, used: bool| {
                 let shown = acquired.insert(window.acquire()).as_mut().ok()?;
                 let (commands, buffer) =
-                    window.encode(shown, canvas, drawn || used, frame.clear, capture);
+                    window.encode(shown, canvas, drawn || used, frame.clear, capture, ui);
                 shown.capture = buffer;
                 Some(commands)
             };
             self.executor
                 .replay_then(&streams, Some(&mut self.game), Some(&mut trailer))
         });
-        if self.executor.took_device() {
-            self.window.adopt(self.executor.device())?;
-            self.queue = self.executor.queue().clone();
+        // took_device() keeps the last replay's flag, so only a frame that replayed reports it.
+        let device = (replay.is_some() && self.executor.took_device()).then(|| Gpu {
+            device: self.executor.device().clone(),
+            queue: self.executor.queue().clone(),
+            format: self.window.config.format,
+        });
+        if let Some(gpu) = &device {
+            self.window.adopt(&gpu.device)?;
+            self.queue = gpu.queue.clone();
         }
         self.drawn |= matches!(replay, Some(Ok(_))) && self.executor.surface_used();
         let acquired_in_replay = acquired.is_some();
@@ -275,12 +303,15 @@ impl Renderer {
                 .push_error_scope(wgpu::ErrorFilter::Validation);
             let (commands, buffer) =
                 self.window
-                    .encode(&shown, &self.game, self.drawn, frame.clear, capture);
+                    .encode(&shown, &self.game, self.drawn, frame.clear, capture, ui);
             shown.capture = buffer;
             self.queue.submit([commands]);
             if let Some(error) = pollster::block_on(scope.pop()) {
                 bail!("host frame rendering failed: {error}");
             }
+        }
+        if let Some(ui) = ui {
+            ui.signal()?;
         }
         if let Some(buffer) = &shown.capture {
             let captures: Vec<_> = frame.captures.iter().map(PathBuf::as_path).collect();
@@ -294,6 +325,7 @@ impl Renderer {
             latency: frame.started.elapsed(),
             refresh: (shown.acquire_wait >= Duration::from_micros(250)).then_some(shown.acquired),
             acquire: (shown.acquired - shown.acquire_wait, shown.acquired),
+            device,
         })
     }
 }
@@ -337,7 +369,8 @@ impl Presenter {
         }
     }
     /// Encodes showing `canvas` in the frame's surface texture, or the clear color while the game
-    /// has not drawn, and a copy of the result into a new buffer when `capture` is set.
+    /// has not drawn, then `ui` over it, and a copy of the result into a new buffer when `capture`
+    /// is set.
     fn encode(
         &mut self,
         shown: &Shown,
@@ -345,6 +378,7 @@ impl Presenter {
         drawn: bool,
         clear: [f64; 4],
         capture: bool,
+        ui: Option<&threejsc_ui::Composite>,
     ) -> (wgpu::CommandBuffer, Option<wgpu::Buffer>) {
         let frame = &shown.surface;
         let mut encoder = self
@@ -387,8 +421,10 @@ impl Presenter {
             pass.set_bind_group(0, group, &[]);
             pass.draw(0..3, 0..1);
         }
-        // Overlays that composite over the game frame, such as E2's UI, draw here so captures
-        // include them.
+        if let Some(ui) = ui {
+            let view = frame.texture.create_view(&Default::default());
+            ui.draw(&self.device, &mut encoder, &view);
+        }
         let capture = capture.then(|| {
             let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("capture"),

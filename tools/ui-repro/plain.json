@@ -1,0 +1,9 @@
+[
+  {"type":"wait","frames":280},
+  {"type":"capture","path":"tools/ui-repro/out/plain-280.png"},
+  {"type":"wait","frames":40},
+  {"type":"capture","path":"tools/ui-repro/out/plain-320.png"},
+  {"type":"wait","frames":400},
+  {"type":"capture","path":"tools/ui-repro/out/plain-720.png"},
+  {"type":"close"}
+]

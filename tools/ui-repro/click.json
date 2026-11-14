@@ -1,0 +1,10 @@
+[
+  {"type":"wait","frames":300},
+  {"type":"capture","path":"tools/ui-repro/out/click-before.png"},
+  {"type":"pointer","action":"move","x":80,"y":192},
+  {"type":"pointer","action":"down","x":80,"y":192,"button":0},
+  {"type":"pointer","action":"up","x":80,"y":192,"button":0},
+  {"type":"wait","frames":300},
+  {"type":"capture","path":"tools/ui-repro/out/click-after.png"},
+  {"type":"close"}
+]

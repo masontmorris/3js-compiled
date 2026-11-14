@@ -1,0 +1,9 @@
+[
+  {"type":"wait","frames":2000},
+  {"type":"capture","path":"hud-2000.png"},
+  {"type":"wait","frames":3998},
+  {"type":"capture","path":"hud-5999.png"},
+  {"type":"wait","frames":3000},
+  {"type":"capture","path":"hud-9000.png"},
+  {"type":"close"}
+]

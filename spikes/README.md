@@ -15,3 +15,5 @@ All spikes ran on Windows 11 with an NVIDIA RTX 3060, three.js 0.187.0, and wgpu
 `folio-2025-assessment.md` lists the work needed to port folio-2025. `env.ps1` loads the MSVC build environment that the Servo builds need.
 
 The Servo spikes used wgpu-graft at commit `d903cfacf6ee663ddcc31e14539448dae3794c48`, with a `[patch]` entry added to its root `Cargo.toml`.
+
+The `spikes/xproc/ui-host` crate needs `wgpu-graft` cloned into `spikes/wgpu-graft` at commit `d903cfacf6ee663ddcc31e14539448dae3794c48`.

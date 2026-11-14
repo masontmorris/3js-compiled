@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  html, body { margin: 0; background: transparent; }
+  #box { position: absolute; left: 40px; top: 40px; width: 120px; height: 80px; background: rgb(0, 0, 255); }
+</style>
+</head>
+<body>
+<div id="box"></div>
+<script>
+const box = document.getElementById("box");
+window.__bridge = {
+  tick(patch) {
+    if (patch && patch.color) box.style.background = patch.color;
+    return JSON.stringify({ events: [], rects: [] });
+  }
+};
+</script>
+</body>
+</html>

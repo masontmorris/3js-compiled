@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; }
+  #b { position: absolute; right: 20px; top: 20px; width: 200px; height: 80px; background: rgb(0, 200, 0); }
+</style>
+</head>
+<body>
+<div id="b"></div>
+<script>
+const events = [];
+const b = document.getElementById("b");
+b.addEventListener("click", e => { events.push({type: "click", x: e.clientX, w: innerWidth}); });
+window.__bridge = {
+  tick(patch) {
+    const r = b.getBoundingClientRect();
+    return JSON.stringify({ events: events.splice(0), rects: [[r.x, r.y, r.width, r.height]] });
+  }
+};
+</script>
+</body>
+</html>

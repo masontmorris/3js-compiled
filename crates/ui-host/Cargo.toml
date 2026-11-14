@@ -1,0 +1,48 @@
+[package]
+name = "threejsc-ui-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MPL-2.0"
+
+[[bin]]
+name = "ui-host"
+path = "src/main.rs"
+
+[dependencies]
+dpi = "0.1.2"
+euclid = "0.22.11"
+glow = "0.17.0"
+grafting = { version = "0.6.0", default-features = false, features = ["wgpu-30", "surfman"] }
+grafting-servo = { path = "grafting-servo", default-features = false, features = ["wgpu-30", "servo"] }
+rustls = "0.23.37"
+servo = { version = "=0.7.0", features = ["no-wgl"] }
+servo-base = "=0.7.0"
+surfman = "0.14.0"
+url = "2.5.7"
+wio = "0.2"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
+
+threejsc-ipc = { path = "../ipc" }
+
+
+[workspace]
+members = ["grafting-servo"]
+resolver = "3"
+
+[patch.crates-io]
+glslopt = { git = "https://github.com/jamienicol/glslopt-rs", rev = "68019f02a1437d785408ebc8ce7fd20341fffb8a" }
+servo-fonts = { path = "vendor/servo-fonts" }
+servo-layout = { path = "vendor/servo-layout" }
+servo-script = { path = "vendor/servo-script" }

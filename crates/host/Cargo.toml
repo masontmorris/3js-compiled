@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 threejsc-gpu = { path = "../gpu" }
 threejsc-audio = { path = "../audio", features = ["output"] }
+threejsc-ui = { path = "../ui" }
 futures-channel = "0.3"
 futures-util = "0.3"
 anyhow = "1"

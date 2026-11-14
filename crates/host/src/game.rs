@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use deno_core::{JsRuntime, ModuleSpecifier, OpState, RuntimeOptions, extension, op2};
+use deno_error::JsErrorBox;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -28,6 +29,10 @@ struct State {
     start: Instant,
     log: Log,
     render: Option<Arc<RenderProgress>>,
+    page: Option<String>,
+    patch: Option<String>,
+    ui_events: String,
+    ui_dropped: u64,
 }
 
 /// How many frames the game thread has handed to the render thread, and how many it has
@@ -263,6 +268,32 @@ fn op_log(state: &mut OpState, #[string] message: &str) {
     let _ = writeln!(state.log.borrow_mut(), "{message}");
     eprintln!("{message}");
 }
+#[op2(fast)]
+fn op_ui_page(state: &mut OpState, #[string] page: String) {
+    state.borrow_mut::<State>().page = Some(page);
+}
+#[op2(fast)]
+fn op_ui_patch(state: &mut OpState, #[string] patch: String) -> Result<(), JsErrorBox> {
+    if patch.len() > threejsc_ui::MAX_STATE_BYTES {
+        return Err(JsErrorBox::range_error(format!(
+            "UI state is {} bytes of JSON; the limit is {}",
+            patch.len(),
+            threejsc_ui::MAX_STATE_BYTES
+        )));
+    }
+    state.borrow_mut::<State>().patch = Some(patch);
+    Ok(())
+}
+#[op2]
+#[string]
+fn op_ui_events(state: &mut OpState) -> String {
+    std::mem::take(&mut state.borrow_mut::<State>().ui_events)
+}
+#[op2(fast)]
+#[number]
+fn op_ui_dropped(state: &mut OpState) -> u64 {
+    std::mem::take(&mut state.borrow_mut::<State>().ui_dropped)
+}
 extension!(
     host_ext,
     ops = [
@@ -276,7 +307,11 @@ extension!(
         op_host_alive,
         op_gpu_readback,
         op_now,
-        op_log
+        op_log,
+        op_ui_page,
+        op_ui_patch,
+        op_ui_events,
+        op_ui_dropped
     ]
 );
 
@@ -382,6 +417,10 @@ impl<'a> Game<'a> {
             start: Instant::now(),
             log,
             render: None,
+            page: None,
+            patch: None,
+            ui_events: String::new(),
+            ui_dropped: 0,
         });
         js.execute_script("host:bootstrap", include_str!("bootstrap.js"))?;
         let specifier = deno_core::resolve_path(entry, &std::env::current_dir()?)?;
@@ -513,6 +552,35 @@ impl<'a> Game<'a> {
     /// after it takes a frame's commands and before it hands the frame to the render thread.
     pub fn idle(&mut self) -> Result<()> {
         self.js.execute_script("host:idle", "__hostIdle()")?;
+        self.tick()
+    }
+    pub fn page(&mut self) -> Option<String> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .page
+            .take()
+    }
+    pub fn patch(&mut self) -> Option<String> {
+        self.js
+            .op_state()
+            .borrow_mut()
+            .borrow_mut::<State>()
+            .patch
+            .take()
+    }
+    /// Delivers a JSON array of page events and the count of dropped ones in one call.
+    pub fn ui_events(&mut self, events: String, dropped: u64) -> Result<()> {
+        {
+            let op_state = self.js.op_state();
+            let mut op_state = op_state.borrow_mut();
+            let state = op_state.borrow_mut::<State>();
+            state.ui_events = events;
+            state.ui_dropped = dropped;
+        }
+        self.js
+            .execute_script("host:ui-events", "__hostUiEvents()")?;
         self.tick()
     }
     /// The streams the page submitted for this frame, in the order it submitted them.
@@ -1695,6 +1763,28 @@ mod tests {
         assert_eq!(
             result(&log, "jobs-pointer"),
             "pointerdown|pointerdown-job|mousedown|pointerup|pointerup-job|mouseup"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn promise_jobs_run_after_each_page_event() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let _entered = runtime.enter();
+        let log_path =
+            std::env::temp_dir().join(format!("threejsc-jobs-ui-{}.log", std::process::id()));
+        let log = Rc::new(RefCell::new(File::create(&log_path)?));
+        let entry = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/ui-event-jobs.js");
+        let mut game = Game::new(entry, log, &runtime, None, (1280, 720), None)?;
+        game.ui_events(r#"[{"type":"one"},{"type":"two"}]"#.into(), 3)?;
+        game.js
+            .execute_script("host:report", "globalThis.__report()")?;
+        let log = std::fs::read_to_string(log_path)?;
+        assert_eq!(
+            result(&log, "ui-jobs"),
+            "one-A|one-B|one-A-job|two-A|two-B|two-A-job|bridge:dropped-A|bridge:dropped-B|bridge:dropped-A-job"
         );
         Ok(())
     }

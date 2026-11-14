@@ -238,3 +238,27 @@ globalThis.__hostFrame = () => {
   running = null;
   if (!ops.op_gpu_submitted()) globalThis.__gpuFrameEnd?.();
 };
+
+const uiListeners = new Set();
+let uiState = {};
+globalThis.__nativeBridge = {
+  open: path => ops.op_ui_page(path),
+  send: patch => {
+    const next = { ...uiState, ...patch };
+    ops.op_ui_patch(JSON.stringify(next));
+    uiState = next;
+  },
+  onEvent: callback => { uiListeners.add(callback); return () => uiListeners.delete(callback); },
+};
+// Each page event is its own task, as a message event is in Edge, so its promise jobs run before the next event.
+globalThis.__hostUiEvents = () => {
+  const events = JSON.parse(ops.op_ui_events());
+  const dropped = ops.op_ui_dropped();
+  if (dropped > 0) events.push({ type: "bridge:dropped", count: dropped });
+  for (const event of events) {
+    for (const callback of uiListeners) {
+      try { callback(event); } catch (error) { report(error); }
+    }
+    ops.op_run_microtasks();
+  }
+};

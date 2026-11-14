@@ -872,6 +872,8 @@ const TRANSPARENT: [u8; 4] = [0, 0, 0, 0];
 const YELLOW: [u8; 4] = [255, 255, 0, 255];
 const GREEN: [u8; 4] = [0, 255, 0, 255];
 const BLUE: [u8; 4] = [0, 0, 255, 255];
+const MAGENTA: [u8; 4] = [255, 0, 255, 255];
+const RED: [u8; 4] = [255, 0, 0, 255];
 
 #[test]
 #[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
@@ -967,6 +969,135 @@ fn a_renderer_recreated_with_higher_limits_keeps_the_window_presenting() {
             "{mode}"
         );
     }
+}
+
+/// A work directory holding hud-replace.html, a blue box that takes the color of its patch, after
+/// checking that ui-host.exe is beside the host.
+fn hud_workdir(name: &str) -> PathBuf {
+    let host_exe = PathBuf::from(env!("CARGO_BIN_EXE_host"));
+    assert!(
+        host_exe.with_file_name("ui-host.exe").exists(),
+        "build ui-host.exe beside {}",
+        host_exe.display()
+    );
+    let dir = workdir(name);
+    std::fs::copy(
+        Path::new(ROOT).join("crates/host/tests/fixtures/hud-replace.html"),
+        dir.join("hud-replace.html"),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn a_page_opened_after_a_top_level_await_shows_the_hud() {
+    // hud-late-open.js awaits a timer before bridge.open, so the page request arrives after the
+    // frame loop started, and then sends a magenta patch every frame over a red canvas.
+    let dir = hud_workdir("hud-late-open");
+    let capture = dir.join("hud.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 400},
+        {"type": "capture", "path": capture},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-late-open"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    let image = image::open(&capture).unwrap().to_rgba8();
+    assert_eq!(
+        [image.get_pixel(60, 60).0, image.get_pixel(640, 360).0],
+        [MAGENTA, RED],
+        "{log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn a_replaced_device_keeps_the_huds_last_patch_and_appends_to_the_ui_host_log() {
+    // hud-replace.js sends its only HUD patch, magenta, before frame 30 and replaces the device at
+    // frame 600. The UI on the new device must show that patch rather than the page's initial blue,
+    // and the relaunched ui-host must append to ui-host.log, as docs/testing.md says.
+    let dir = hud_workdir("hud-replace");
+    let (before, after) = (dir.join("before.png"), dir.join("after.png"));
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 560},
+        {"type": "capture", "path": before},
+        {"type": "wait", "frames": 360},
+        {"type": "capture", "path": after},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-replace"), &steps, &[]);
+    assert!(status.success(), "host exited with {status}\n{log}");
+    assert!(
+        log.contains("UI restarts on the device the game requested")
+            && log.contains("frame 900: 0 uncaptured errors so far"),
+        "{log}"
+    );
+    let pixels = |path: &Path| {
+        let image = image::open(path).unwrap().to_rgba8();
+        [image.get_pixel(60, 60).0, image.get_pixel(640, 360).0]
+    };
+    assert_eq!(pixels(&before), [MAGENTA, RED], "before the replacement");
+    assert_eq!(pixels(&after), [MAGENTA, GREEN], "after the replacement");
+    // Each ui-host writes its counts when it exits, so both instances' records survive the
+    // relaunch only if every write appends. How many of the patches sent before frame 30 the
+    // first one receives depends on how soon it starts; the second must receive the last one. The
+    // host retires each ui-host without waiting for it to exit, so the records can land after the
+    // host does.
+    let read = || {
+        let ui_log = std::fs::read_to_string(dir.join("ui-host.log")).unwrap();
+        let received: Vec<u32> = ui_log
+            .lines()
+            .filter_map(|line| line.strip_prefix("ui-host patches received "))
+            .map(|rest| rest.split(' ').next().unwrap().parse().unwrap())
+            .collect();
+        (ui_log, received)
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let (mut ui_log, mut received) = read();
+    while received.len() < 2 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+        (ui_log, received) = read();
+    }
+    assert!(
+        ui_log.contains("[host] ui-host launch 2 after: the GPU device was replaced")
+            && received.len() == 2
+            && received.iter().all(|&n| n > 0),
+        "{ui_log}"
+    );
+}
+
+#[test]
+#[ignore = "opens a window on the hardware GPU and starts ui-host.exe; build ui-host.exe into the same target directory and run under the GPU lease"]
+fn frames_without_commands_after_a_replacement_keep_the_new_ui() {
+    // hud-replace-idle.js replaces the device at frame 600, draws one frame on the new one and
+    // then submits nothing. Each later frame has no commands to replay, so none of them may report
+    // the replacement again and start the UI over.
+    let dir = hud_workdir("hud-replace-idle");
+    let after = dir.join("after.png");
+    let steps = serde_json::json!([
+        {"type": "wait", "frames": 920},
+        {"type": "capture", "path": after},
+        {"type": "close"},
+    ]);
+    let (status, log) = host(&dir, &bundle("hud-replace-idle"), &steps, &[]);
+    assert!(
+        status.success(),
+        "host exited with {status}
+{log}"
+    );
+    assert_eq!(
+        log.matches("UI restarts on the device the game requested")
+            .count(),
+        1,
+        "{log}"
+    );
+    let image = image::open(&after).unwrap().to_rgba8();
+    assert_eq!(image.get_pixel(60, 60).0, MAGENTA, "{log}");
 }
 
 #[test]

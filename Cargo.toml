@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/host", "crates/gpu", "crates/audio"]
-exclude = ["spikes/host", "spikes/host/grafting-servo", "third_party/web-audio-api"]
+members = ["crates/host", "crates/gpu", "crates/audio", "crates/ipc", "crates/ui"]
+exclude = ["crates/ui-host", "spikes/host", "spikes/host/grafting-servo", "third_party/web-audio-api"]
 resolver = "3"
 
 # web-audio-api-rs at the rev crates/audio pins, plus the patches in third_party/web-audio-api.patches.

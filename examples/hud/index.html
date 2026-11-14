@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; font-family: sans-serif; }
+  #seq { position: absolute; left: 0; top: 0; width: 32px; height: 32px; }
+  #half { position: absolute; left: 40px; top: 0; width: 200px; height: 100px; background: rgba(255, 0, 0, .5); }
+  #gray { position: absolute; left: 250px; top: 0; width: 100px; height: 100px; background: rgb(128,128,128); }
+  #panel { position: absolute; left: 40px; top: 130px; padding: 16px; background: rgba(10, 20, 40, .85); color: white; }
+  button { margin-top: 12px; padding: 12px; }
+</style>
+</head>
+<body>
+<div id="seq"></div><div id="half"></div><div id="gray"></div>
+<div id="panel">HP <span id="hp">0</span> &middot; frame <span id="counter">0</span><br><button id="button">Press</button></div>
+<script>
+const events = [];
+const button = document.getElementById("button");
+button.addEventListener("click", () => { button.textContent = "Pressed"; events.push({type: "click"}); });
+window.__bridge = {
+  tick(patch) {
+    document.getElementById("hp").textContent = patch.hp;
+    document.getElementById("counter").textContent = patch.seq;
+    const seq = patch.seq >>> 0;
+    document.getElementById("seq").style.backgroundColor = `rgb(${seq & 255}, ${(seq >> 8) & 255}, ${(seq >> 16) & 255})`;
+    const r = button.getBoundingClientRect();
+    return JSON.stringify({ events: events.splice(0), rects: [[r.x, r.y, r.width, r.height]] });
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,769 @@
+// Copyright 2026 Mark Alan Boykin
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+
+#![doc = include_str!("../README.md")]
+
+// Alias the feature-selected wgpu back to `wgpu` crate-wide, matching grafting.
+// The newest enabled version wins, same precedence as grafting's.
+#[cfg(all(
+    feature = "wgpu-28",
+    not(feature = "wgpu-29"),
+    not(feature = "wgpu-30")
+))]
+extern crate wgpu_28 as wgpu;
+#[cfg(all(feature = "wgpu-29", not(feature = "wgpu-30")))]
+extern crate wgpu_29 as wgpu;
+#[cfg(feature = "wgpu-30")]
+extern crate wgpu_30 as wgpu;
+#[cfg(not(any(feature = "wgpu-28", feature = "wgpu-29", feature = "wgpu-30")))]
+compile_error!(
+    "servo-wgpu-interop-adapter needs one wgpu version feature: `wgpu-29` (default), `wgpu-30`, or `wgpu-28`"
+);
+
+use std::{cell::RefCell, rc::Rc};
+
+use euclid::default::Size2D;
+use grafting::{
+    FrameProducer, HostWgpuContext, ImportOptions, ImportedTexture, InteropError, TextureImporter,
+    WgpuTextureImporter,
+    surfman_gl::{SurfmanFrameContext, SurfmanFrameProducer, select_adapter_matching_surfman_luid},
+};
+use surfman::{Connection, Device, SurfaceType, chains::SwapChain};
+use winit::dpi::PhysicalSize;
+
+pub use grafting::DiagnosticGpuSync;
+
+#[cfg(all(target_os = "linux", feature = "servo"))]
+mod native_dmabuf;
+#[cfg(all(target_os = "linux", feature = "servo"))]
+pub use native_dmabuf::ServoDmaBufAdapter;
+
+// Opt-in observation only: no readback, completion wait or synchronization change.
+fn resize_trace_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("GRAFT_SERVO_RESIZE_TRACE").as_deref() == Ok("1"))
+}
+
+#[cfg(feature = "servo")]
+pub use image;
+#[cfg(feature = "servo")]
+use servo::{DeviceIntRect, RenderingContext};
+#[cfg(feature = "servo")]
+use surfman::{Surface, SurfaceTexture, chains::PreserveBuffer};
+
+/// Surface sizes grow in multiples of this many pixels, so that dragging a window larger
+/// replaces the surfaces a bounded number of times.
+const SURFACE_STEP: u32 = 128;
+
+pub struct ServoWgpuRenderingContext {
+    frame_producer: RefCell<SurfmanFrameProducer>,
+    swap_chain: SwapChain<Device>,
+}
+
+impl Drop for ServoWgpuRenderingContext {
+    fn drop(&mut self) {
+        let surfman_rendering_info = self.frame_producer.borrow().context();
+        let device = &mut surfman_rendering_info.device.borrow_mut();
+        let context = &mut surfman_rendering_info.context.borrow_mut();
+        let _ = self.swap_chain.destroy(device, context);
+    }
+}
+
+impl ServoWgpuRenderingContext {
+    /// Swap the pre-present snapshot's source without waiting for GL completion.
+    /// The native DMA-BUF hook owns its snapshot and polls a separate GL fence.
+    /// SPIKE (xproc): public on every platform; the cross-process exporter orders
+    /// the shared texture with its own D3D11 fence instead of `glFinish`.
+    pub fn present_without_wait(&self) {
+        let info = self.frame_producer.borrow().context();
+        let device = info.device.borrow_mut();
+        let mut context = info.context.borrow_mut();
+        let _ = self.swap_chain.swap_buffers(
+            &*device,
+            &mut *context,
+            surfman::chains::PreserveBuffer::No,
+        );
+    }
+    /// Create a rendering context on surfman's default GPU. Use this for the
+    /// CPU readback path, which routes frames through the CPU and does not need
+    /// the surfman GPU to match any host wgpu device.
+    pub fn new(size: PhysicalSize<u32>) -> Result<Self, surfman::Error> {
+        let connection = Connection::new()?;
+        let adapter = connection.create_adapter()?;
+        Self::from_connection_adapter(connection, adapter, size)
+    }
+
+    /// Create a rendering context whose surfman/ANGLE GPU matches `wgpu_device`'s
+    /// GPU (by LUID). **Required for the zero-copy GPU import path on multi-GPU
+    /// hosts:** the shared D3D11 handle only works when surfman/ANGLE and the
+    /// host wgpu device live on the same physical GPU — otherwise the cross-GPU
+    /// read garbles (flicker). The host wgpu device must be DX12 (the LUID match
+    /// uses the DX12 adapter LUID).
+    pub fn new_for_device(
+        size: PhysicalSize<u32>,
+        wgpu_device: &wgpu::Device,
+    ) -> Result<Self, InteropError> {
+        let connection = Connection::new()
+            .map_err(|err| InteropError::Surfman(format!("Connection::new failed: {err:?}")))?;
+        let adapter = select_adapter_matching_surfman_luid(&connection, wgpu_device)?;
+        Self::from_connection_adapter(connection, adapter, size)
+            .map_err(|err| InteropError::Surfman(format!("{err:?}")))
+    }
+
+    /// SPIKE (xproc): create a rendering context on the surfman/ANGLE adapter whose
+    /// D3D11 LUID equals `luid` (high, low). The consumer lives in another process,
+    /// so there is no local wgpu device to match against; the consumer passes its
+    /// DX12 adapter LUID instead.
+    #[cfg(target_os = "windows")]
+    pub fn new_for_luid(size: PhysicalSize<u32>, luid: (i32, u32)) -> Result<Self, InteropError> {
+        use windows::Win32::Graphics::{Direct3D11::ID3D11Device, Dxgi::IDXGIDevice};
+        use windows::core::{IUnknown, Interface};
+        let connection = Connection::new()
+            .map_err(|err| InteropError::Surfman(format!("Connection::new failed: {err:?}")))?;
+        for create_adapter_fn in [
+            Connection::create_hardware_adapter
+                as fn(&Connection) -> Result<surfman::Adapter, surfman::Error>,
+            Connection::create_low_power_adapter,
+            Connection::create_adapter,
+        ] {
+            let Ok(adapter) = create_adapter_fn(&connection) else {
+                continue;
+            };
+            let Ok(temp_device) = connection.create_device(&adapter) else {
+                continue;
+            };
+            let ptr = temp_device.native_device().d3d11_device;
+            if ptr.is_null() {
+                continue;
+            }
+            // SAFETY: native_device() AddRefs the device it returns, so from_raw takes
+            // ownership of exactly that reference.
+            let desc = unsafe {
+                let unknown = IUnknown::from_raw(ptr as *mut _);
+                let Ok(dxgi) = unknown
+                    .cast::<ID3D11Device>()
+                    .and_then(|d| d.cast::<IDXGIDevice>())
+                else {
+                    continue;
+                };
+                let Ok(desc) = dxgi.GetAdapter().and_then(|a| a.GetDesc()) else {
+                    continue;
+                };
+                desc
+            };
+            if (desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart) == luid {
+                return Self::from_connection_adapter(connection, adapter, size)
+                    .map_err(|err| InteropError::Surfman(format!("{err:?}")));
+            }
+        }
+        Err(InteropError::Dx12(format!(
+            "no surfman adapter matches LUID {luid:?}"
+        )))
+    }
+
+    /// SPIKE (xproc): the surfman device/context/GL bundle, for the exporter.
+    pub fn frame_context(&self) -> Rc<grafting::surfman_gl::SurfmanFrameContext> {
+        self.frame_producer.borrow().context()
+    }
+
+    fn from_connection_adapter(
+        connection: Connection,
+        adapter: surfman::Adapter,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, surfman::Error> {
+        let surfman_rendering_info = Rc::new(SurfmanFrameContext::new(&connection, &adapter)?);
+
+        let surfman_size = Size2D::new(size.width as i32, size.height as i32);
+        let surface =
+            surfman_rendering_info.create_surface(SurfaceType::Generic { size: surfman_size })?;
+
+        surfman_rendering_info.bind_surface(surface)?;
+        surfman_rendering_info.make_current()?;
+
+        let swap_chain = surfman_rendering_info.create_attached_swap_chain()?;
+
+        Ok(Self {
+            frame_producer: RefCell::new(SurfmanFrameProducer::new(surfman_rendering_info, size)),
+            swap_chain,
+        })
+    }
+
+    pub fn acquire_native_frame(&self) -> Result<grafting::NativeFrame, InteropError> {
+        let frame = self.frame_producer.borrow_mut().acquire_frame()?;
+        if resize_trace_enabled() {
+            self.trace_surface("acquire-native");
+            if let grafting::NativeFrame::GlFramebufferSource(source) = &frame {
+                eprintln!(
+                    "[servo-resize-trace] acquisition_generation={} declared={:?}",
+                    source.generation(),
+                    source.size()
+                );
+            }
+        }
+        Ok(frame)
+    }
+
+    fn trace_surface(&self, phase: &str) {
+        if !resize_trace_enabled() {
+            return;
+        }
+        let info = self.frame_producer.borrow().context();
+        let device = info.device.borrow();
+        let context = info.context.borrow();
+        let actual = device.context_surface_info(&context).map(|surface| {
+            surface.map(|surface| (surface.id, surface.size, surface.framebuffer_object))
+        });
+        eprintln!(
+            "[servo-resize-trace] phase={phase} context={:p} logical={:?} actual={actual:?}",
+            Rc::as_ptr(&info),
+            self.size()
+        );
+    }
+
+    /// Export the current frame as a cross-device D3D12 shared texture
+    /// (Windows + ANGLE-D3D11 only).
+    ///
+    /// For consumers that own their own wgpu DX12 device and only expose it on
+    /// the render thread, so they cannot run the in-process GL import (e.g. the
+    /// iced `shader` widget, whose primitive must be `Send`). Paint the webview
+    /// first, then call this; open the returned handle on the consumer device
+    /// with [`grafting::import_dx12_shared_texture`]. The content is
+    /// **bottom-left** origin `Rgba8Unorm` (flip on the consumer).
+    #[cfg(target_os = "windows")]
+    pub fn current_dx12_shared_texture(&self) -> Result<grafting::Dx12SharedTexture, InteropError> {
+        self.frame_producer.borrow().export_dx12_shared_texture()
+    }
+
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.frame_producer.borrow().size()
+    }
+
+    /// Resize the surfman rendering context directly.
+    ///
+    /// Embedders driving a `servo::WebView` should resize through
+    /// [`servo::WebView::resize`] instead, which resizes this context *and*
+    /// updates the webview rect + document view. Calling this first makes
+    /// Servo's `resize_rendering_context` early-return before it updates the
+    /// rect, pinning the page to its previous size. Use this only for the CPU
+    /// readback path or other non-WebView consumers.
+    pub fn resize_viewport(&self, size: PhysicalSize<u32>) {
+        if self.frame_producer.borrow().size() == size {
+            return;
+        }
+        self.frame_producer.borrow().set_size(size);
+        self.fit_surfaces(size);
+    }
+
+    /// Grows the swap chain's surfaces to hold `size`, rounded up to `SURFACE_STEP`, and keeps
+    /// them when `size` shrinks. Servo renders `size` into the bottom-left corner of the surface.
+    ///
+    /// On an RTX 3060, each ANGLE surface that WebRender drew into and surfman then destroyed
+    /// left about 0.24 MB of write-combined GPU driver memory behind, so replacing the surfaces
+    /// on every resize grew ui-host by about 0.5 MB per resize.
+    fn fit_surfaces(&self, size: PhysicalSize<u32>) {
+        let held = self.swap_chain.size();
+        if size.width as i32 <= held.width && size.height as i32 <= held.height {
+            return;
+        }
+        let step =
+            |want: u32, held: i32| want.max(held as u32).next_multiple_of(SURFACE_STEP) as i32;
+        let grown = Size2D::new(step(size.width, held.width), step(size.height, held.height));
+        let info = self.frame_producer.borrow().context();
+        let device = info.device.borrow_mut();
+        let mut context = info.context.borrow_mut();
+        let result = self.swap_chain.resize(&*device, &mut *context, grown);
+        if resize_trace_enabled() {
+            let actual = device
+                .context_surface_info(&context)
+                .map(|surface| surface.map(|surface| (surface.id, surface.size)));
+            eprintln!(
+                "[servo-resize-trace] resize requested={size:?} surfaces={grown:?} result={result:?} actual={actual:?}"
+            );
+        }
+    }
+
+    /// Read the full current frame as a CPU-side RGBA image.
+    ///
+    /// Returns `None` if the frame is not available (e.g. no surface bound yet).
+    pub fn read_full_frame(&self) -> Option<image::RgbaImage> {
+        let size = self.size();
+        self.frame_producer.borrow().context().read_to_image_region(
+            0,
+            0,
+            size.width as i32,
+            size.height as i32,
+        )
+    }
+}
+
+#[cfg(feature = "servo")]
+impl RenderingContext for ServoWgpuRenderingContext {
+    fn prepare_for_rendering(&self) {
+        self.trace_surface("prepare-for-rendering");
+        self.frame_producer
+            .borrow()
+            .context()
+            .prepare_for_rendering();
+    }
+
+    fn read_to_image(&self, source_rectangle: DeviceIntRect) -> Option<image::RgbaImage> {
+        self.frame_producer.borrow().context().read_to_image_region(
+            source_rectangle.min.x,
+            source_rectangle.min.y,
+            source_rectangle.width(),
+            source_rectangle.height(),
+        )
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.frame_producer.borrow().size()
+    }
+
+    fn resize(&self, size: PhysicalSize<u32>) {
+        if self.frame_producer.borrow().size() == size {
+            return;
+        }
+
+        self.trace_surface("before-resize");
+        self.frame_producer.borrow().set_size(size);
+        self.fit_surfaces(size);
+    }
+
+    fn present(&self) {
+        // Capturing/importing contexts obtain the current rendered frame
+        // before this swap. Pinned Servo clears the entire rendering context
+        // and renders with buffer_age=0 on every paint, so the next back buffer
+        // does not need previous pixels preserved. Surfman's ANGLE backend
+        // identifies both pbuffers by the default FBO, making its preservation
+        // blit invalid on this backend. Keep GL completion after the swap so
+        // producer work completes before returning the captured/imported frame.
+        let info = self.frame_producer.borrow().context();
+        {
+            let device = info.device.borrow_mut();
+            let mut context = info.context.borrow_mut();
+            let result = self
+                .swap_chain
+                .swap_buffers(&*device, &mut *context, PreserveBuffer::No);
+            if resize_trace_enabled() {
+                let actual = device
+                    .context_surface_info(&context)
+                    .map(|surface| surface.map(|surface| (surface.id, surface.size)));
+                eprintln!("[servo-resize-trace] swap result={result:?} actual={actual:?}");
+            }
+        }
+        info.gleam_gl.finish();
+    }
+
+    fn make_current(&self) -> Result<(), surfman::Error> {
+        self.frame_producer.borrow().context().make_current()
+    }
+
+    fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl> {
+        self.frame_producer.borrow().context().gleam_gl.clone()
+    }
+
+    fn glow_gl_api(&self) -> std::sync::Arc<glow::Context> {
+        self.frame_producer.borrow().context().glow_gl.clone()
+    }
+
+    fn create_texture(&self, surface: Surface) -> Option<(SurfaceTexture, u32, Size2D<i32>)> {
+        self.frame_producer
+            .borrow()
+            .context()
+            .create_texture(surface)
+    }
+
+    fn destroy_texture(&self, surface_texture: SurfaceTexture) -> Option<Surface> {
+        self.frame_producer
+            .borrow()
+            .context()
+            .destroy_texture(surface_texture)
+    }
+
+    fn connection(&self) -> Option<Connection> {
+        self.frame_producer.borrow().context().connection()
+    }
+}
+
+/// A [`RenderingContext`] wrapper that captures a CPU copy of each frame
+/// immediately before the swap-chain `present()` flip — the only point where
+/// the rendered back-buffer is still bound to the GL context.
+///
+/// Call [`CapturingRenderingContext::take_frame`] after [`servo::WebView::paint`]
+/// to obtain the most-recently rendered frame as an [`image::RgbaImage`].
+#[cfg(feature = "servo")]
+pub struct CapturingRenderingContext {
+    inner: Rc<ServoWgpuRenderingContext>,
+    last_frame: RefCell<Option<image::RgbaImage>>,
+}
+
+#[cfg(feature = "servo")]
+impl CapturingRenderingContext {
+    pub fn new(inner: Rc<ServoWgpuRenderingContext>) -> Self {
+        Self {
+            inner,
+            last_frame: RefCell::new(None),
+        }
+    }
+
+    /// Returns the last frame captured during `present()`, replacing the stored
+    /// value with `None` so repeated calls without a new paint return `None`.
+    pub fn take_frame(&self) -> Option<image::RgbaImage> {
+        self.last_frame.borrow_mut().take()
+    }
+
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.inner.size()
+    }
+
+    pub fn resize(&self, size: PhysicalSize<u32>) {
+        self.inner.resize(size);
+    }
+}
+
+#[cfg(feature = "servo")]
+impl RenderingContext for CapturingRenderingContext {
+    fn prepare_for_rendering(&self) {
+        self.inner.prepare_for_rendering();
+    }
+
+    fn read_to_image(&self, source_rectangle: DeviceIntRect) -> Option<image::RgbaImage> {
+        self.inner.read_to_image(source_rectangle)
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.inner.size()
+    }
+
+    fn resize(&self, size: PhysicalSize<u32>) {
+        self.inner.resize(size);
+    }
+
+    /// Captures the rendered back-buffer **before** handing off to the swap chain.
+    fn present(&self) {
+        // Drain GL errors left by Servo's rendering — read_framebuffer_to_image
+        // checks get_error() and returns None on *any* pending error, even ones
+        // from the producer, not just from read_pixels.
+        let gl = self.inner.gleam_gl_api();
+        while gl.get_error() != gleam::gl::NO_ERROR {}
+
+        // Read while the rendered frame is still bound to the context.
+        let frame = self.inner.read_full_frame();
+        *self.last_frame.borrow_mut() = frame;
+        self.inner.present();
+    }
+
+    fn make_current(&self) -> Result<(), surfman::Error> {
+        self.inner.make_current()
+    }
+
+    fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl> {
+        self.inner.gleam_gl_api()
+    }
+
+    fn glow_gl_api(&self) -> std::sync::Arc<glow::Context> {
+        self.inner.glow_gl_api()
+    }
+
+    fn create_texture(&self, surface: Surface) -> Option<(SurfaceTexture, u32, Size2D<i32>)> {
+        self.inner.create_texture(surface)
+    }
+
+    fn destroy_texture(&self, surface_texture: SurfaceTexture) -> Option<Surface> {
+        self.inner.destroy_texture(surface_texture)
+    }
+
+    fn connection(&self) -> Option<Connection> {
+        self.inner.connection()
+    }
+}
+
+/// A [`RenderingContext`] that imports each rendered frame into a host
+/// `wgpu::Texture` **inside `present()`, before the swap-chain flip** — the
+/// only moment the freshly-rendered back-buffer is still the current surface.
+///
+/// Importing *after* `present()` (post-swap) reads the wrong buffer of the
+/// double-buffered attached swap chain, which alternates blank/stale content
+/// and causes flicker. This mirrors how [`CapturingRenderingContext`] reads for
+/// the CPU path, but avoids CPU readback. Default normalization copies the
+/// imported image into a fresh GPU texture with top-left origin.
+///
+/// Call [`ImportingRenderingContext::take_imported`] after
+/// [`servo::WebView::paint`] and an explicit call to this context's
+/// [`RenderingContext::present`] to obtain the most-recently imported frame.
+#[cfg(feature = "servo")]
+pub struct ImportingRenderingContext {
+    inner: Rc<ServoWgpuRenderingContext>,
+    importer: WgpuTextureImporter,
+    options: ImportOptions,
+    last_texture: RefCell<Option<ImportedTexture>>,
+    last_error: RefCell<Option<InteropError>>,
+    diagnostic_failed: std::cell::Cell<bool>,
+}
+
+#[cfg(feature = "servo")]
+impl ImportingRenderingContext {
+    pub fn new(inner: Rc<ServoWgpuRenderingContext>, importer: WgpuTextureImporter) -> Self {
+        Self::with_options(inner, importer, ImportOptions::default())
+    }
+
+    /// Create an importing hook with explicit import and diagnostic options.
+    pub fn with_options(
+        inner: Rc<ServoWgpuRenderingContext>,
+        importer: WgpuTextureImporter,
+        options: ImportOptions,
+    ) -> Self {
+        Self {
+            inner,
+            importer,
+            options,
+            last_texture: RefCell::new(None),
+            last_error: RefCell::new(None),
+            diagnostic_failed: std::cell::Cell::new(false),
+        }
+    }
+
+    /// Returns the frame imported during the last `present()`, clearing it so
+    /// repeated calls without a new paint return `None`.
+    pub fn take_imported(&self) -> Option<ImportedTexture> {
+        let imported = self.last_texture.borrow_mut().take();
+        if resize_trace_enabled()
+            && let Some(frame) = &imported
+        {
+            eprintln!(
+                "[servo-resize-trace] handoff generation={} declared={:?} texture={:?}",
+                frame.generation,
+                frame.size,
+                frame.texture.size()
+            );
+        }
+        imported
+    }
+
+    /// Retrieve a hook result, including a failed completion wait. A failed
+    /// diagnostic blocks subsequent import/swap attempts. The caller must
+    /// retire this context on error; a later WebView paint can precede the hook.
+    pub fn take_imported_result(&self) -> Result<Option<ImportedTexture>, InteropError> {
+        if let Some(error) = self.last_error.borrow_mut().take() {
+            return Err(error);
+        }
+        Ok(self.take_imported())
+    }
+}
+
+#[cfg(feature = "servo")]
+impl RenderingContext for ImportingRenderingContext {
+    fn prepare_for_rendering(&self) {
+        self.inner.prepare_for_rendering();
+    }
+
+    fn read_to_image(&self, source_rectangle: DeviceIntRect) -> Option<image::RgbaImage> {
+        self.inner.read_to_image(source_rectangle)
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.inner.size()
+    }
+
+    fn resize(&self, size: PhysicalSize<u32>) {
+        self.inner.resize(size);
+    }
+
+    /// Import the rendered back-buffer into a wgpu texture **before** the swap.
+    fn present(&self) {
+        // A failed paint must not leave a previous, unconsumed frame available
+        // as though it belonged to this paint.
+        self.last_texture.borrow_mut().take();
+        self.last_error.borrow_mut().take();
+        if self.diagnostic_failed.get() {
+            *self.last_error.borrow_mut() = Some(InteropError::InvalidFrame(
+                "a previous GPU synchronization diagnostic failed; replace this context",
+            ));
+            return;
+        }
+        // Drain GL errors left by Servo's rendering so the import's own error
+        // checks aren't tripped by pending producer errors.
+        let gl = self.inner.gleam_gl_api();
+        while gl.get_error() != gleam::gl::NO_ERROR {}
+
+        if resize_trace_enabled() {
+            self.inner.trace_surface("pre-import");
+            let mut viewport = [0; 4];
+            let mut scissor = [0; 4];
+            // These GL queries each write four integers into four-element arrays.
+            unsafe {
+                gl.get_integer_v(gleam::gl::VIEWPORT, &mut viewport);
+                gl.get_integer_v(gleam::gl::SCISSOR_BOX, &mut scissor);
+            }
+            let enabled = gl.is_enabled(gleam::gl::SCISSOR_TEST);
+            eprintln!(
+                "[servo-resize-trace] pre-import viewport={viewport:?} scissor={scissor:?} scissor-enabled={enabled:?}"
+            );
+        }
+
+        let result = self
+            .inner
+            .acquire_native_frame()
+            .and_then(|frame| self.importer.import_frame(frame, &self.options));
+        match result {
+            Ok(imported) => {
+                if resize_trace_enabled() {
+                    eprintln!(
+                        "[servo-resize-trace] hook-import generation={} declared={:?} texture={:?}",
+                        imported.generation,
+                        imported.size,
+                        imported.texture.size()
+                    );
+                }
+                *self.last_texture.borrow_mut() = Some(imported);
+            }
+            Err(error) => {
+                eprintln!("[adapter] present-hook import failed: {error:?}");
+                *self.last_error.borrow_mut() = Some(error);
+                if self.options.diagnostic_gpu_sync != DiagnosticGpuSync::Existing {
+                    // A timed-out copy may still read the shared allocation.
+                    // Do not swap or allow a later import to reuse it.
+                    self.diagnostic_failed.set(true);
+                    return;
+                }
+            }
+        }
+        self.inner.present();
+    }
+
+    fn make_current(&self) -> Result<(), surfman::Error> {
+        self.inner.make_current()
+    }
+
+    fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl> {
+        self.inner.gleam_gl_api()
+    }
+
+    fn glow_gl_api(&self) -> std::sync::Arc<glow::Context> {
+        self.inner.glow_gl_api()
+    }
+
+    fn create_texture(&self, surface: Surface) -> Option<(SurfaceTexture, u32, Size2D<i32>)> {
+        self.inner.create_texture(surface)
+    }
+
+    fn destroy_texture(&self, surface_texture: SurfaceTexture) -> Option<Surface> {
+        self.inner.destroy_texture(surface_texture)
+    }
+
+    fn connection(&self) -> Option<Connection> {
+        self.inner.connection()
+    }
+}
+
+pub struct ServoWgpuInteropAdapter {
+    importer: WgpuTextureImporter,
+    rendering_context: Rc<ServoWgpuRenderingContext>,
+    #[cfg(feature = "servo")]
+    importing_context: Rc<ImportingRenderingContext>,
+}
+
+impl ServoWgpuInteropAdapter {
+    pub fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, InteropError> {
+        Self::new_with_diagnostic_sync(device, queue, size, DiagnosticGpuSync::Existing)
+    }
+
+    /// Opt into native Windows ANGLE/DX12 completion diagnostics. Existing
+    /// constructors retain their behavior. Use `take_imported_texture_result`
+    /// to propagate failures, and discard the context after a diagnostic error.
+    pub fn new_with_diagnostic_sync(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        size: PhysicalSize<u32>,
+        diagnostic_gpu_sync: DiagnosticGpuSync,
+    ) -> Result<Self, InteropError> {
+        if !cfg!(feature = "servo") && diagnostic_gpu_sync != DiagnosticGpuSync::Existing {
+            return Err(InteropError::InvalidFrame(
+                "Servo GPU synchronization diagnostic requires the Servo present hook",
+            ));
+        }
+        // LUID-match surfman/ANGLE to the host wgpu GPU so the zero-copy shared
+        // handle stays on a single GPU (cross-GPU sharing garbles → flicker).
+        let rendering_context = Rc::new(ServoWgpuRenderingContext::new_for_device(size, &device)?);
+        let importer =
+            WgpuTextureImporter::new(HostWgpuContext::new(device.clone(), queue.clone()));
+
+        #[cfg(feature = "servo")]
+        let options = {
+            let mut options = ImportOptions::default();
+            options.diagnostic_gpu_sync = diagnostic_gpu_sync;
+            // SPIKE: hand the host the shared texture itself (bottom-left origin) instead of a
+            // freshly allocated, Y-flipped copy, to measure what the normalize pass costs.
+            if std::env::var_os("SPIKE_NO_NORMALIZE").is_some() {
+                options.normalize_origin = false;
+            }
+            options
+        };
+        #[cfg(feature = "servo")]
+        let importing_context = Rc::new(ImportingRenderingContext::with_options(
+            rendering_context.clone(),
+            WgpuTextureImporter::new(HostWgpuContext::new(device, queue)),
+            options,
+        ));
+
+        Ok(Self {
+            importer,
+            rendering_context,
+            #[cfg(feature = "servo")]
+            importing_context,
+        })
+    }
+
+    /// The rendering context to hand to `WebViewBuilder`. It imports each frame
+    /// into a wgpu texture inside `present()` (before the swap-chain flip);
+    /// retrieve it with [`take_imported_texture`](Self::take_imported_texture).
+    #[cfg(feature = "servo")]
+    pub fn rendering_context(&self) -> Rc<dyn RenderingContext> {
+        self.importing_context.clone()
+    }
+
+    /// The frame imported during the last explicit `present()`, after
+    /// [`servo::WebView::paint`]. Captured before the swap flip, with the
+    /// importer's normalization policy applied.
+    #[cfg(feature = "servo")]
+    pub fn take_imported_texture(&self) -> Option<ImportedTexture> {
+        self.importing_context.take_imported()
+    }
+
+    /// Retrieve the pre-present import or its exact synchronization failure.
+    #[cfg(feature = "servo")]
+    pub fn take_imported_texture_result(&self) -> Result<Option<ImportedTexture>, InteropError> {
+        self.importing_context.take_imported_result()
+    }
+
+    pub fn rendering_context_handle(&self) -> Rc<ServoWgpuRenderingContext> {
+        self.rendering_context.clone()
+    }
+
+    /// Direct (post-swap) import. Prefer the `present()`-hook path
+    /// ([`rendering_context`](Self::rendering_context) +
+    /// [`take_imported_texture`](Self::take_imported_texture)) with Servo;
+    /// importing post-swap reads the wrong swap-chain buffer (flicker).
+    pub fn import_current_frame(
+        &self,
+        options: &ImportOptions,
+    ) -> Result<ImportedTexture, InteropError> {
+        let frame = self.rendering_context.acquire_native_frame()?;
+        self.importer.import_frame(frame, options)
+    }
+
+    pub fn import_current_frame_default(&self) -> Result<ImportedTexture, InteropError> {
+        self.import_current_frame(&ImportOptions::default())
+    }
+
+    pub fn importer(&self) -> &WgpuTextureImporter {
+        &self.importer
+    }
+}
