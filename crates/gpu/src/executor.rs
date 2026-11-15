@@ -232,6 +232,130 @@ impl TimestampConversion {
     }
 }
 
+/// The most bytes of buffer writes a batch stages, unless the device's buffers can hold less. A write that would take
+/// it past its limit sends the batch first, and a larger one goes to the queue alone.
+const BATCH_BYTES: usize = 1 << 22;
+
+/// Queue work that the executor holds back and sends in one `queue.submit`, in the order WebGPU's queue runs it. wgpu
+/// runs a `queue.write_buffer` before the whole of the next submit, so the batch stages its writes in its own upload
+/// and copies them between its command buffers.
+struct Batch {
+    /// The most bytes the batch stages: `BATCH_BYTES`, or the device's `max_buffer_size` when that is smaller, since
+    /// the upload is one buffer.
+    limit: usize,
+    bytes: Vec<u8>,
+    /// Each write's destination, its offset there, and its bytes' range in `bytes`.
+    writes: Vec<(wgpu::Buffer, u64, std::ops::Range<u64>)>,
+    /// Each command buffer, after the number of writes before it.
+    commands: Vec<(usize, wgpu::CommandBuffer)>,
+}
+
+impl Batch {
+    fn new(device: &wgpu::Device) -> Self {
+        let max = usize::try_from(device.limits().max_buffer_size).unwrap_or(usize::MAX);
+        Self {
+            limit: BATCH_BYTES.min(max),
+            bytes: Vec::new(),
+            writes: Vec::new(),
+            commands: Vec::new(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.writes.is_empty() && self.commands.is_empty()
+    }
+
+    fn command(&mut self, commands: wgpu::CommandBuffer) {
+        self.commands.push((self.writes.len(), commands));
+    }
+
+    fn write(&mut self, buffer: &wgpu::Buffer, offset: u64, bytes: &[u8]) {
+        let start = self.bytes.len() as u64;
+        self.bytes.extend_from_slice(bytes);
+        self.writes
+            .push((buffer.clone(), offset, start..self.bytes.len() as u64));
+    }
+
+    /// The batch's command buffers in queue order, each after a copy of the writes before it from one upload. When the
+    /// upload can't be created, as when the device is out of memory or lost, the batch's work is dropped.
+    fn take(&mut self, device: &wgpu::Device) -> Result<Vec<wgpu::CommandBuffer>, String> {
+        let upload = if self.bytes.is_empty() {
+            None
+        } else {
+            let upload = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("buffer writes"),
+                size: self.bytes.len() as u64,
+                // With `MAP_WRITE`, wgpu maps the upload itself rather than a staging copy of it.
+                usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: true,
+            });
+            let filled = upload
+                .get_mapped_range_mut(..)
+                .map(|mut range| range.copy_from_slice(&self.bytes));
+            if let Err(error) = filled {
+                self.clear();
+                return Err(error.to_string());
+            }
+            upload.unmap();
+            Some(upload)
+        };
+        let mut sent = Vec::with_capacity(2 * self.commands.len() + 1);
+        let mut copied = 0;
+        let mut copy = |sent: &mut Vec<wgpu::CommandBuffer>, writes: usize| {
+            if let Some(upload) = upload.as_ref().filter(|_| writes > copied) {
+                let mut encoder = device.create_command_encoder(&Default::default());
+                for (buffer, offset, bytes) in &self.writes[copied..writes] {
+                    encoder.copy_buffer_to_buffer(
+                        upload,
+                        bytes.start,
+                        buffer,
+                        *offset,
+                        bytes.end - bytes.start,
+                    );
+                }
+                sent.push(encoder.finish());
+                copied = writes;
+            }
+        };
+        for (writes, commands) in self.commands.drain(..) {
+            copy(&mut sent, writes);
+            sent.push(commands);
+        }
+        copy(&mut sent, self.writes.len());
+        self.clear();
+        Ok(sent)
+    }
+
+    fn clear(&mut self) {
+        self.bytes.clear();
+        self.writes.clear();
+        self.commands.clear();
+    }
+}
+
+/// The queue calls an executor made, which tests bound.
+#[cfg(test)]
+#[derive(Default)]
+struct QueueCalls {
+    submits: std::cell::Cell<usize>,
+    writes: std::cell::Cell<usize>,
+}
+
+#[cfg(test)]
+impl QueueCalls {
+    fn submit(&self) {
+        self.submits.set(self.submits.get() + 1);
+    }
+
+    fn write(&self) {
+        self.writes.set(self.writes.get() + 1);
+    }
+
+    fn take(&self) -> (usize, usize) {
+        (self.submits.take(), self.writes.take())
+    }
+}
+
 /// The resources that stream handles name. As in WebGPU, a create that fails validation leaves an
 /// invalid object, here `None`: using it raises an error, and destroying it raises nothing.
 pub struct Executor {
@@ -307,6 +431,13 @@ pub struct Executor {
     uncaptured: Arc<Mutex<Vec<(wgpu::ErrorFilter, String)>>>,
     /// The stream's open error scopes, innermost last. They outlast a frame, as in WebGPU.
     scopes: Vec<ErrorScope>,
+    /// The queue work since the last `queue.submit`, which reaches the queue by the end of the replay.
+    batch: Batch,
+    /// How many buffers are mapped. While one is, wgpu fails a submit that uses it, so each submit goes to the queue at
+    /// once and fails alone, as in WebGPU.
+    mapped_buffers: usize,
+    #[cfg(test)]
+    calls: QueueCalls,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -459,6 +590,7 @@ impl Executor {
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
         let uncaptured = Arc::new(Mutex::new(Vec::new()));
         report_uncaptured(&device, &uncaptured);
+        let batch = Batch::new(&device);
         Self {
             device,
             queue,
@@ -504,6 +636,10 @@ impl Executor {
             surface_clear: SurfaceClear::Done,
             uncaptured,
             scopes: Vec::new(),
+            batch,
+            mapped_buffers: 0,
+            #[cfg(test)]
+            calls: QueueCalls::default(),
         }
     }
 
@@ -679,9 +815,18 @@ impl Executor {
                 "incomplete command submission".into(),
             );
         }
+        if !self.flush() {
+            self.trailed = false;
+        }
+        let unsent = std::mem::take(&mut *self.uncaptured.lock().unwrap());
+        for (filter, message) in unsent {
+            let command = streams.last().map_or(0, |stream| stream.records.len());
+            self.raise(&mut responses, command, None, filter, message);
+        }
         self.destroyed_use = None;
         for handle in std::mem::take(&mut self.destroyed) {
             if let Some(Some(buffer)) = self.buffers.remove(&handle) {
+                self.mapped_buffers -= usize::from(buffer.mapped);
                 buffer.raw.destroy();
             }
             if let Some(Some(texture)) = self.textures.remove(&handle) {
@@ -804,6 +949,28 @@ impl Executor {
             _ => None,
         };
         let trailed = trailing.is_some();
+        // Inside a replay wgpu fails the submit of valid command buffers only for a mapped buffer, because the
+        // executor destroys buffers and textures at the replay's end. Without one, the batch takes the submit, and the
+        // trailer's own errors are the only ones it can raise.
+        if self.mapped_buffers == 0 {
+            if let Some(error) = pollster::block_on(scope.pop()) {
+                if encoded {
+                    self.encoder_dropped(false);
+                }
+                return Err(error.to_string());
+            }
+            for commands in commands.into_iter().chain(trailing) {
+                self.batch.command(commands);
+            }
+            if encoded {
+                self.encoder_dropped(true);
+            }
+            self.trailed = trailed;
+            return Ok(None);
+        }
+        self.flush();
+        #[cfg(test)]
+        self.calls.submit();
         self.queue.submit(commands.into_iter().chain(trailing));
         let error = pollster::block_on(scope.pop());
         if encoded {
@@ -1066,6 +1233,7 @@ impl Executor {
         if self.device.features() == features && self.device.limits() == request.limits {
             return Ok(None);
         }
+        self.flush();
         let adapter = self
             .adapter
             .as_ref()
@@ -1089,9 +1257,11 @@ impl Executor {
         self.invalid_encoder = false;
         self.destroyed_use = None;
         self.destroyed.clear();
+        self.batch = Batch::new(&device);
         self.device = device;
         self.queue = queue;
         self.buffers.clear();
+        self.mapped_buffers = 0;
         self.shaders.clear();
         self.textures.clear();
         self.views.clear();
@@ -1252,7 +1422,7 @@ impl Executor {
     }
 
     /// Clears `texture` to transparent black through the queue.
-    fn clear(&self, texture: &wgpu::Texture) {
+    fn clear(&mut self, texture: &wgpu::Texture) {
         let view = texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1271,7 +1441,35 @@ impl Executor {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        self.queue.submit([encoder.finish()]);
+        self.batch.command(encoder.finish());
+    }
+
+    /// Sends the batch to the queue. An error goes to `uncaptured`, and the result says whether there was one. The
+    /// executor's checks leave only one kind: an upload that can't be created.
+    fn flush(&mut self) -> bool {
+        if self.batch.is_empty() {
+            return true;
+        }
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let error = match self.batch.take(&self.device) {
+            Ok(commands) => {
+                #[cfg(test)]
+                self.calls.submit();
+                self.queue.submit(commands);
+                pollster::block_on(scope.pop()).map(|error| error.to_string())
+            }
+            // The upload's own error says why it failed, and the mapping's stands in when the scope caught none.
+            Err(mapping) => {
+                Some(pollster::block_on(scope.pop()).map_or(mapping, |error| error.to_string()))
+            }
+        };
+        if let Some(error) = &error {
+            self.uncaptured
+                .lock()
+                .unwrap()
+                .push((wgpu::ErrorFilter::Validation, error.clone()));
+        }
+        error.is_none()
     }
 
     /// Records that the open encoder left, through the queue when `submitted`.
@@ -1337,6 +1535,8 @@ impl Executor {
                         }),
                     _ => Err("unsupported buffer usage".into()),
                 };
+                self.mapped_buffers +=
+                    usize::from(buffer.as_ref().is_ok_and(|buffer| buffer.mapped));
                 keep(&mut self.buffers, handle, buffer)
             }
             2 => {
@@ -1359,7 +1559,22 @@ impl Executor {
                 {
                     return Err("invalid buffer write".into());
                 }
-                self.queue.write_buffer(&buffer.raw, offset, bytes);
+                // wgpu raises the error for a write to a mapped buffer.
+                if !buffer.mapped && bytes.len() <= self.batch.limit {
+                    let raw = buffer.raw.clone();
+                    if self.batch.bytes.len() + bytes.len() > self.batch.limit {
+                        self.flush();
+                    }
+                    if !bytes.is_empty() {
+                        self.batch.write(&raw, offset, bytes);
+                    }
+                    return Ok(None);
+                }
+                let raw = buffer.raw.clone();
+                self.flush();
+                #[cfg(test)]
+                self.calls.write();
+                self.queue.write_buffer(&raw, offset, bytes);
                 Ok(None)
             }
             3 => {
@@ -1395,6 +1610,8 @@ impl Executor {
                 {
                     return Err("invalid buffer readback".into());
                 }
+                let raw = buffer.raw.clone();
+                self.flush();
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: None,
@@ -1403,7 +1620,9 @@ impl Executor {
                     mapped_at_creation: false,
                 });
                 let mut encoder = self.device.create_command_encoder(&Default::default());
-                encoder.copy_buffer_to_buffer(&buffer.raw, offset, &staging, 0, len);
+                encoder.copy_buffer_to_buffer(&raw, offset, &staging, 0, len);
+                #[cfg(test)]
+                self.calls.submit();
                 self.queue.submit([encoder.finish()]);
                 if let Some(error) = pollster::block_on(scope.pop()) {
                     return Err(error.to_string());
@@ -1515,6 +1734,9 @@ impl Executor {
                 if !texture.usage.contains(wgpu::TextureUsages::COPY_DST) {
                     return Err("texture is not writable".into());
                 }
+                // wgpu runs the write before its next submit, so the batch goes first.
+                self.flush();
+                let texture = valid(&self.textures, u32_at(payload, 0), "texture")?;
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
@@ -1631,6 +1853,7 @@ impl Executor {
                 if self.is_surface(u32_at(payload, 4)) {
                     self.clear_unwritten_surface();
                 }
+                self.flush();
                 let request = u32_at(payload, 0);
                 if self.texture_use(u32_at(payload, 4)) == Use::Destroyed {
                     return Err("a destroyed texture is read back".into());
@@ -1708,6 +1931,8 @@ impl Executor {
                         depth_or_array_layers: 1,
                     },
                 );
+                #[cfg(test)]
+                self.calls.submit();
                 self.queue.submit([encoder.finish()]);
                 if let Some(error) = pollster::block_on(scope.pop()) {
                     return Err(error.to_string());
@@ -2655,9 +2880,10 @@ impl Executor {
                 else {
                     return Ok(None);
                 };
-                if !std::mem::take(&mut buffer.mapped) {
+                if !buffer.mapped {
                     return Ok(None);
                 }
+                // A failed unmap leaves the buffer mapped, in wgpu and here.
                 if !bytes.is_empty() {
                     let end = offset
                         .checked_add(bytes.len() as u64)
@@ -2671,6 +2897,8 @@ impl Executor {
                         .copy_from_slice(bytes);
                 }
                 buffer.raw.unmap();
+                buffer.mapped = false;
+                self.mapped_buffers -= 1;
                 Ok(None)
             }
             46 => {
@@ -2981,6 +3209,7 @@ impl Executor {
                 if matches!(self.buffer_use(handle), Use::Destroyed | Use::Freed) {
                     return Err("a destroyed buffer is mapped".into());
                 }
+                self.flush();
                 let buffer = valid(&self.buffers, handle, "buffer")?;
                 let (mode, usage) = match u32_at(payload, 8) {
                     1 => (wgpu::MapMode::Read, wgpu::BufferUsages::MAP_READ),
@@ -3020,6 +3249,7 @@ impl Executor {
                 // wgpu cannot map an empty range, so a buffer mapped for one stays unmapped here.
                 if let Some(Some(buffer)) = self.buffers.get_mut(&handle) {
                     buffer.mapped = len != 0;
+                    self.mapped_buffers += usize::from(buffer.mapped);
                 }
                 Ok(Some(Response::Readback { request, bytes }))
             }
@@ -3171,6 +3401,167 @@ mod tests {
             executor.labels.len(),
             0,
             "destroyed invalid objects retained labels"
+        );
+    }
+
+    /// A frame shaped like folio's: 5 texture writes, 18 submits, each after 32 small buffer writes, 2 more texture
+    /// writes after the third submit, and the host's trailer. A texture write sends the batch before it.
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn a_folio_shaped_frame_reaches_the_queue_in_two_submits_without_buffer_writes() {
+        let (device, queue) = software();
+        let usage = (wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST).bits();
+        let buffer = |handle: u32, size: u64| {
+            let mut payload = handle.to_le_bytes().to_vec();
+            payload.extend_from_slice(&size.to_le_bytes());
+            payload.extend_from_slice(&[usage, 0].map(u32::to_le_bytes).concat());
+            (1, payload)
+        };
+        let words = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut texture = words(&[
+            3,
+            4,
+            1,
+            1,
+            1,
+            1,
+            wgpu::TextureUsages::COPY_DST.bits(),
+            10,
+            0,
+        ]);
+        texture.extend_from_slice(b"rgba8unorm");
+        let write_texture = || {
+            let mut payload = words(&[3, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+            payload.extend_from_slice(&[9; 16]);
+            (5, payload)
+        };
+        let mut setup = vec![
+            buffer(1, 18 * 32 * 16),
+            buffer(2, 18 * 32 * 16),
+            (4, texture),
+        ];
+        setup.push((26, Vec::new()));
+        let mut frame: Vec<_> = (0..5).map(|_| write_texture()).collect();
+        for group in 0..18u64 {
+            for write in 0..32u64 {
+                let offset = (group * 32 + write) * 16;
+                let mut payload = 1u32.to_le_bytes().to_vec();
+                payload.extend_from_slice(&offset.to_le_bytes());
+                payload.extend_from_slice(&[(group * 32 + write) as u8; 16]);
+                frame.push((2, payload));
+            }
+            let mut copy = 1u32.to_le_bytes().to_vec();
+            copy.extend_from_slice(&(group * 512).to_le_bytes());
+            copy.extend_from_slice(&2u32.to_le_bytes());
+            copy.extend_from_slice(&(group * 512).to_le_bytes());
+            copy.extend_from_slice(&512u64.to_le_bytes());
+            frame.push((38, copy));
+            frame.push((26, Vec::new()));
+            if group == 2 {
+                frame.extend([write_texture(), write_texture()]);
+            }
+        }
+        let mut canvas = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let mut executor = Executor::new(device.clone(), queue);
+        executor.replay(&stream(&setup), None).unwrap();
+        executor.calls.take();
+        for _ in 0..3 {
+            let mut trailer = |_: &wgpu::Texture, _: bool| {
+                Some(device.create_command_encoder(&Default::default()).finish())
+            };
+            let responses = executor
+                .replay_then(&[&stream(&frame)], Some(&mut canvas), Some(&mut trailer))
+                .unwrap();
+            assert_eq!(responses, []);
+            assert!(executor.trailed());
+            assert_eq!(
+                executor.calls.take(),
+                (2, 0),
+                "queue submits and buffer writes in the frame"
+            );
+        }
+        let mut read = [7u32, 2].map(u32::to_le_bytes).concat();
+        read.extend_from_slice(&0u64.to_le_bytes());
+        read.extend_from_slice(&(18 * 32 * 16u64).to_le_bytes());
+        let responses = executor.replay(&stream(&[(27, read)]), None).unwrap();
+        let expected: Vec<u8> = (0..18 * 32).flat_map(|value| [value as u8; 16]).collect();
+        assert_eq!(
+            responses,
+            [Response::Readback {
+                request: 7,
+                bytes: expected
+            }]
+        );
+    }
+
+    /// A texture write sends the buffer writes held before it, so the queue runs them in call order.
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn a_texture_write_sends_the_buffer_writes_held_before_it() {
+        let (device, queue) = software();
+        let words = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut buffer = 1u32.to_le_bytes().to_vec();
+        buffer.extend_from_slice(&16u64.to_le_bytes());
+        buffer.extend_from_slice(&words(&[
+            (wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST).bits(),
+            0,
+        ]));
+        let mut texture = words(&[
+            2,
+            4,
+            1,
+            1,
+            1,
+            1,
+            wgpu::TextureUsages::COPY_DST.bits(),
+            10,
+            0,
+        ]);
+        texture.extend_from_slice(b"rgba8unorm");
+        let write = |value: u8| {
+            let mut payload = 1u32.to_le_bytes().to_vec();
+            payload.extend_from_slice(&0u64.to_le_bytes());
+            payload.extend_from_slice(&[value; 16]);
+            (2, payload)
+        };
+        let mut write_texture = words(&[2, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+        write_texture.extend_from_slice(&[9; 16]);
+        let mut executor = Executor::new(device, queue);
+        executor
+            .replay(&stream(&[(1, buffer), (4, texture)]), None)
+            .unwrap();
+        executor.calls.take();
+        let responses = executor
+            .replay(&stream(&[write(1), (5, write_texture), write(2)]), None)
+            .unwrap();
+        assert_eq!(responses, []);
+        assert_eq!(
+            executor.calls.take(),
+            (2, 0),
+            "the texture write's submit, then the frame's"
         );
     }
 }

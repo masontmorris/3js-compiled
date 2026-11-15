@@ -2312,3 +2312,558 @@ fn a_canvas_copied_mid_frame_reaches_the_texture_and_its_mips() {
         [0, 128, 255, 255].repeat(16)
     );
 }
+
+// Queue order. WebGPU runs `writeBuffer`, `writeTexture` and `submit` on the queue timeline in call order, and a map
+// or a readback sees all the queue's work before it. Each test below is one row of the PR's scenario table.
+const MAP_READ: u32 = 1;
+const COPY_SRC: u32 = 4;
+const COPY_DST: u32 = 8;
+const MAPPED_AT_CREATION: u32 = 1 << 31;
+const SUBMIT: (u16, Vec<u8>) = (26, Vec::new());
+
+fn write(handle: u32, offset: u64, bytes: &[u8]) -> (u16, Vec<u8>) {
+    let mut payload = handle.to_le_bytes().to_vec();
+    payload.extend_from_slice(&offset.to_le_bytes());
+    payload.extend_from_slice(bytes);
+    (2, payload)
+}
+
+fn read(request: u32, handle: u32, len: u64) -> (u16, Vec<u8>) {
+    let mut payload = words(&[request, handle]);
+    payload.extend_from_slice(&0u64.to_le_bytes());
+    payload.extend_from_slice(&len.to_le_bytes());
+    (27, payload)
+}
+
+fn map_read(request: u32, handle: u32, len: u64) -> (u16, Vec<u8>) {
+    let mut payload = words(&[request, handle, 1]);
+    payload.extend_from_slice(&0u64.to_le_bytes());
+    payload.extend_from_slice(&len.to_le_bytes());
+    (56, payload)
+}
+
+fn unmap(handle: u32) -> (u16, Vec<u8>) {
+    let mut payload = handle.to_le_bytes().to_vec();
+    payload.extend_from_slice(&0u64.to_le_bytes());
+    (48, payload)
+}
+
+fn destroy_buffer(handle: u32) -> (u16, Vec<u8>) {
+    (3, handle.to_le_bytes().to_vec())
+}
+
+/// Every readback's request and bytes, in order.
+fn readbacks(responses: &[Response]) -> Vec<(u32, Vec<u8>)> {
+    responses
+        .iter()
+        .filter_map(|response| match response {
+            Response::Readback { request, bytes } => Some((*request, bytes.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every error's command index and message, in order.
+fn errors(responses: &[Response]) -> Vec<(usize, String)> {
+    responses
+        .iter()
+        .filter_map(|response| match response {
+            Response::Error {
+                command, message, ..
+            } => Some((*command, message.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Buffers 1 and 2 for copies to land in, and 3 as their source.
+fn copy_buffers() -> Vec<(u16, Vec<u8>)> {
+    vec![
+        buffer(1, 16, COPY_SRC | COPY_DST),
+        buffer(2, 16, COPY_SRC | COPY_DST),
+        buffer(3, 16, COPY_SRC | COPY_DST),
+    ]
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_write_between_two_submits_reaches_only_the_later_one() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        write(3, 0, &[2; 16]),
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![2; 16])],
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn later_writes_to_a_range_win_in_call_order() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        write(3, 0, &[1; 16]),
+        write(3, 4, &[9; 8]),
+        write(3, 8, &[]),
+        copy_buffer(3, 0, 1, 16),
+        write(3, 0, &[5; 4]),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 3, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    let mut written = vec![1; 16];
+    written[4..12].fill(9);
+    written[..4].fill(5);
+    assert_eq!(
+        readbacks(&responses),
+        [(10, written.clone()), (11, written)],
+        "a write before a submit reaches its copy, wherever the encoder had got to: {responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_write_after_the_last_submit_reaches_the_next_frame() {
+    let mut executor = executor();
+    let mut first = copy_buffers();
+    first.extend([
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        write(3, 0, &[3; 16]),
+    ]);
+    let responses = executor.replay(&stream(&first), None).unwrap();
+    assert_eq!(responses, []);
+    let second = [
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ];
+    let responses = executor.replay(&stream(&second), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![3; 16])],
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn writes_in_one_stream_reach_submits_in_the_next_stream_of_the_frame() {
+    let mut executor = executor();
+    let mut first = copy_buffers();
+    first.extend([copy_buffer(3, 0, 1, 16), SUBMIT, write(3, 0, &[4; 16])]);
+    let second = [
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ];
+    let responses = executor
+        .replay_then(&[&stream(&first), &stream(&second)], None, None)
+        .unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![0; 16]), (11, vec![4; 16])],
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_map_sees_every_submit_and_write_before_it() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, MAP_READ | COPY_DST),
+        write(3, 0, &[6; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        write(1, 8, &[7; 8]),
+        copy_buffer(1, 0, 4, 16),
+        SUBMIT,
+        map_read(10, 4, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    let mut mapped = vec![6; 16];
+    mapped[8..].fill(7);
+    assert_eq!(readbacks(&responses), [(10, mapped)], "{responses:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_submit_that_uses_a_mapped_buffer_fails_at_its_record_and_its_neighbours_run() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, MAP_READ | COPY_DST),
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        map_read(10, 4, 16),
+        copy_buffer(3, 0, 4, 16),
+        SUBMIT,
+        write(3, 0, &[2; 16]),
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        read(11, 1, 16),
+        read(12, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![0; 16]), (11, vec![1; 16]), (12, vec![2; 16])],
+        "{responses:?}"
+    );
+    let errors = errors(&responses);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].0, 9, "{errors:?}");
+    assert!(errors[0].1.contains("still mapped"), "{errors:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_write_to_a_mapped_buffer_fails_at_the_write_and_one_after_its_unmap_lands() {
+    let mut executor = executor();
+    let records = [
+        buffer(4, 16, MAP_READ | COPY_DST | MAPPED_AT_CREATION),
+        write(4, 0, &[1; 16]),
+        unmap(4),
+        write(4, 0, &[2; 16]),
+        map_read(10, 4, 16),
+        write(4, 0, &[3; 16]),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(readbacks(&responses), [(10, vec![2; 16])], "{responses:?}");
+    let commands: Vec<_> = errors(&responses).iter().map(|error| error.0).collect();
+    assert_eq!(commands, [1, 5], "{responses:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_texture_write_between_two_submits_reaches_only_the_later_one() {
+    let mut executor = executor();
+    let (format, texture) = ("rgba8unorm", 5u32);
+    let mut create = words(&[texture, 4, 1, 1, 1, 1, 1 | 2, format.len() as u32, 0]);
+    create.extend_from_slice(format.as_bytes());
+    let write_texture = |value: u8| {
+        let mut payload = words(&[texture, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+        payload.extend_from_slice(&[value; 16]);
+        (5, payload)
+    };
+    let copy_texture = |destination: u32| {
+        let mut payload = words(&[destination, 256, 1, texture, 0, 0, 0, 0, 0, 4, 1, 1]);
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        (41, payload)
+    };
+    let records = [
+        buffer(1, 256, COPY_SRC | COPY_DST),
+        buffer(2, 256, COPY_SRC | COPY_DST),
+        (4, create),
+        write_texture(1),
+        copy_texture(1),
+        SUBMIT,
+        write_texture(2),
+        copy_texture(2),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![2; 16])],
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_invalid_submit_between_valid_ones_fails_alone_at_its_record() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, COPY_SRC | COPY_DST),
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        destroy_buffer(4),
+        write(3, 0, &[8; 16]),
+        copy_buffer(3, 0, 4, 16),
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        write(3, 0, &[2; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![2; 16]), (11, vec![0; 16])],
+        "the failed submit's copies do not run, and the writes around it do: {responses:?}"
+    );
+    assert_eq!(
+        errors(&responses),
+        [(11, "a destroyed buffer is used in a submit".to_owned())]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_error_scope_pops_with_the_first_error_of_the_writes_and_submits_inside_it() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, COPY_SRC | COPY_DST),
+        destroy_buffer(4),
+        (PUSH_ERROR_SCOPE, words(&[0])),
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        write(3, 2, &[1; 4]),
+        copy_buffer(3, 0, 4, 16),
+        SUBMIT,
+        (POP_ERROR_SCOPE, words(&[20])),
+        write(3, 0, &[2; 16]),
+        copy_buffer(3, 0, 2, 16),
+        SUBMIT,
+        write(1, 32, &[1; 4]),
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        scopes(&responses),
+        [(
+            20,
+            Some(wgpu::ErrorFilter::Validation),
+            "invalid buffer write".to_owned()
+        )]
+    );
+    assert_eq!(
+        errors(&responses),
+        [(16, "invalid buffer write".to_owned())],
+        "an error after the pop is uncaptured and names its own record"
+    );
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![2; 16])],
+        "{responses:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_buffer_destroyed_after_its_write_and_submit_left_what_the_submit_copied() {
+    let mut executor = executor();
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, COPY_SRC | COPY_DST),
+        write(4, 0, &[5; 16]),
+        copy_buffer(4, 0, 1, 16),
+        SUBMIT,
+        write(4, 0, &[6; 16]),
+        destroy_buffer(4),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        responses,
+        [],
+        "the frame's last write reaches its buffer before the destroy, with no error"
+    );
+    let next = [write(4, 0, &[7; 16]), read(11, 1, 16)];
+    let responses = executor.replay(&stream(&next), None).unwrap();
+    assert_eq!(
+        responses,
+        [
+            error(0, None, "a destroyed buffer is written"),
+            Response::Readback {
+                request: 11,
+                bytes: vec![5; 16]
+            }
+        ]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn the_trailer_reaches_the_queue_after_the_frames_writes_and_submits() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let mut canvas = surface_texture(device, 4, 4);
+    let shown = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: canvas.size(),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: canvas.format(),
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let mut records = copy_buffers();
+    records.extend([write(3, 0, &[1; 16]), copy_buffer(3, 0, 1, 16), SUBMIT]);
+    records.extend(clear_canvas(20, (4, 4), [0.0, 1.0, 0.0]));
+    let mut trailer = |canvas: &wgpu::Texture, used: bool| {
+        assert!(used);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_texture(
+            canvas.as_image_copy(),
+            shown.as_image_copy(),
+            canvas.size(),
+        );
+        Some(encoder.finish())
+    };
+    let responses = executor
+        .replay_then(&[&stream(&records)], Some(&mut canvas), Some(&mut trailer))
+        .unwrap();
+    assert_eq!(responses, []);
+    assert!(executor.trailed());
+    assert_eq!(
+        read_surface(device, queue, &shown),
+        [0, 255, 0, 255].repeat(16)
+    );
+    let responses = executor.replay(&stream(&[read(10, 1, 16)]), None).unwrap();
+    assert_eq!(readbacks(&responses), [(10, vec![1; 16])]);
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn staged_writes_never_ask_for_an_upload_past_the_devices_buffer_limit() {
+    let Exclusive {
+        value: (adapter, ..),
+        _turn,
+    } = software();
+    let limit = 1u64 << 20;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_limits: wgpu::Limits {
+            max_buffer_size: limit,
+            max_storage_buffer_binding_size: limit,
+            ..Default::default()
+        },
+        ..Default::default()
+    }))
+    .unwrap();
+    let mut executor = Executor::new(device, queue);
+    let len = 768 << 10;
+    let records = [
+        buffer(1, limit, COPY_SRC | COPY_DST),
+        write(1, 0, &vec![1; len]),
+        write(1, 0, &vec![2; len]),
+        read(10, 1, limit),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    let mut expected = vec![2; len];
+    expected.resize(limit as usize, 0);
+    assert_eq!(errors(&responses), []);
+    assert_eq!(readbacks(&responses), [(10, expected)]);
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_unmap_that_fails_leaves_the_buffer_mapped_so_its_submits_fail_alone() {
+    let mut executor = executor();
+    let mut bad_unmap = 4u32.to_le_bytes().to_vec();
+    bad_unmap.extend_from_slice(&16u64.to_le_bytes());
+    bad_unmap.extend_from_slice(&[1; 4]);
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, 2 | COPY_SRC | MAPPED_AT_CREATION),
+        (48, bad_unmap),
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        copy_buffer(4, 0, 2, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![0; 16])],
+        "the valid submit runs, and the one that uses the mapped buffer does not: {responses:?}"
+    );
+    let errors = errors(&responses);
+    let commands: Vec<_> = errors.iter().map(|error| error.0).collect();
+    assert_eq!(commands, [4, 9], "{errors:?}");
+    assert_eq!(errors[0].1, "invalid buffer unmap");
+    assert!(errors[1].1.contains("still mapped"), "{errors:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_texture_destroyed_after_a_held_copy_from_it_left_what_the_copy_read() {
+    let mut executor = executor();
+    let texture = 5u32;
+    let mut create = words(&[texture, 4, 1, 1, 1, 1, 1 | 2, 10, 0]);
+    create.extend_from_slice(b"rgba8unorm");
+    let mut write_texture = words(&[texture, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+    write_texture.extend_from_slice(&[7; 16]);
+    let copy_texture = || {
+        let mut payload = words(&[1, 256, 1, texture, 0, 0, 0, 0, 0, 4, 1, 1]);
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        (41, payload)
+    };
+    let records = [
+        buffer(1, 256, COPY_SRC | COPY_DST),
+        (4, create),
+        (5, write_texture),
+        copy_texture(),
+        SUBMIT,
+        (6, texture.to_le_bytes().to_vec()),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(responses, []);
+    let next = [copy_texture(), SUBMIT, read(10, 1, 16)];
+    let responses = executor.replay(&stream(&next), None).unwrap();
+    assert_eq!(readbacks(&responses), [(10, vec![7; 16])], "{responses:?}");
+    assert_eq!(
+        errors(&responses),
+        [(1, "a destroyed texture is used in a submit".to_owned())]
+    );
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_upload_that_cannot_be_created_raises_an_error_and_leaves_the_frame_untrailed() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let mut canvas = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let mut records = copy_buffers();
+    records.extend([write(3, 0, &[1; 16]), copy_buffer(3, 0, 1, 16), SUBMIT]);
+    let end = records.len();
+    let mut trailer = |_: &wgpu::Texture, _: bool| {
+        let commands = device.create_command_encoder(&Default::default()).finish();
+        // A lost device makes the frame's upload fail to create, as running out of memory would.
+        device.destroy();
+        Some(commands)
+    };
+    let responses = executor
+        .replay_then(&[&stream(&records)], Some(&mut canvas), Some(&mut trailer))
+        .unwrap();
+    assert!(!executor.trailed(), "{responses:?}");
+    let errors = errors(&responses);
+    assert!(
+        !errors.is_empty() && errors.iter().all(|(command, _)| *command == end),
+        "the failed upload raises its error at the frame's end: {responses:?}"
+    );
+}
