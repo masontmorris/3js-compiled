@@ -276,9 +276,12 @@ impl Batch {
             .push((buffer.clone(), offset, start..self.bytes.len() as u64));
     }
 
-    /// The batch's command buffers in queue order, each after a copy of the writes before it from one upload.
-    fn take(&mut self, device: &wgpu::Device) -> Vec<wgpu::CommandBuffer> {
-        let upload = (!self.bytes.is_empty()).then(|| {
+    /// The batch's command buffers in queue order, each after a copy of the writes before it from one upload. When the
+    /// upload can't be created, as when the device is out of memory or lost, the batch's work is dropped.
+    fn take(&mut self, device: &wgpu::Device) -> Result<Vec<wgpu::CommandBuffer>, String> {
+        let upload = if self.bytes.is_empty() {
+            None
+        } else {
             let upload = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("buffer writes"),
                 size: self.bytes.len() as u64,
@@ -286,13 +289,16 @@ impl Batch {
                 usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: true,
             });
-            upload
+            let filled = upload
                 .get_mapped_range_mut(..)
-                .expect("a buffer mapped at creation")
-                .copy_from_slice(&self.bytes);
+                .map(|mut range| range.copy_from_slice(&self.bytes));
+            if let Err(error) = filled {
+                self.clear();
+                return Err(error.to_string());
+            }
             upload.unmap();
-            upload
-        });
+            Some(upload)
+        };
         let mut sent = Vec::with_capacity(2 * self.commands.len() + 1);
         let mut copied = 0;
         let mut copy = |sent: &mut Vec<wgpu::CommandBuffer>, writes: usize| {
@@ -316,9 +322,14 @@ impl Batch {
             sent.push(commands);
         }
         copy(&mut sent, self.writes.len());
-        self.writes.clear();
+        self.clear();
+        Ok(sent)
+    }
+
+    fn clear(&mut self) {
         self.bytes.clear();
-        sent
+        self.writes.clear();
+        self.commands.clear();
     }
 }
 
@@ -1433,23 +1444,30 @@ impl Executor {
         self.batch.command(encoder.finish());
     }
 
-    /// Sends the batch to the queue. An error goes to `uncaptured`, though the executor's checks leave none, and the
-    /// result says whether there was one.
+    /// Sends the batch to the queue. An error goes to `uncaptured`, and the result says whether there was one. The
+    /// executor's checks leave only one kind: an upload that can't be created.
     fn flush(&mut self) -> bool {
         if self.batch.is_empty() {
             return true;
         }
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let commands = self.batch.take(&self.device);
-        #[cfg(test)]
-        self.calls.submit();
-        self.queue.submit(commands);
-        let error = pollster::block_on(scope.pop());
+        let error = match self.batch.take(&self.device) {
+            Ok(commands) => {
+                #[cfg(test)]
+                self.calls.submit();
+                self.queue.submit(commands);
+                pollster::block_on(scope.pop()).map(|error| error.to_string())
+            }
+            // The upload's own error says why it failed, and the mapping's stands in when the scope caught none.
+            Err(mapping) => {
+                Some(pollster::block_on(scope.pop()).map_or(mapping, |error| error.to_string()))
+            }
+        };
         if let Some(error) = &error {
             self.uncaptured
                 .lock()
                 .unwrap()
-                .push((wgpu::ErrorFilter::Validation, error.to_string()));
+                .push((wgpu::ErrorFilter::Validation, error.clone()));
         }
         error.is_none()
     }
