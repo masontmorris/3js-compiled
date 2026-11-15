@@ -232,15 +232,17 @@ impl TimestampConversion {
     }
 }
 
-/// The most bytes of buffer writes a batch stages. A write that would take it past this sends the batch first, and a
-/// larger one goes to the queue alone.
+/// The most bytes of buffer writes a batch stages, unless the device's buffers can hold less. A write that would take
+/// it past its limit sends the batch first, and a larger one goes to the queue alone.
 const BATCH_BYTES: usize = 1 << 22;
 
 /// Queue work that the executor holds back and sends in one `queue.submit`, in the order WebGPU's queue runs it. wgpu
 /// runs a `queue.write_buffer` before the whole of the next submit, so the batch stages its writes in its own upload
 /// and copies them between its command buffers.
-#[derive(Default)]
 struct Batch {
+    /// The most bytes the batch stages: `BATCH_BYTES`, or the device's `max_buffer_size` when that is smaller, since
+    /// the upload is one buffer.
+    limit: usize,
     bytes: Vec<u8>,
     /// Each write's destination, its offset there, and its bytes' range in `bytes`.
     writes: Vec<(wgpu::Buffer, u64, std::ops::Range<u64>)>,
@@ -249,6 +251,16 @@ struct Batch {
 }
 
 impl Batch {
+    fn new(device: &wgpu::Device) -> Self {
+        let max = usize::try_from(device.limits().max_buffer_size).unwrap_or(usize::MAX);
+        Self {
+            limit: BATCH_BYTES.min(max),
+            bytes: Vec::new(),
+            writes: Vec::new(),
+            commands: Vec::new(),
+        }
+    }
+
     fn is_empty(&self) -> bool {
         self.writes.is_empty() && self.commands.is_empty()
     }
@@ -567,6 +579,7 @@ impl Executor {
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
         let uncaptured = Arc::new(Mutex::new(Vec::new()));
         report_uncaptured(&device, &uncaptured);
+        let batch = Batch::new(&device);
         Self {
             device,
             queue,
@@ -612,7 +625,7 @@ impl Executor {
             surface_clear: SurfaceClear::Done,
             uncaptured,
             scopes: Vec::new(),
-            batch: Batch::default(),
+            batch,
             mapped_buffers: 0,
             #[cfg(test)]
             calls: QueueCalls::default(),
@@ -1233,6 +1246,7 @@ impl Executor {
         self.invalid_encoder = false;
         self.destroyed_use = None;
         self.destroyed.clear();
+        self.batch = Batch::new(&device);
         self.device = device;
         self.queue = queue;
         self.buffers.clear();
@@ -1528,9 +1542,9 @@ impl Executor {
                     return Err("invalid buffer write".into());
                 }
                 // wgpu raises the error for a write to a mapped buffer.
-                if !buffer.mapped && bytes.len() <= BATCH_BYTES {
+                if !buffer.mapped && bytes.len() <= self.batch.limit {
                     let raw = buffer.raw.clone();
-                    if self.batch.bytes.len() + bytes.len() > BATCH_BYTES {
+                    if self.batch.bytes.len() + bytes.len() > self.batch.limit {
                         self.flush();
                     }
                     if !bytes.is_empty() {
@@ -1702,11 +1716,8 @@ impl Executor {
                 if !texture.usage.contains(wgpu::TextureUsages::COPY_DST) {
                     return Err("texture is not writable".into());
                 }
-                // wgpu runs the write before its next submit, so the batch's command buffers go first. Its buffer
-                // writes can wait, since a texture write touches no buffer.
-                if !self.batch.commands.is_empty() {
-                    self.flush();
-                }
+                // wgpu runs the write before its next submit, so the batch goes first.
+                self.flush();
                 let texture = valid(&self.textures, u32_at(payload, 0), "texture")?;
                 let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
                 self.queue.write_texture(
@@ -2851,10 +2862,10 @@ impl Executor {
                 else {
                     return Ok(None);
                 };
-                if !std::mem::take(&mut buffer.mapped) {
+                if !buffer.mapped {
                     return Ok(None);
                 }
-                self.mapped_buffers -= 1;
+                // A failed unmap leaves the buffer mapped, in wgpu and here.
                 if !bytes.is_empty() {
                     let end = offset
                         .checked_add(bytes.len() as u64)
@@ -2868,6 +2879,8 @@ impl Executor {
                         .copy_from_slice(bytes);
                 }
                 buffer.raw.unmap();
+                buffer.mapped = false;
+                self.mapped_buffers -= 1;
                 Ok(None)
             }
             46 => {

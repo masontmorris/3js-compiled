@@ -10,6 +10,7 @@ use std::{
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 struct Run {
+    _dir: Scratch,
     log: String,
     capture: image::RgbaImage,
 }
@@ -97,8 +98,9 @@ fn run(name: &str, entry: &Path, steps: serde_json::Value) -> Run {
     let (status, log) = host(&dir, entry, &steps.into(), &[]);
     assert!(status.success(), "{name}: host exited with {status}\n{log}");
     Run {
-        log,
         capture: image::open(&capture).unwrap().to_rgba8(),
+        _dir: dir,
+        log,
     }
 }
 
