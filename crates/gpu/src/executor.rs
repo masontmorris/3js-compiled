@@ -3386,10 +3386,11 @@ mod tests {
         );
     }
 
-    /// A frame shaped like folio's: 18 submits, each after 32 small buffer writes, and the host's trailer.
+    /// A frame shaped like folio's: 5 texture writes, 18 submits, each after 32 small buffer writes, 2 more texture
+    /// writes after the third submit, and the host's trailer. A texture write sends the batch before it.
     #[test]
     #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
-    fn a_folio_shaped_frame_reaches_the_queue_in_one_submit_without_buffer_writes() {
+    fn a_folio_shaped_frame_reaches_the_queue_in_two_submits_without_buffer_writes() {
         let (device, queue) = software();
         let usage = (wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST).bits();
         let buffer = |handle: u32, size: u64| {
@@ -3398,9 +3399,36 @@ mod tests {
             payload.extend_from_slice(&[usage, 0].map(u32::to_le_bytes).concat());
             (1, payload)
         };
-        let mut setup = vec![buffer(1, 18 * 32 * 16), buffer(2, 18 * 32 * 16)];
+        let words = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut texture = words(&[
+            3,
+            4,
+            1,
+            1,
+            1,
+            1,
+            wgpu::TextureUsages::COPY_DST.bits(),
+            10,
+            0,
+        ]);
+        texture.extend_from_slice(b"rgba8unorm");
+        let write_texture = || {
+            let mut payload = words(&[3, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+            payload.extend_from_slice(&[9; 16]);
+            (5, payload)
+        };
+        let mut setup = vec![
+            buffer(1, 18 * 32 * 16),
+            buffer(2, 18 * 32 * 16),
+            (4, texture),
+        ];
         setup.push((26, Vec::new()));
-        let mut frame = Vec::new();
+        let mut frame: Vec<_> = (0..5).map(|_| write_texture()).collect();
         for group in 0..18u64 {
             for write in 0..32u64 {
                 let offset = (group * 32 + write) * 16;
@@ -3416,6 +3444,9 @@ mod tests {
             copy.extend_from_slice(&512u64.to_le_bytes());
             frame.push((38, copy));
             frame.push((26, Vec::new()));
+            if group == 2 {
+                frame.extend([write_texture(), write_texture()]);
+            }
         }
         let mut canvas = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -3445,7 +3476,7 @@ mod tests {
             assert!(executor.trailed());
             assert_eq!(
                 executor.calls.take(),
-                (1, 0),
+                (2, 0),
                 "queue submits and buffer writes in the frame"
             );
         }

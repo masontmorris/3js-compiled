@@ -2680,10 +2680,13 @@ fn a_buffer_destroyed_after_its_write_and_submit_left_what_the_submit_copied() {
         SUBMIT,
         write(4, 0, &[6; 16]),
         destroy_buffer(4),
-        read(10, 1, 16),
     ]);
     let responses = executor.replay(&stream(&records), None).unwrap();
-    assert_eq!(readbacks(&responses), [(10, vec![5; 16])], "{responses:?}");
+    assert_eq!(
+        responses,
+        [],
+        "the frame's last write reaches its buffer before the destroy, with no error"
+    );
     let next = [write(4, 0, &[7; 16]), read(11, 1, 16)];
     let responses = executor.replay(&stream(&next), None).unwrap();
     assert_eq!(
@@ -2803,4 +2806,37 @@ fn an_unmap_that_fails_leaves_the_buffer_mapped_so_its_submits_fail_alone() {
     assert_eq!(commands, [4, 9], "{errors:?}");
     assert_eq!(errors[0].1, "invalid buffer unmap");
     assert!(errors[1].1.contains("still mapped"), "{errors:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn a_texture_destroyed_after_a_held_copy_from_it_left_what_the_copy_read() {
+    let mut executor = executor();
+    let texture = 5u32;
+    let mut create = words(&[texture, 4, 1, 1, 1, 1, 1 | 2, 10, 0]);
+    create.extend_from_slice(b"rgba8unorm");
+    let mut write_texture = words(&[texture, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+    write_texture.extend_from_slice(&[7; 16]);
+    let copy_texture = || {
+        let mut payload = words(&[1, 256, 1, texture, 0, 0, 0, 0, 0, 4, 1, 1]);
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        (41, payload)
+    };
+    let records = [
+        buffer(1, 256, COPY_SRC | COPY_DST),
+        (4, create),
+        (5, write_texture),
+        copy_texture(),
+        SUBMIT,
+        (6, texture.to_le_bytes().to_vec()),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(responses, []);
+    let next = [copy_texture(), SUBMIT, read(10, 1, 16)];
+    let responses = executor.replay(&stream(&next), None).unwrap();
+    assert_eq!(readbacks(&responses), [(10, vec![7; 16])], "{responses:?}");
+    assert_eq!(
+        errors(&responses),
+        [(1, "a destroyed texture is used in a submit".to_owned())]
+    );
 }
