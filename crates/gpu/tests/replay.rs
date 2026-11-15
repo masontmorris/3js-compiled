@@ -2740,3 +2740,67 @@ fn the_trailer_reaches_the_queue_after_the_frames_writes_and_submits() {
     let responses = executor.replay(&stream(&[read(10, 1, 16)]), None).unwrap();
     assert_eq!(readbacks(&responses), [(10, vec![1; 16])]);
 }
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn staged_writes_never_ask_for_an_upload_past_the_devices_buffer_limit() {
+    let Exclusive {
+        value: (adapter, ..),
+        _turn,
+    } = software();
+    let limit = 1u64 << 20;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_limits: wgpu::Limits {
+            max_buffer_size: limit,
+            max_storage_buffer_binding_size: limit,
+            ..Default::default()
+        },
+        ..Default::default()
+    }))
+    .unwrap();
+    let mut executor = Executor::new(device, queue);
+    let len = 768 << 10;
+    let records = [
+        buffer(1, limit, COPY_SRC | COPY_DST),
+        write(1, 0, &vec![1; len]),
+        write(1, 0, &vec![2; len]),
+        read(10, 1, limit),
+    ];
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    let mut expected = vec![2; len];
+    expected.resize(limit as usize, 0);
+    assert_eq!(errors(&responses), []);
+    assert_eq!(readbacks(&responses), [(10, expected)]);
+}
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_unmap_that_fails_leaves_the_buffer_mapped_so_its_submits_fail_alone() {
+    let mut executor = executor();
+    let mut bad_unmap = 4u32.to_le_bytes().to_vec();
+    bad_unmap.extend_from_slice(&16u64.to_le_bytes());
+    bad_unmap.extend_from_slice(&[1; 4]);
+    let mut records = copy_buffers();
+    records.extend([
+        buffer(4, 16, 2 | COPY_SRC | MAPPED_AT_CREATION),
+        (48, bad_unmap),
+        write(3, 0, &[1; 16]),
+        copy_buffer(3, 0, 1, 16),
+        SUBMIT,
+        copy_buffer(4, 0, 2, 16),
+        SUBMIT,
+        read(10, 1, 16),
+        read(11, 2, 16),
+    ]);
+    let responses = executor.replay(&stream(&records), None).unwrap();
+    assert_eq!(
+        readbacks(&responses),
+        [(10, vec![1; 16]), (11, vec![0; 16])],
+        "the valid submit runs, and the one that uses the mapped buffer does not: {responses:?}"
+    );
+    let errors = errors(&responses);
+    let commands: Vec<_> = errors.iter().map(|error| error.0).collect();
+    assert_eq!(commands, [4, 9], "{errors:?}");
+    assert_eq!(errors[0].1, "invalid buffer unmap");
+    assert!(errors[1].1.contains("still mapped"), "{errors:?}");
+}

@@ -157,6 +157,23 @@ fn a_failing_test_keeps_its_scratch_work_dir() {
     std::fs::remove_dir_all(&*kept).unwrap();
 }
 
+#[test]
+#[ignore = "opens a window on the hardware GPU; run under the GPU lease"]
+fn a_check_that_fails_after_a_run_keeps_its_work_dir() {
+    let dir = std::env::temp_dir().join(format!("threejsc-gpu-scratch-run-{}", std::process::id()));
+    let failed = std::panic::catch_unwind(|| {
+        let _run = run(
+            "scratch-run",
+            &bundle("counter"),
+            serde_json::json!([{"type": "wait", "frames": 2}]),
+        );
+        panic!("a check on the run fails");
+    });
+    assert!(failed.is_err());
+    assert!(dir.exists(), "{} is gone", dir.display());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 fn red(path: &Path) -> (u8, (u32, u32)) {
     let image = image::open(path).unwrap().to_rgba8();
     (image.get_pixel(4, 4).0[0], image.dimensions())
