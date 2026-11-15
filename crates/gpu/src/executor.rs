@@ -232,6 +232,29 @@ impl TimestampConversion {
     }
 }
 
+/// The queue calls an executor made, which tests bound.
+#[cfg(test)]
+#[derive(Default)]
+struct QueueCalls {
+    submits: std::cell::Cell<usize>,
+    writes: std::cell::Cell<usize>,
+}
+
+#[cfg(test)]
+impl QueueCalls {
+    fn submit(&self) {
+        self.submits.set(self.submits.get() + 1);
+    }
+
+    fn write(&self) {
+        self.writes.set(self.writes.get() + 1);
+    }
+
+    fn take(&self) -> (usize, usize) {
+        (self.submits.take(), self.writes.take())
+    }
+}
+
 /// The resources that stream handles name. As in WebGPU, a create that fails validation leaves an
 /// invalid object, here `None`: using it raises an error, and destroying it raises nothing.
 pub struct Executor {
@@ -307,6 +330,8 @@ pub struct Executor {
     uncaptured: Arc<Mutex<Vec<(wgpu::ErrorFilter, String)>>>,
     /// The stream's open error scopes, innermost last. They outlast a frame, as in WebGPU.
     scopes: Vec<ErrorScope>,
+    #[cfg(test)]
+    calls: QueueCalls,
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
@@ -504,6 +529,8 @@ impl Executor {
             surface_clear: SurfaceClear::Done,
             uncaptured,
             scopes: Vec::new(),
+            #[cfg(test)]
+            calls: QueueCalls::default(),
         }
     }
 
@@ -804,6 +831,8 @@ impl Executor {
             _ => None,
         };
         let trailed = trailing.is_some();
+        #[cfg(test)]
+        self.calls.submit();
         self.queue.submit(commands.into_iter().chain(trailing));
         let error = pollster::block_on(scope.pop());
         if encoded {
@@ -1271,6 +1300,8 @@ impl Executor {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        #[cfg(test)]
+        self.calls.submit();
         self.queue.submit([encoder.finish()]);
     }
 
@@ -1359,6 +1390,8 @@ impl Executor {
                 {
                     return Err("invalid buffer write".into());
                 }
+                #[cfg(test)]
+                self.calls.write();
                 self.queue.write_buffer(&buffer.raw, offset, bytes);
                 Ok(None)
             }
@@ -1404,6 +1437,8 @@ impl Executor {
                 });
                 let mut encoder = self.device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&buffer.raw, offset, &staging, 0, len);
+                #[cfg(test)]
+                self.calls.submit();
                 self.queue.submit([encoder.finish()]);
                 if let Some(error) = pollster::block_on(scope.pop()) {
                     return Err(error.to_string());
@@ -1708,6 +1743,8 @@ impl Executor {
                         depth_or_array_layers: 1,
                     },
                 );
+                #[cfg(test)]
+                self.calls.submit();
                 self.queue.submit([encoder.finish()]);
                 if let Some(error) = pollster::block_on(scope.pop()) {
                     return Err(error.to_string());
@@ -3171,6 +3208,83 @@ mod tests {
             executor.labels.len(),
             0,
             "destroyed invalid objects retained labels"
+        );
+    }
+
+    /// A frame shaped like folio's: 18 submits, each after 32 small buffer writes, and the host's trailer.
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn a_folio_shaped_frame_reaches_the_queue_in_one_submit_without_buffer_writes() {
+        let (device, queue) = software();
+        let usage = (wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST).bits();
+        let buffer = |handle: u32, size: u64| {
+            let mut payload = handle.to_le_bytes().to_vec();
+            payload.extend_from_slice(&size.to_le_bytes());
+            payload.extend_from_slice(&[usage, 0].map(u32::to_le_bytes).concat());
+            (1, payload)
+        };
+        let mut setup = vec![buffer(1, 18 * 32 * 16), buffer(2, 18 * 32 * 16)];
+        setup.push((26, Vec::new()));
+        let mut frame = Vec::new();
+        for group in 0..18u64 {
+            for write in 0..32u64 {
+                let offset = (group * 32 + write) * 16;
+                let mut payload = 1u32.to_le_bytes().to_vec();
+                payload.extend_from_slice(&offset.to_le_bytes());
+                payload.extend_from_slice(&[(group * 32 + write) as u8; 16]);
+                frame.push((2, payload));
+            }
+            let mut copy = 1u32.to_le_bytes().to_vec();
+            copy.extend_from_slice(&(group * 512).to_le_bytes());
+            copy.extend_from_slice(&2u32.to_le_bytes());
+            copy.extend_from_slice(&(group * 512).to_le_bytes());
+            copy.extend_from_slice(&512u64.to_le_bytes());
+            frame.push((38, copy));
+            frame.push((26, Vec::new()));
+        }
+        let mut canvas = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let mut executor = Executor::new(device.clone(), queue);
+        executor.replay(&stream(&setup), None).unwrap();
+        executor.calls.take();
+        for _ in 0..3 {
+            let mut trailer = |_: &wgpu::Texture, _: bool| {
+                Some(device.create_command_encoder(&Default::default()).finish())
+            };
+            let responses = executor
+                .replay_then(&[&stream(&frame)], Some(&mut canvas), Some(&mut trailer))
+                .unwrap();
+            assert_eq!(responses, []);
+            assert!(executor.trailed());
+            assert_eq!(
+                executor.calls.take(),
+                (1, 0),
+                "queue submits and buffer writes in the frame"
+            );
+        }
+        let mut read = [7u32, 2].map(u32::to_le_bytes).concat();
+        read.extend_from_slice(&0u64.to_le_bytes());
+        read.extend_from_slice(&(18 * 32 * 16u64).to_le_bytes());
+        let responses = executor.replay(&stream(&[(27, read)]), None).unwrap();
+        let expected: Vec<u8> = (0..18 * 32).flat_map(|value| [value as u8; 16]).collect();
+        assert_eq!(
+            responses,
+            [Response::Readback {
+                request: 7,
+                bytes: expected
+            }]
         );
     }
 }
