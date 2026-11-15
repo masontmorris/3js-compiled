@@ -104,6 +104,31 @@ fn bundle(name: &str) -> PathBuf {
     bundle
 }
 
+#[test]
+fn a_passing_test_leaves_no_scratch_in_the_temp_dir() {
+    let (dir, entry) = {
+        let dir = workdir("scratch");
+        std::fs::write(dir.join("host.log"), "").unwrap();
+        let entry = bundle("counter");
+        (dir.to_path_buf(), entry.to_path_buf())
+    };
+    assert!(!dir.exists(), "{} is left behind", dir.display());
+    assert!(!entry.exists(), "{} is left behind", entry.display());
+}
+
+#[test]
+fn a_failing_test_keeps_its_scratch_work_dir() {
+    let kept = std::panic::catch_unwind(|| {
+        let dir = workdir("scratch-failed");
+        std::panic::panic_any(dir.to_path_buf());
+    })
+    .unwrap_err()
+    .downcast::<PathBuf>()
+    .unwrap();
+    assert!(kept.exists(), "{} is gone", kept.display());
+    std::fs::remove_dir_all(&*kept).unwrap();
+}
+
 fn red(path: &Path) -> (u8, (u32, u32)) {
     let image = image::open(path).unwrap().to_rgba8();
     (image.get_pixel(4, 4).0[0], image.dimensions())
