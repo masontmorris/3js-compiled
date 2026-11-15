@@ -14,11 +14,38 @@ struct Run {
     capture: image::RgbaImage,
 }
 
-fn workdir(name: &str) -> PathBuf {
+/// A dir or file a test made in the temp dir, removed when the test ends. A failing test keeps it and prints its path.
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("kept {} for the failed test", self.0.display());
+            return;
+        }
+        let removed = if self.0.is_dir() {
+            std::fs::remove_dir_all(&self.0)
+        } else {
+            std::fs::remove_file(&self.0)
+        };
+        if let Err(error) = removed {
+            eprintln!("could not remove {}: {error}", self.0.display());
+        }
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+fn workdir(name: &str) -> Scratch {
     let dir = std::env::temp_dir().join(format!("threejsc-gpu-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    dir
+    Scratch(dir)
 }
 
 /// Runs the host in `dir` and fails the test if it does not exit within a minute, or five in a debug
@@ -91,12 +118,13 @@ fn test_entry(name: &str) -> PathBuf {
 }
 
 /// Bundles the three.js test entry `name` from crates/host/tests.
-fn bundle(name: &str) -> PathBuf {
-    let bundle = std::env::temp_dir().join(format!("threejsc-{name}-{}.js", std::process::id()));
+fn bundle(name: &str) -> Scratch {
+    let bundle =
+        Scratch(std::env::temp_dir().join(format!("threejsc-{name}-{}.js", std::process::id())));
     let built = Command::new("node")
         .current_dir(ROOT)
         .env("ENTRY", format!("crates/host/tests/{name}.js"))
-        .env("OUT", &bundle)
+        .env("OUT", &*bundle)
         .args(["-e", "import('esbuild').then(({ build }) => build({ entryPoints: [process.env.ENTRY], outfile: process.env.OUT, bundle: true, format: 'esm', platform: 'browser', target: 'es2022' }))"])
         .status()
         .unwrap();
@@ -634,7 +662,7 @@ fn a_render_thread_failure_ends_the_host_with_a_logged_error() {
 fn closing_the_window_joins_every_thread() {
     let dir = workdir("close-window");
     let mut child = Command::new(env!("CARGO_BIN_EXE_host"))
-        .current_dir(&dir)
+        .current_dir(&*dir)
         .arg("--entry")
         .arg(test_entry("counter.js"))
         .spawn()
