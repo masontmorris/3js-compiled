@@ -2840,3 +2840,30 @@ fn a_texture_destroyed_after_a_held_copy_from_it_left_what_the_copy_read() {
         [(1, "a destroyed texture is used in a submit".to_owned())]
     );
 }
+
+#[test]
+#[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+fn an_upload_that_cannot_be_created_raises_an_error_and_leaves_the_frame_untrailed() {
+    let gpu = device();
+    let (device, queue) = &*gpu;
+    let mut canvas = surface_texture(device, 4, 4);
+    let mut executor = Executor::new(device.clone(), queue.clone());
+    let mut records = copy_buffers();
+    records.extend([write(3, 0, &[1; 16]), copy_buffer(3, 0, 1, 16), SUBMIT]);
+    let end = records.len();
+    let mut trailer = |_: &wgpu::Texture, _: bool| {
+        let commands = device.create_command_encoder(&Default::default()).finish();
+        // A lost device makes the frame's upload fail to create, as running out of memory would.
+        device.destroy();
+        Some(commands)
+    };
+    let responses = executor
+        .replay_then(&[&stream(&records)], Some(&mut canvas), Some(&mut trailer))
+        .unwrap();
+    assert!(!executor.trailed(), "{responses:?}");
+    let errors = errors(&responses);
+    assert!(
+        !errors.is_empty() && errors.iter().all(|(command, _)| *command == end),
+        "the failed upload raises its error at the frame's end: {responses:?}"
+    );
+}

@@ -3493,4 +3493,57 @@ mod tests {
             }]
         );
     }
+
+    /// A texture write sends the buffer writes held before it, so the queue runs them in call order.
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run in the Modal gpu_replay lane"]
+    fn a_texture_write_sends_the_buffer_writes_held_before_it() {
+        let (device, queue) = software();
+        let words = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut buffer = 1u32.to_le_bytes().to_vec();
+        buffer.extend_from_slice(&16u64.to_le_bytes());
+        buffer.extend_from_slice(&words(&[
+            (wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST).bits(),
+            0,
+        ]));
+        let mut texture = words(&[
+            2,
+            4,
+            1,
+            1,
+            1,
+            1,
+            wgpu::TextureUsages::COPY_DST.bits(),
+            10,
+            0,
+        ]);
+        texture.extend_from_slice(b"rgba8unorm");
+        let write = |value: u8| {
+            let mut payload = 1u32.to_le_bytes().to_vec();
+            payload.extend_from_slice(&0u64.to_le_bytes());
+            payload.extend_from_slice(&[value; 16]);
+            (2, payload)
+        };
+        let mut write_texture = words(&[2, 0, 0, 0, 0, 16, 1, 4, 1, 1]);
+        write_texture.extend_from_slice(&[9; 16]);
+        let mut executor = Executor::new(device, queue);
+        executor
+            .replay(&stream(&[(1, buffer), (4, texture)]), None)
+            .unwrap();
+        executor.calls.take();
+        let responses = executor
+            .replay(&stream(&[write(1), (5, write_texture), write(2)]), None)
+            .unwrap();
+        assert_eq!(responses, []);
+        assert_eq!(
+            executor.calls.take(),
+            (2, 0),
+            "the texture write's submit, then the frame's"
+        );
+    }
 }
